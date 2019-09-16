@@ -32,15 +32,16 @@ Usage
 
 Options for briggs are as follows:
 
+<ul>
 <li>-c, --convert &lt;arg&gt;    Load a file (should be a CSV now)</li>
 <li>-d, --delimiter &lt;arg&gt;  Specify a delimiter</li>
 <li>-j, --json                   Convert into JSON.</li>
 <li>-x, --xml                    Convert into XML.</li>
 <li>-p, --prefix &lt;arg&gt;     Specify a prefix</li>
 <li>-s, --suffix &lt;arg&gt;     Specify a suffix</li>
+</ul>
 
-
-The repository ships with a file called test/full-tab.csv; a semicolon-seperated document containing a list of scholarships.  To convert this data into JSON, run:
+The repository ships with a file called `test/full-tab.csv`; a semicolon-seperated document containing a list of scholarships.  To convert this data into JSON, run:
 
 <pre>
 briggs --convert test/full-tab.csv --json --delimiter ';'
@@ -61,8 +62,7 @@ briggs will automatically use the first line of your data as key names.  So we s
 Data that needs additional padding (like XML, usually) can make use of the --prefix and --suffix options.  For example, let's re-run our previous command, but convert the data to XML:
 
 <pre>
-briggs --convert test/full-tab.csv --xml --delimiter ';' \
-	--prefix '<Node>' --suffix '</Node>'
+briggs --convert test/full-tab.csv --xml --delimiter ';' --prefix '<Node>' --suffix '</Node>'
 </pre>
 
 Now, we'll get:
