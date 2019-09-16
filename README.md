@@ -1,7 +1,20 @@
 mockery
 -------
 
-Mockery is a pretty simple C program for generating test data in popular formats.
+Mockery is a pretty simple C program for generating and converting test data in popular 
+formats.
+
+- JSON
+- SQLite
+- CSV
+- MySQL
+- SQL Server
+- Java
+- C
+- C++
+- ColdFusion
+- and custom things
+
 The two formats currently supported include JSON and SQLite.
 
 

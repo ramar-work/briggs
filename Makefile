@@ -1,6 +1,6 @@
 #!/usr/bin/make
-NAME = mockery
-SRC = lite.c parsely.c main.c
+NAME = briggs 
+SRC = single.c main.c
 OBJ = ${SRC:.c=.o}
 IGNORE = archive test.db
 IGNCLEAN = "sqlite3.o"
@@ -18,7 +18,7 @@ CLANGFLAGS = -g -Wall -Werror -std=c99 -Wno-unused \
 GCCFLAGS = -g -Wall -Werror -Wno-unused \
 	-Wstrict-overflow -ansi -std=c99 \
 	-Wno-deprecated-declarations -O0 \
-	-pedantic-errors -Wno-overlength-strings
+	-pedantic-errors -Wno-overlength-strings -DSQROOGE_H
 CFLAGS = $(GCCFLAGS)
 
 INIT_ASAN = ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer
@@ -35,46 +35,23 @@ main: run
 main: 
 	@printf '' >/dev/null
 
+# run
 run:
-	@./$(BIN) -j
+	@./$(BIN) -c files/full-tab.csv --delimiter ";"
 
-load:
-	@echo "Seeding database 'test.db'.  (this could take a moment...)"
-	@./ezphp -s | sqlite3 test.db && echo "DONE!" || echo "Failed to seed records."
-
-# This loader routine will probably be easier done in C. see above
-load-shell:
-	sed "{ \
-		s|'|''|g; \
-		s|<p>\([^<]*\)</p>|\"<p>\1</p>2\"\n|g; \
-		s|2|\\\n|g \
-	}" lorem 
-
-etc:
-		s|<p>\([^<]*\)</p>|INSERT INTO content VALUES \
-			(NULL, 'Antonio Ramar Collins II', 1486207621, '\1');\n|g
-	
-server:
-	cd example && php -S localhost:3000
-
-bg-server:
-	php -S localhost:3000 & >/dev/null
-
-#
-build: $(OBJ)
-	@$(CC) $(OBJ) -o $(BIN) $(CFLAGS)
+# build
+build: vendor/single.o
+	@$(CC) vendor/single.o main.c -o $(NAME) $(CFLAGS) 
 
 #clean
 clean:
-	-@find . -maxdepth 1 -type f -iname "*.o" -o -iname "*.so" \
-		`echo $(IGNCLEAN) | sed '{ s/ / ! -iname /g; s/^/! -iname /; }'` | xargs rm 
-	-@rm $(BIN) $(BIN1) $(BIN2)
+	-rm -f *.o vendor/*.o
+	-rm -f $(NAME)
 
-permissions:
-	@find | grep -v './tools' | grep -v './examples' | grep -v './.git' | sed '1d' | xargs stat -c 'chmod %a %n' > PERMISSIONS
-
-restore-permissions:
-	chmod 744 PERMISSIONS && ./PERMISSIONS && chmod 644 PERMISSIONS
+#load
+load:
+	@echo "Seeding database 'test.db'.  (this could take a moment...)"
+	@./ezphp -s | sqlite3 test.db && echo "DONE!" || echo "Failed to seed records."
 
 # Make a tarball that goes to another directory
 backup:
@@ -83,15 +60,6 @@ backup:
 		`echo $(IGNORE) | sed '{ s/^/--exclude=/; s/ / --exclude=/g; }'` ./*
 	@tar chzf $(ARCHIVEDIR)/${ARCHIVEFILE} --exclude-backups \
 		`echo $(IGNORE) | sed '{ s/^/--exclude=/; s/ / --exclude=/g; }'` ./*
-
-# Make an archive tarball
-archive: ARCHIVEDIR = archive
-archive: backup
-
-# Sync
-sync:
-	@VAR=`ssh $(HOST) 'ls ~/space/$(NAME)* | tail -n 1'`; \
-	 ssh $(HOST) "cat $$VAR" | tee archive/`basename $$VAR` | tar xzf -
 
 # ...
 changelog:
