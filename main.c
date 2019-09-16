@@ -37,7 +37,7 @@ typedef enum {
 
 
 //Blog content text
-#include "etc.c"
+//#include "test/etc.c"
 
 //Global variables to ease testing
 char titleBuf[ 1024 ] = { 0 };  /*Titles are no more than 1024 characters*/
