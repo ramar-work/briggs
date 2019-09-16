@@ -1,25 +1,27 @@
-mockery
--------
+briggs
+------
 
-Mockery is a pretty simple C program for generating and converting test data in popular 
-formats.
+Briggs is a pretty simple C program for converting test data into many popular 
+formats, such as
 
 - JSON
 - SQLite
 - CSV
 - MySQL
 - SQL Server
-- Java
-- C
-- C++
+- Java classes
+- C / C++ structures
 - ColdFusion
-- and custom things
+- and hopefully many more... 
 
-The two formats currently supported include JSON and SQLite.
 
 
 Usage
 -----
-<li>-r, --rows    -  Define how many rows of data you want</li>
-<li>-s, --seed    -  Dump mock tests in SQLite readable format</li>
-<li>-r, --json    -  Dump mock tests in JSON format</li>
+-c, --convert &lt;arg&gt;    Load a file (should be a CSV now)
+-d, --delimiter &lt;arg&gt;  Specify a delimiter
+-j, --json                   Convert into JSON.
+-x, --xml                    Convert into XML.
+-p, --prefix &lt;arg&gt;     Specify a prefix
+-s, --suffix &lt;arg&gt;     Specify a suffix
+

@@ -520,8 +520,8 @@ Option opts[] = {
 	//Add prefix and suffix to each row
 	{ "-p", "--prefix",     "Specify a prefix", 's' },
 	{ "-s", "--suffix",     "Specify a suffix", 's' },
-	{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
-	{ NULL, "--no-blank",   "Do not show blank values.", 's' },
+	//{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
+	//{ NULL, "--no-blank",   "Do not show blank values.", 's' },
 
 	//{ "-h", "--help",      "Show help." },
 	{ .sentinel = 1 }
@@ -563,8 +563,6 @@ int main (int argc, char *argv[])
 		suffix = opt_get( opts, "--suffix" ).s;	
 		fprintf( stderr, "%s\n", suffix );
 	}
-
-	//if ( opt_set( opts, "--msgpack" ) )
 
 	if ( opt_set( opts, "--convert" ) ) {
 		char *ffile = opt_get( opts, "--convert" ).s;
