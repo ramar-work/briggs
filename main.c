@@ -88,8 +88,13 @@ void p_default( int ind, const char *k, const char *v ) {
 //JSON converter
 void p_json( int ind, const char *k, const char *v ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, ",%s\"%s\": \"%s\"\n", &TAB[9-ind], k, v );
+	fprintf( stdout, "%s%s\"%s\": \"%s\"\n", adv ? " " : ",", &TAB[9-ind], k, v );
 }  
+
+//C struct converter
+void p_carray ( int ind, const char *k, const char *v ) {
+	fprintf( stdout, &",\"%s\""[adv], v );
+}
 
 //XML converter
 void p_xml( int ind, const char *k, const char *v ) {
@@ -99,13 +104,13 @@ void p_xml( int ind, const char *k, const char *v ) {
 //SQL converter
 void p_sql( int ind, const char *k, const char *v ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, ",'%s'", v );
+	fprintf( stdout, &",'%s'"[adv], v );
 }  
 
 //Simple comma converter
 void p_comma ( int ind, const char *k, const char *v ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, " ,\"%s\"", v );
+	fprintf( stdout, &",\"%s\""[adv], v );
 }
 
 //C struct converter
@@ -113,7 +118,7 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 	//check that it's a number
 	char *vv = (char *)v;
 	if ( !strlen( vv ) ) {
-		fprintf( stdout, "%s, .%s = \"\"\n", &TAB[9-ind], k );
+		fprintf( stdout, &", .%s = \"\"\n"[adv], &TAB[9-ind], k );
 		return;
 	}
 	#if 0
@@ -129,18 +134,13 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 	#endif
 	while ( *vv ) {
 		if ( !memchr( "0123456789", *vv, 10 ) ) {
-			fprintf( stdout, ",%s.%s = \"%s\"\n", &TAB[9-ind], k, v );
+			fprintf( stdout, &",%s.%s = \"%s\"\n"[adv], &TAB[9-ind], k, v );
 			return;	
 		}
 		vv++;
 	}
-	fprintf( stdout, "%s, .%s = %s\n", &TAB[9-ind], k, v );
+	fprintf( stdout, &"%s, .%s = %s\n"[adv], &TAB[9-ind], k, v );
 }  
-
-//C struct converter
-void p_carray ( int ind, const char *k, const char *v ) {
-	fprintf( stdout, ",\"%s\"", v );
-}
 
 
 //convert CSV or similar to another format
@@ -258,9 +258,10 @@ exit(0);
 	//move through the thing
 	FILE *output = stdout;
 	ADD_ELEMENT( ov, odvlen, Dub **, NULL );	
+	int odv = 0;
 	while ( *ov ) {
 		Dub **bv = (Dub **)*ov;
-		int p = 0;
+		//int p = 0;
 
 		//Prefix
 		if ( prefix ) {
@@ -274,16 +275,17 @@ exit(0);
 		else if ( stream == STREAM_COMMA )
 			0;//fprintf( output, "" );
 		else if ( stream == STREAM_CSTRUCT )
-			fprintf( output, "{\n" );
+			fprintf( output, "%s{", odv ? "," : " "  );
 		else if ( stream == STREAM_CARRAY )
-			fprintf( output, "{ " );
+			fprintf( output, "%s{ ", odv ? "," : " "  ); 
 		else if ( stream == STREAM_SQL )
 			fprintf( output, "INSERT INTO %s VALUES ( ", sqltable );
 		else if ( stream == STREAM_JSON ) {
-			fprintf( output, "{\n" );
+			fprintf( output, "%s{", odv ? "," : " "  );
 		}
 
 		//The body
+		adv = 1;
 		while ( *bv && (*bv)->k ) {
 			Dub *ib = *bv;
 			//Sadly, you'll have to use a buffer...
@@ -294,6 +296,8 @@ exit(0);
 				p_xml( 0, ib->k, ib->v );
 			else if ( stream == STREAM_CSTRUCT )
 				p_cstruct( 1, ib->k, ib->v );
+			else if ( stream == STREAM_CARRAY )
+				p_carray( 1, ib->k, ib->v );
 			else if ( stream == STREAM_COMMA )
 				p_comma( 1, ib->k, ib->v );
 			else if ( stream == STREAM_SQL )
@@ -301,7 +305,7 @@ exit(0);
 			else if ( stream == STREAM_JSON ) {
 				p_json( 0, ib->k, ib->v );
 			}
-			adv = 1, bv++;
+			adv = 0, bv++;
 		}
 
 		//Built-in suffix...
@@ -312,14 +316,14 @@ exit(0);
 		else if ( stream == STREAM_COMMA )
 			0;//fprintf( output, " },\n" );
 		else if ( stream == STREAM_CSTRUCT )
-			fprintf( output, "\n}," );
+			fprintf( output, "}" );
 		else if ( stream == STREAM_CARRAY )
-			fprintf( output, " },\n" );
+			fprintf( output, " }" );
 		else if ( stream == STREAM_SQL )
-			fprintf( output, " );\n" );
+			fprintf( output, " );" );
 		else if ( stream == STREAM_JSON ) {
 			//wipe the last ','
-			fprintf( output, "},\n" );
+			fprintf( output, "}" );
 			//fprintf( output, "," );
 		}
 
@@ -332,7 +336,7 @@ exit(0);
 			fprintf( output, "\n" );
 		}
 			
-		ov++;
+		ov++, odv++;
 	}
 
 	return 1;
@@ -355,6 +359,8 @@ Option opts[] = {
 	//Convert may be all I do from here...
 	{ "-c", "--convert",    "Load a file (should be a CSV now)", 's' },
 	{ "-d", "--delimiter",  "Specify a delimiter", 's' },
+	//{ "-d", "--input-delimiter",  "Specify an input delimiter", 's' },
+	//{ "-d", "--output-delimiter",  "Specify an output delimiter", 's' },
 	//{ "-e", "--extract",  "Specify fields to extract by name or number", 's' },
 
 	//Serialization formats
@@ -434,7 +440,16 @@ int main (int argc, char *argv[]) {
 		if ( !sqltable ) {
 			fprintf( stderr, "No SQL table specified for this statement.\n" );
 			exit( 1 );
-		}		
+		}
+	#if 0
+		//TODO: Pretty serious bug in single.c
+		//Not detecting '--'
+		fprintf( stderr, "%s\n", sqltable );
+		if ( *sqltable == '-' ) {
+			fprintf( stderr, "Got flag, expected value.\n" );
+			exit( 1 );
+		}
+	#endif
 	}
 
 	//
