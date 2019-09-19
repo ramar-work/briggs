@@ -1,6 +1,7 @@
 #!/usr/bin/make
-NAME = briggs 
+NAME = briggs
 PREFIX=/usr/local
+DOCFILE=/tmp/$(NAME).html
 CC = gcc 
 CLANGFLAGS = -g -Wall -Werror -std=c99 -Wno-unused \
 	-fsanitize=address \
@@ -37,3 +38,10 @@ install:
 test:
 	@./$(NAME) -c files/full-tab.csv --delimiter ";"
 
+# doctest
+doctest:
+	markdown -S README.md > $(DOCFILE)
+
+# mantest 
+mantest:
+	man -l briggs.1

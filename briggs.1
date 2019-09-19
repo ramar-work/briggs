@@ -1,0 +1,111 @@
+.TH briggs 1
+.SH NAME
+briggs \- stream to different data formats
+.SH SYNOPSIS
+.B briggs
+[\fBOPTIONS\fR]
+[\fB\-\-night\fR \fIBITS\fR]
+.IR file ...
+.SH DESCRIPTION
+Converts CSV files to a variety of different data formats, such as:
+.TP
+\t\- JSON
+.TP
+\t\- SQLite
+.TP
+\t\- CSV
+.TP
+\t\- MySQL
+.TP
+\t\- SQL Server
+.TP
+\t\- Java classes
+.TP
+\t\- C/C++ structures
+.TP
+\t\- ColdFusion
+.TP
+\t\- and hopefully many more... 
+.SH OPTIONS 
+.TP
+.BR \-c ", " \-\-convert \ [arg]
+Load a file (should be a CSV now)
+.TP
+.BR \-d ", " \-\-delimiter \ [arg]
+Specify a delimiter
+.TP
+.BR \-j ", " \-\-json               
+Convert into JSON.
+.TP
+.BR \-x ", " \-\-xml
+Convert into XML.
+.TP
+.BR \-\-comma
+Output a comma-seperated list.
+.TP
+.BR \-\-carray
+Convert into a C-style array.
+.TP
+.BR \-\-cstruct
+Convert into a C struct.
+.TP
+.BR \-q ", " \-\-sql \ [arg]
+Output SQL INSERT statements.
+.TP
+.BR \-n ", " \-\-newline
+Generate newline after each row.
+.TP
+.BR \-p ", " \-\-prefix \ [arg]
+Specify a prefix
+.TP
+.BR \-s ", " \-\-suffix \ [arg]
+Specify a suffix
+.SH EXAMPLES
+For all transformations, briggs needs a CSV file. To convert a CSV file to a SQL insert statement, try:
+.PP
+.nf
+.RS
+briggs -c file.csv --sql "tooty"
+.RE
+.fi
+You can also convert to JSON with the --json flag.
+.PP
+.nf
+.RS
+briggs -c file.csv --json
+.RE
+.fi
+.SH AUTHOR
+.TP
+Written by Antonio R. Collins II (ramar@tubularmodular.com)
+.SH COPYRIGHT 
+.TP
+Copyright (c) 2019 Tubular Modular Inc.
+.PP
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+.PP
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+.PP
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+.SH SEE ALSO 
+.TP
+Additional documentation available on http://collinsdesign.net/software/briggs.  Git source repository on https://github.com/zaiah-dj/briggs.git
+
+
+
+
+
+
+
