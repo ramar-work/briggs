@@ -31,8 +31,9 @@ clean:
 
 #install
 install:
-	-mkdir -p $(PREFIX)/bin/ 
+	-mkdir -p $(PREFIX)/bin/  $(PREFIX)/share/man/man1/
 	cp $(NAME) $(PREFIX)/bin/	
+	cp $(NAME).1 $(PREFIX)/share/man/man1/
 
 # test 
 test:

@@ -2,6 +2,10 @@
 briggs.c 
 ========
 
+TODO
+- Handle unsigned characters
+- Handle Unicode (uint32_t?)
+- 
  * ------------------------------------------------------- */
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
@@ -45,8 +49,14 @@ char *prefix = NULL;
 char *suffix = NULL;
 char *stream_chars = NULL;
 char *sqltable = NULL;
+struct rep { char o, r; } ; //Ghetto replacement scheme...
+struct rep **reps = NULL;
+char repblock[64]={0};
+int replen = 0;
+int headers_only = 0;
 int newline=0;
 int hlen;
+int no_unsigned=0;
 int adv=0;
 static const char *ucases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 static const char *lcases = "abcdefghijklmnopqrstuvwxyz_";
@@ -209,12 +219,14 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		}
 	}
 
-#if 0
-	while ( *headers ) {
-		fprintf( stdout, "%s\n", *headers );
-		headers++;
+#if 1
+	if ( headers_only ) {
+		while ( *headers ) {
+			fprintf( stdout, "%s\n", *headers );
+			headers++;
+		}
+		exit( 0 );
 	}
-exit(0);
 #endif
 
 	//...
@@ -226,7 +238,7 @@ exit(0);
 	int hindex = 0;
 	int boink = 0;
 
-	//Theoretically, you don't need to rewind anything...
+	//Now allocate for values
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
 			if ( iv || boink ) {
@@ -246,9 +258,61 @@ exit(0);
 			hindex++;
 			v->v = malloc( p.size + 1 );
 			memset( v->v, 0, p.size + 1 );
-			memcpy( v->v, &buf[p.pos], p.size );   
-			ADD_ELEMENT( iv, idvlen, Dub *, v );
 
+			//Check reps
+#if 0
+			memcpy( v->v, &buf[p.pos], p.size );   
+#else
+			if ( !reps && !no_unsigned ) 
+				memcpy( v->v, &buf[p.pos], p.size );   
+			else {
+				char *pp = &buf[ p.pos ];
+				int k=0;
+				//just do two seperate passes... 
+				//TODO: wow, this is bad...
+				if ( no_unsigned ) {
+					for ( int i=0; i<p.size; i++ ) {
+						if ( pp[ i ] < 32 || pp[ i ] > 126 )
+							0;// v->v[ i ] = ' ';
+						else {
+							v->v[ k ] = pp[ i ];
+							k++;
+						}
+					}
+				}
+		
+				if ( reps ) {
+					if ( !k ) {
+						k = p.size;
+					}
+					else {
+						pp = v->v;
+					}
+
+					for ( int i=0, l=0; i<k; i++ ) {
+						int j = 0;
+						struct rep **r = reps;
+						while ( (*r)->o ) {
+							if ( pp[ i ] == (*r)->o ) {
+								j = 1;		
+								if ( (*r)->r != 0 ) {
+									v->v[ l ] = (*r)->r;
+									l++;
+								}
+								break;
+							}
+							r++;
+						}
+						if ( !j ) {
+							v->v[ l ] = pp[ i ];
+							l++;
+						}
+					}
+					//zero out n<p.size
+				}
+			}
+#endif
+			ADD_ELEMENT( iv, idvlen, Dub *, v );
 			if ( hindex > hlen ) {
 				boink = 1;	
 			}
@@ -359,6 +423,8 @@ Option opts[] = {
 	//Convert may be all I do from here...
 	{ "-c", "--convert",    "Load a file (should be a CSV now)", 's' },
 	{ "-d", "--delimiter",  "Specify a delimiter", 's' },
+	{ NULL, "--cut",  "Cut parts of a string", 's' },
+	{ NULL, "--headers-only","Only display the headers" },
 	//{ "-d", "--input-delimiter",  "Specify an input delimiter", 's' },
 	//{ "-d", "--output-delimiter",  "Specify an output delimiter", 's' },
 	//{ "-e", "--extract",  "Specify fields to extract by name or number", 's' },
@@ -369,6 +435,7 @@ Option opts[] = {
 	{ NULL, "--comma",      "Convert into XML." },
 	{ NULL, "--carray",     "Convert into a C-style array." },
 	{ NULL, "--cstruct",    "Convert into a C struct." },
+	{ NULL, "--no-unsigned","Remove any unsigned character sequences." },
 	{ "-q", "--sql",        "Generate some random XML.", 's' },
 	{ "-n", "--newline",    "Generate newline after each row." },
 	//{ NULL, "--java-class", "Convert into a Java class." },
@@ -404,6 +471,13 @@ int main (int argc, char *argv[]) {
 	if ( opt_set( opts, "--json" ) )
 		json(); 
 #endif
+
+
+	if ( opt_set( opts, "--no-unsigned" ) )
+		no_unsigned = 1;	
+
+	if ( opt_set( opts, "--headers-only" ) )
+		headers_only = 1;	
 
 	//Should we be type strict or not?
 	if ( opt_set( opts, "--strict" ) )
@@ -461,6 +535,56 @@ int main (int argc, char *argv[]) {
 	if ( opt_set( opts, "--suffix" ) ) {
 		suffix = opt_get( opts, "--suffix" ).s;	
 		//fprintf( stderr, "%s\n", suffix );
+	}
+
+	//Detect characters to cut here...
+	if ( opt_set( opts, "--cut" ) ) {
+		char *sopts;
+		Mem cc;
+
+		//TODO: This is obviously not a good call... no uint8_t allowed
+		if ( !(sopts = opt_get( opts, "--cut" ).s) ) {
+			fprintf(stderr,"--cut got no arguments...\n" );
+			return 1;
+		}
+
+		//Allocate and move through much garbage.
+		while ( strwalk( &cc, sopts, "," ) ) {
+			//If no '=', just get rid of it	
+			int p = memchrat( &sopts[ cc.pos ], '=', cc.size );
+			struct rep *r = malloc( sizeof( struct rep ) );
+			memset( r, 0, sizeof( struct rep ) );
+			//If so, Break a string according to =
+			if ( p == -1 )
+				r->o = sopts[cc.pos], r->r = 0;	
+			//Save ONE char only on both sides
+			else {
+				r->o = sopts[cc.pos];
+				r->r = sopts[cc.pos + (p+1)];
+			}	
+			ADD_ELEMENT( reps, replen, struct rep *, r );
+		}
+
+		if ( replen ) {
+			struct rep *r = malloc( sizeof( struct rep ) );
+			r->r = 0;
+			ADD_ELEMENT( reps, replen, struct rep *, r );
+		}
+
+	#if 0
+		for ( int i=0; i<4; i++ ) {
+			struct rep **r = reps;
+			while ( (*r)->r ) {
+				fprintf( stderr, "%c -> '%c'\n", (*r)->o, (*r)->r );
+				//fprintf( stderr, "%c -> '%c'\n", r->o, r->r );
+				r++;
+			}
+		}
+
+		for ( int i=0; i<replen; i++ ) {
+			fprintf( stderr, "%c -> '%c'\n", reps[ i ]->o, reps[i]->r );
+		}
+	#endif
 	}
 
 	if ( opt_set( opts, "--convert" ) ) {
