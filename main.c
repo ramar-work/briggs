@@ -233,12 +233,12 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 			ADD_ELEMENT( headers, hlen, char *, NULL );
 			break;
 		}
-#ifdef WIN32
+	#ifdef WIN32
 		#error "briggs is currently unsupported on Windows."
 		else if  (p.chr == '\r' ) {
 			0;
 		}
-#endif
+	#endif
 		else { //if ( p.chr == ';' ) {
 			if ( p.size == 0 ) { 
 				//
@@ -286,12 +286,12 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 				boink = 0;
 			}
 		}
-#ifdef WIN32
+	#ifdef WIN32
 		#error "briggs is currently unsupported on Windows."
 		else if  (p.chr == '\r' ) {
 			0;
 		}
-#endif
+	#endif
 		else { /*if ( p.chr == ';' ) {*/
 			Dub *v = malloc( sizeof( Dub ) );
 			v->k = headers[ hindex ];
@@ -301,9 +301,9 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 			memset( v->v, 0, p.size + 1 );
 
 			//Check reps
-#if 0
+	#if 0
 			memcpy( v->v, &buf[p.pos], p.size );   
-#else
+	#else
 			if ( !reps && !no_unsigned ) 
 				memcpy( v->v, &buf[p.pos], p.size );   
 			else {
@@ -654,12 +654,20 @@ int main (int argc, char *argv[]) {
 	if ( opt_set( opts, "--convert" ) ) {
 		char *ffile = opt_get( opts, "--convert" ).s;
 		char *delim = opt_get( opts, "--delimiter" ).s;
-fprintf(stderr,"Got delim %s\n",delim);
+	#ifdef DEBUG
+		fprintf(stderr,"Got delim %s\n",delim);
+	#endif
+
 		if ( !delim )
 			return nerr( "delimiter not set, stopping...\n" );
-		if ( !convert_f( ffile, delim, stream_fmt ) )
-			return nerr( "conversion of file failed...\n" );
 
+	#ifdef DEBUG
+		fprintf(stderr,"Caling convert_f\n" );
+	#endif
+
+		if ( !convert_f( ffile, delim, stream_fmt ) ) {
+			return nerr( "conversion of file failed...\n" );
+		}
 	}
 	return 0;
 }
