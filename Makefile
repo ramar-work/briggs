@@ -20,9 +20,15 @@ main: build
 main: 
 	@printf '' >/dev/null
 
+#Tests or static data
+static:
+	@$(CC) -c data/words.c -o data/words.o
+	@$(CC) -c data/address.c -o data/address.o
+
 # build
 build: vendor/single.o
-	@$(CC) vendor/single.o main.c -o $(NAME) $(CFLAGS) 
+	@echo $(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS) 
+	@$(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS) 
 
 #clean
 clean:

@@ -5,7 +5,22 @@ briggs.c
 TODO
 - Handle unsigned characters
 - Handle Unicode (uint32_t?)
-- 
+- Generate your own values:
+	one flag ought to be used to generate some things
+	if I give it a file, use a single line
+	if I give it multiple values, use those
+	if I give it a string, then do yet something else...
+	briggs -t range=[ x, y, z ] 
+- Test data (especially for C/W.net)
+	- Numbers
+	- Zips
+	- Addresses
+	- Names
+	- Words
+	- Paragraphs
+	- URLs
+	- Images (probably from a directory is the most useful)
+	
  * ------------------------------------------------------- */
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
@@ -31,7 +46,7 @@ TODO
 //
 typedef enum {
 
-	STREAM_PRINTF = 0
+STREAM_PRINTF = 0
 , STREAM_JSON
 , STREAM_XML
 , STREAM_SQL
@@ -87,6 +102,12 @@ void snakecase ( char **k ) {
 		nk++;
 	}
 }
+
+
+
+//Data that comes from our little data folder.
+extern const char *WORDS[];
+extern const char *ADDRESSES[];
 
 //TODO: Bitshift the first int.  
 //control printing comma, control tabbing, control pretty formatting etc
@@ -165,13 +186,15 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	//stat file
 	if ( stat( file, &b ) == -1 ) {
 		//should probably be a failure
-		fprintf(stderr,"fail...\n"); return 0;	
+		fprintf(stderr,"fail...\n"); 
+		return 0;	
 	}
 	
 	//open file
 	if (( fd = open( file, O_RDONLY )) == -1 ) {
 		//fail if file doesn't open
-		fprintf(stderr,"fail...\n"); return 0;	
+		fprintf(stderr,"fail...\n"); 
+		return 0;	
 	}
 
 	//alloc
@@ -185,6 +208,9 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		fprintf(stderr,"fail...\n"); return 0;	
 	}
 
+
+	//write(2,buf,b.st_size);
+
 	//char add, headers can be in their own, the other should be somewhere else...
 	char **headers = NULL;	
 	//char **values[];
@@ -197,7 +223,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	memcpy( &del[ 1 ], delim, strlen(delim) );
 	//write( 2, del, strlen( del ) ); getchar();
 	//write( 2, buf, b.st_size ); getchar();
-
+fprintf(stderr,"calling convert f" );
 	//the headers can be the name of the field.
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
@@ -225,7 +251,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 			fprintf( stdout, "%s\n", *headers );
 			headers++;
 		}
-		exit( 0 );
+		//exit( 0 );
 	}
 #endif
 
@@ -408,6 +434,23 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 }
 
 
+
+//Get a random element from a big list...
+int get_random_element ( char **list, char **item, int size ) {
+	//el[ $RANDOM % size ];
+	//copy to item...
+	return 0;
+}
+
+
+int get_random_dir ( DIR *dir ) {
+
+	return 0;
+} 
+
+
+
+
 //Options
 Option opts[] = {
 //	{ "-a", "--directory",  "Simulate receiving this url.",  's' },
@@ -444,6 +487,8 @@ Option opts[] = {
 	//Add prefix and suffix to each row
 	{ "-p", "--prefix",     "Specify a prefix", 's' },
 	{ "-s", "--suffix",     "Specify a suffix", 's' },
+	{ "-f", "--format",     "Specify a format for randomization", 's' },
+	{ "-d", "--dir",     "Specify a suffix", 's' },
 //	{ NULL, "--prefix-value",     "Specify a prefix", 's' },
 //	{ NULL, "--suffix-value",     "Specify a suffix", 's' },
 	//{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
@@ -456,6 +501,18 @@ Option opts[] = {
 
 
 int main (int argc, char *argv[]) {
+#if 0
+
+//
+//Read an entire file
+//Stream based on \r\n or \n based on OS choice
+//This is not the most efficient way to do this... But things will get done.
+
+
+printf( "%s\n", WORDS[0] );
+printf( "%s\n", ADDRESSES[0] );
+exit(0);
+#endif
 	SHOW_COMPILE_DATE();
 
 	(argc < 2) ? opt_usage(opts, argv[0], "nothing to do.", 0) : opt_eval(opts, argc, argv);
