@@ -227,7 +227,6 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	memcpy( &del[ 1 ], delim, strlen(delim) );
 	//write( 2, del, strlen( del ) ); getchar();
 	//write( 2, buf, b.st_size ); getchar();
-fprintf(stderr,"calling convert f" );
 	//the headers can be the name of the field.
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
@@ -494,6 +493,7 @@ Option opts[] = {
 	{ NULL, "--comma",      "Convert into XML." },
 	{ NULL, "--carray",     "Convert into a C-style array." },
 	{ NULL, "--cstruct",    "Convert into a C struct." },
+	{ NULL, "--cfml",       "Convert into CFML structs." },
 	{ NULL, "--no-unsigned","Remove any unsigned character sequences." },
 	{ "-q", "--sql",        "Generate some random XML.", 's' },
 	{ "-n", "--newline",    "Generate newline after each row." },
