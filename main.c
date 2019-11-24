@@ -510,28 +510,19 @@ Option opts[] = {
 	//{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
 	//{ NULL, "--no-blank",   "Do not show blank values.", 's' },
 
-	//{ "-h", "--help",      "Show help." },
+	{ "-h", "--help",      "Show help." },
 	{ .sentinel = 1 }
 };
 
 
 
 int main (int argc, char *argv[]) {
-#if 0
-
-//
-//Read an entire file
-//Stream based on \r\n or \n based on OS choice
-//This is not the most efficient way to do this... But things will get done.
-
-
-printf( "%s\n", WORDS[0] );
-printf( "%s\n", ADDRESSES[0] );
-exit(0);
-#endif
 	SHOW_COMPILE_DATE();
 
 	(argc < 2) ? opt_usage(opts, argv[0], "nothing to do.", 0) : opt_eval(opts, argc, argv);
+	if ( opt_set( opts, "--help" ) ) {
+		opt_usage(opts, argv[0], "Help:", 0);	
+	}
 
 	int stream_fmt = 0;
 #if 0
