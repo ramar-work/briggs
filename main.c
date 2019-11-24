@@ -217,6 +217,10 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	int hlen = 0, vlen = 0;
 
 	//Create a new delimiter string...
+	if ( strlen( delim ) > 7 ) {
+		return nerr( "delimiter too big (exceeds max of 7 chars), stopping...\n" );
+		exit( 1 );
+	}
 	char del[ 8 ];
 	memset( &del, 0, sizeof(del) );
 	memcpy( &del, "\n", 1 );
@@ -230,7 +234,13 @@ fprintf(stderr,"calling convert f" );
 			ADD_ELEMENT( headers, hlen, char *, NULL );
 			break;
 		}
-		else if ( p.chr == ';' ) {
+#ifdef WIN32
+		#error "briggs is currently unsupported on Windows."
+		else if  (p.chr == '\r' ) {
+			0;
+		}
+#endif
+		else { //if ( p.chr == ';' ) {
 			if ( p.size == 0 ) { 
 				//
 				ADD_ELEMENT( headers, hlen, char *, strdup( "nothing" ) );
@@ -277,7 +287,13 @@ fprintf(stderr,"calling convert f" );
 				boink = 0;
 			}
 		}
-		else if ( p.chr == ';' ) {
+#ifdef WIN32
+		#error "briggs is currently unsupported on Windows."
+		else if  (p.chr == '\r' ) {
+			0;
+		}
+#endif
+		else { /*if ( p.chr == ';' ) {*/
 			Dub *v = malloc( sizeof( Dub ) );
 			v->k = headers[ hindex ];
 			//headers++;
@@ -647,6 +663,7 @@ exit(0);
 	if ( opt_set( opts, "--convert" ) ) {
 		char *ffile = opt_get( opts, "--convert" ).s;
 		char *delim = opt_get( opts, "--delimiter" ).s;
+fprintf(stderr,"Got delim %s\n",delim);
 		if ( !delim )
 			return nerr( "delimiter not set, stopping...\n" );
 		if ( !convert_f( ffile, delim, stream_fmt ) )
