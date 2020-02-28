@@ -11,6 +11,7 @@ GCCFLAGS = -g -Wall -Werror -Wno-unused \
 	-Wno-deprecated-declarations -O0 \
 	-pedantic-errors -Wno-overlength-strings -DSQROOGE_H
 CFLAGS = $(GCCFLAGS)
+OBJECTS = vendor/single.o vendor/render.o vendor/util.o
 
 #Phony targets 
 .PHONY: main clean debug leak run other
@@ -26,9 +27,18 @@ static:
 	@$(CC) -c data/address.c -o data/address.o
 
 # build
-build: vendor/single.o
-	@echo $(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS) 
-	@$(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS) 
+build: $(OBJECTS)
+	@echo $(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
+	@$(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
+
+# tests
+tests: vendor/single.o
+	@echo $(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS)
+	@$(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS)
+
+# objects
+%.o: %.c 
+	$(CC) -c -o $@ $< $(CFLAGS)
 
 #clean
 clean:
@@ -38,10 +48,10 @@ clean:
 #install
 install:
 	-mkdir -p $(PREFIX)/bin/  $(PREFIX)/share/man/man1/
-	cp $(NAME) $(PREFIX)/bin/	
+	cp $(NAME) $(PREFIX)/bin/
 	cp $(NAME).1 $(PREFIX)/share/man/man1/
 
-# test 
+# test
 test:
 	@./$(NAME) -c files/full-tab.csv --delimiter ";"
 

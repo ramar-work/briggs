@@ -3,15 +3,20 @@ briggs.c
 ========
 
 TODO
-- Handle unsigned characters
+- Convert ADD_ELEMENT to add_item from vendor/util.c
+- Clean up all of these commented blocks
+- Change name to holyfield
+- Use function pointers to print and output "rendered" data
+- Test more heavily on Windows
+- Handle unsigned characters, then it's easy to digest xls[x], etc
 - Handle Unicode (uint32_t?)
-- Generate your own values:
+- Give user the ability to generate values:
 	one flag ought to be used to generate some things
 	if I give it a file, use a single line
 	if I give it multiple values, use those
 	if I give it a string, then do yet something else...
 	briggs -t range=[ x, y, z ] 
-- Test data (especially for C/W.net)
+- Add ability to generate random test data
 	- Numbers
 	- Zips
 	- Addresses
@@ -26,10 +31,11 @@ TODO
 #define VERSION "0.01"
 #define TAB "\t\t\t\t\t\t\t\t\t"
 #include "vendor/single.h"
+#include "vendor/render.h"
 
 //Error message
 #define nerr( ... ) \
-	(fprintf( stderr, __VA_ARGS__ ) ? 1 : 1 )
+	(fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
 
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
@@ -43,10 +49,15 @@ TODO
 	*(&ptr[ ptrListSize ]) = element; \
 	ptrListSize++;
 
-//
-typedef enum {
+#ifdef WIN32
+ #define NEWLINE "\r\n"
+#else
+ #define NEWLINE "\n"
+#endif
 
-STREAM_PRINTF = 0
+typedef 
+enum {
+  STREAM_PRINTF = 0
 , STREAM_JSON
 , STREAM_XML
 , STREAM_SQL
@@ -55,11 +66,27 @@ STREAM_PRINTF = 0
 , STREAM_CARRAY
 , STREAM_JCLASS
 , STREAM_CUSTOM
-
 } Stream;
 
+typedef
+struct kv { 
+  char *k; 
+  char *v; 
+} Dub;
+
+typedef
+struct Functor {
+  const char *left_fmt;
+  const char *right_fmt;
+  //int (*fp)( int, char *, char *, void * ); 
+  int i;
+  void (*execute)( int, const char *, const char * ); 
+  void *p;
+} Functor;
 
 //Global variables to ease testing
+char *no_header = "nothing";
+char *output_file = NULL;
 char *prefix = NULL;
 char *suffix = NULL;
 char *stream_chars = NULL;
@@ -77,6 +104,9 @@ static const char *ucases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 static const char *lcases = "abcdefghijklmnopqrstuvwxyz_";
 //const char *exchrs = "~`!@#$%^&*()-_+={}[]|:;"'<>,.?/";
 
+//Data that comes from our little data folder.
+extern const char *WORDS[];
+extern const char *ADDRESSES[];
 
 //rand number between;
 long lbetween (long min, long max) {
@@ -103,11 +133,6 @@ void snakecase ( char **k ) {
 	}
 }
 
-
-
-//Data that comes from our little data folder.
-extern const char *WORDS[];
-extern const char *ADDRESSES[];
 
 //TODO: Bitshift the first int.  
 //control printing comma, control tabbing, control pretty formatting etc
@@ -171,107 +196,84 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 		vv++;
 	}
 	fprintf( stdout, &"%s, .%s = %s\n"[adv], &TAB[9-ind], k, v );
-}  
+}
 
 
-//convert CSV or similar to another format
-int convert_f ( const char *file, const char *delim, Stream stream ) {
-
-	int fd;
-	char *buf = NULL;
-	struct stat b;
-	Mem p;
-	memset( &p, 0, sizeof(Mem) );
-
-	//stat file
-	if ( stat( file, &b ) == -1 ) {
-		//should probably be a failure
-		fprintf(stderr,"fail...\n"); 
-		return 0;	
-	}
-	
-	//open file
-	if (( fd = open( file, O_RDONLY )) == -1 ) {
-		//fail if file doesn't open
-		fprintf(stderr,"fail...\n"); 
-		return 0;	
-	}
-
-	//alloc
-	if (( buf = malloc( b.st_size + 1 )) == NULL ) {
-		//fail again
-		fprintf(stderr,"fail...\n"); return 0;	
-	}
-
-	//read 
-	if ( read( fd, buf, b.st_size ) == -1 ) {
-		fprintf(stderr,"fail...\n"); return 0;	
-	}
+//Get a random element from a big list...
+int get_random_element ( char **list, char **item, int size ) {
+	//el[ $RANDOM % size ];
+	//copy to item...
+	return 0;
+}
 
 
-	//write(2,buf,b.st_size);
+int get_random_dir ( DIR *dir ) {
 
-	//char add, headers can be in their own, the other should be somewhere else...
+	return 0;
+} 
+
+
+
+char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
-	//char **values[];
-	int hlen = 0, vlen = 0;
+	Mem p = { 0 };
+	//memset( &p, 0, sizeof(Mem) );
 
-	//Create a new delimiter string...
-	if ( strlen( delim ) > 7 ) {
-		return nerr( "delimiter too big (exceeds max of 7 chars), stopping...\n" );
-		exit( 1 );
-	}
-	char del[ 8 ];
-	memset( &del, 0, sizeof(del) );
-	memcpy( &del, "\n", 1 );
-	memcpy( &del[ 1 ], delim, strlen(delim) );
-	//write( 2, del, strlen( del ) ); getchar();
-	//write( 2, buf, b.st_size ); getchar();
 	//the headers can be the name of the field.
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
 			ADD_ELEMENT( headers, hlen, char *, NULL );
 			break;
 		}
+	#if 0
 	#ifdef WIN32
 		#error "briggs is currently unsupported on Windows."
 		else if  (p.chr == '\r' ) {
 			0;
 		}
 	#endif
+	#else
+		else if ( p.chr == '\r' && buf[ p.pos + 1 ] == '\n' ) {
+			ADD_ELEMENT( headers, hlen, char *, NULL );
+			break;
+		}
+	#endif
 		else { //if ( p.chr == ';' ) {
 			if ( p.size == 0 ) { 
-				//
-				ADD_ELEMENT( headers, hlen, char *, strdup( "nothing" ) );
+				ADD_ELEMENT( headers, hlen, char *, strdup( no_header ) );
 			}
 			else {
-				char *a = malloc( p.size + 1 );
-				memset( a, 0, p.size + 1 );	
-				memcpy( a, &buf[p.pos], p.size );
+				char *b = NULL, *a = malloc( p.size + 1 );
+				int nsize = 0;
+				memset( a, 0, p.size + 1 );
+				b = (char *)trim( (unsigned char *)&buf[ p.pos ], " ", p.size, &nsize );
+				memcpy( a, b, nsize );
 				snakecase( &a );
 				ADD_ELEMENT( headers, hlen, char *, a );
 			}
 		}
 	}
+	return headers;
+}
 
-#if 1
-	if ( headers_only ) {
-		while ( *headers ) {
-			fprintf( stdout, "%s\n", *headers );
-			headers++;
-		}
-		//exit( 0 );
+
+void free_headers ( char **headers ) {
+	while ( *headers ) {
+		free( *headers );
+		headers++;
 	}
-#endif
+}
 
-	//...
-	typedef struct { char *k, *v; } Dub;
-	Dub *v = NULL, **iv = NULL; 
-	void **ov = NULL;
+
+Dub *** generate_records ( char *buf, char *del, char **headers ) {
+	Dub *v = NULL;
+	Dub **iv = NULL;
+	Dub ***ov = NULL;
 	int odvlen = 0;
 	int idvlen = 0;
 	int hindex = 0;
 	int boink = 0;
+	Mem p = { 0 };
 
 	//Now allocate for values
 	while ( strwalk( &p, buf, del ) ) {
@@ -301,9 +303,9 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 			memset( v->v, 0, p.size + 1 );
 
 			//Check reps
-	#if 0
+		#if 0
 			memcpy( v->v, &buf[p.pos], p.size );   
-	#else
+		#else
 			if ( !reps && !no_unsigned ) 
 				memcpy( v->v, &buf[p.pos], p.size );   
 			else {
@@ -352,21 +354,37 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 					//zero out n<p.size
 				}
 			}
-#endif
+		#endif
 			ADD_ELEMENT( iv, idvlen, Dub *, v );
 			if ( hindex > hlen ) {
 				boink = 1;	
 			}
 		}
 	}
-
-	//move through the thing
-	FILE *output = stdout;
 	ADD_ELEMENT( ov, odvlen, Dub **, NULL );	
+	return ov;
+}
+
+
+void free_records ( Dub ***ov ) {
+	while ( *ov ) {
+		Dub **iv = *ov;
+		while ( *iv && (*iv)->k ) {
+			free( (*iv)->v );
+			free( *iv );
+			iv++;
+		}
+		free( iv );
+		ov++;
+	}
+}
+
+
+#if 0
+void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 	int odv = 0;
 	while ( *ov ) {
-		Dub **bv = (Dub **)*ov;
-		//int p = 0;
+		Dub **bv = *ov;
 
 		//Prefix
 		if ( prefix ) {
@@ -438,77 +456,151 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		}
 
 		if ( newline ) {
-			fprintf( output, "\n" );
+			fprintf( output, NEWLINE );
 		}
 			
 		ov++, odv++;
 	}
+}
+#endif
 
+
+Functor f[] = {
+	[STREAM_PRINTF ] = { NULL, NULL, 0, p_default, NULL },
+	[STREAM_XML    ] = { NULL, NULL, 0, p_xml, NULL },
+	[STREAM_COMMA  ] = { NULL, NULL, 1, p_comma, NULL },
+	[STREAM_CSTRUCT] = { NULL, "}", 1, p_cstruct, NULL },
+	[STREAM_CARRAY ] = { NULL, " }", 1, p_carray, NULL },
+	[STREAM_SQL    ] = { NULL, " );", 0, p_sql, NULL },
+	[STREAM_JSON   ] = { NULL, "}", 0, p_json, NULL },
+};
+
+
+//convert CSV or similar to another format
+int convert_f ( const char *file, const char *delim, Stream stream ) {
+
+	char *buf = NULL; 
+	char **headers = NULL;
+	Dub ***vv, ***ov = NULL;
+       	char err[ 2048 ] = { 0 };	
+	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	int odv = 0, buflen = 0;
+	FILE *output = stdout;
+	Functor fp = f[ stream ];
+	
+	if ( !delim || strlen( delim ) > 7 ) {
+		return nerr( "delimiter too big (exceeds max of 7 chars), stopping...\n" );
+	}
+
+	//Create the new delimiter string.
+	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
+
+	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
+		return nerr( err );;
+	}
+
+
+	if ( !( headers = generate_headers( buf, del ) ) ) {
+		free( buf );
+		return nerr( "Failed to generate headers." );
+	}
+
+	if ( headers_only ) {
+		while ( headers && *headers ) {
+			fprintf( stdout, "%s\n", *headers );
+			headers++;
+		}
+	}
+
+	if ( !( ov = generate_records( buf, del, headers ) ) ) {
+		free_headers( headers );
+		free( buf );
+		return nerr( "Failed to generate records." );
+	}
+
+
+	//Output the string or render, should probably be done with function pointers anyway...
+	if ( output_file && !( output = fopen( output_file, "w" ) ) ) {
+		snprintf( err, sizeof( err ), "Failed to open file '%s' for writing: %s", output_file, strerror(errno) );
+		return nerr( err );
+	}
+
+#if 0
+	output_records( ov, output, stream );
+#else
+	while ( *vv ) {
+		( prefix ) ? fprintf( output, "%s", prefix ) : 0;
+
+		if ( fp.left_fmt ) {
+			fprintf( output, fp.left_fmt, odv ? "," : " " ); 
+		}
+
+		Dub **bv = *vv;
+		while ( *bv && (*bv)->k ) {
+			fp.execute( fp.i, (*bv)->k, (*bv)->v );
+			bv++;
+		}
+
+		if ( fp.right_fmt ) {
+			fprintf( output, fp.right_fmt );
+		}
+
+		( suffix ) ? fprintf( output, "%s", suffix ) : 0;
+		( newline ) ? fprintf( output, NEWLINE ) : 0;
+		vv++;
+	}		
+#endif
+
+	if ( output_file && fclose( output ) ) {
+		snprintf( err, sizeof( err ), "Failed to close file '%s': %s", output_file, strerror(errno) );
+		return nerr( err );
+	}
+
+	free( buf );
+	free_records( ov );
+	free_headers( headers );
 	return 1;
-
 }
 
-
-
-//Get a random element from a big list...
-int get_random_element ( char **list, char **item, int size ) {
-	//el[ $RANDOM % size ];
-	//copy to item...
-	return 0;
-}
-
-
-int get_random_dir ( DIR *dir ) {
-
-	return 0;
-} 
 
 
 
 
 //Options
 Option opts[] = {
-//	{ "-a", "--directory",  "Simulate receiving this url.",  's' },
-//	{ "-b", "--create-db",  "Simulate receiving this url.",      },
-//	{ "-d", "--deploy",     "Deploy somewhere [ aws, heroku, linode, shared ]",     's' },
-//	{ "-s", "--seed",       "Seed a database." },
-
-
-	//Stop at this many rows
-	//{ "-r", "--rows",       "Define a number of rows.", 'n' },
-	//{ "-n", "--newline",    "Override the default delimiter.", 's' },
-
 	//Convert may be all I do from here...
-	{ "-c", "--convert",    "Load a file (should be a CSV now)", 's' },
-	{ "-d", "--delimiter",  "Specify a delimiter", 's' },
-	{ NULL, "--cut",  "Cut parts of a string", 's' },
+	{ "-c", "--convert",     "Load a file (should be a CSV now)", 's' },
+	{ "-d", "--delimiter",   "Specify a delimiter", 's' },
+	{ NULL, "--cut",         "Cut parts of a string", 's' },
 	{ NULL, "--headers-only","Only display the headers" },
-	//{ "-d", "--input-delimiter",  "Specify an input delimiter", 's' },
-	//{ "-d", "--output-delimiter",  "Specify an output delimiter", 's' },
-	//{ "-e", "--extract",  "Specify fields to extract by name or number", 's' },
+	{ NULL, "--no-unsigned", "Remove any unsigned character sequences." },
 
 	//Serialization formats
-	{ "-j", "--json",       "Convert into JSON." },
-	{ "-x", "--xml",        "Convert into XML." },
-	{ NULL, "--comma",      "Convert into XML." },
-	{ NULL, "--carray",     "Convert into a C-style array." },
-	{ NULL, "--cstruct",    "Convert into a C struct." },
-	{ NULL, "--cfml",       "Convert into CFML structs." },
-	{ NULL, "--no-unsigned","Remove any unsigned character sequences." },
-	{ "-q", "--sql",        "Generate some random XML.", 's' },
-	{ "-n", "--newline",    "Generate newline after each row." },
-	//{ NULL, "--java-class", "Convert into a Java class." },
-	//{ "-m", "--msgpack",    "Generate some random msgpack." },
+	{ "-j", "--json",        "Convert into JSON." },
+	{ "-x", "--xml",         "Convert into XML." },
+	{ NULL, "--comma",       "Convert into XML." },
+	{ NULL, "--carray",      "Convert into a C-style array." },
+	{ NULL, "--cstruct",     "Convert into a C struct." },
+	{ NULL, "--cfml",        "Convert into CFML structs." },
+	{ "-q", "--sql",         "Generate some random XML.", 's' },
+	{ "-n", "--newline",     "Generate newline after each row." },
+#if 0
+	{ NULL, "--java-class",  "Convert into a Java class." },
+	{ "-m", "--msgpack",     "Generate some random msgpack." },
+#endif
 
 	//Add prefix and suffix to each row
 	{ "-p", "--prefix",     "Specify a prefix", 's' },
 	{ "-s", "--suffix",     "Specify a suffix", 's' },
 	{ "-f", "--format",     "Specify a format for randomization", 's' },
 	{ "-d", "--dir",     "Specify a suffix", 's' },
-//	{ NULL, "--prefix-value",     "Specify a prefix", 's' },
-//	{ NULL, "--suffix-value",     "Specify a suffix", 's' },
-	//{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
-	//{ NULL, "--no-blank",   "Do not show blank values.", 's' },
+#if 0 
+	//Most of these are just under construction
+	{ "-r", "--rows",       "Stop when reaching this number of rows.", 'n' },
+	{ "-b", "--blank",      "Define a default header for blank lines.", 's' },
+	{ "-e", "--extract",  "Specify fields to extract by name or number", 's' },
+	{ NULL, "--no-blank",   "Do not show blank values.", 's' },
+#endif
 
 	{ "-h", "--help",      "Show help." },
 	{ .sentinel = 1 }
@@ -654,16 +746,10 @@ int main (int argc, char *argv[]) {
 	if ( opt_set( opts, "--convert" ) ) {
 		char *ffile = opt_get( opts, "--convert" ).s;
 		char *delim = opt_get( opts, "--delimiter" ).s;
-	#ifdef DEBUG
-		fprintf(stderr,"Got delim %s\n",delim);
-	#endif
 
-		if ( !delim )
+		if ( !delim ) {
 			return nerr( "delimiter not set, stopping...\n" );
-
-	#ifdef DEBUG
-		fprintf(stderr,"Caling convert_f\n" );
-	#endif
+		}
 
 		if ( !convert_f( ffile, delim, stream_fmt ) ) {
 			return nerr( "conversion of file failed...\n" );
