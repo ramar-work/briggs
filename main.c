@@ -175,6 +175,8 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 	char *vv = (char *)v;
 	if ( !strlen( vv ) ) {
 		fprintf( stdout, &", .%s = \"\"\n"[adv], &TAB[9-ind], k );
+		//fprintf( stderr, "%d\n", adv );
+		//fprintf( stdout, &", .%s = \"\"\n"[adv], k );
 		return;
 	}
 	#if 0
@@ -190,12 +192,13 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 	#endif
 	while ( *vv ) {
 		if ( !memchr( "0123456789", *vv, 10 ) ) {
-			fprintf( stdout, &",%s.%s = \"%s\"\n"[adv], &TAB[9-ind], k, v );
+			//fprintf( stdout, &",%s.%s = \"%s\"\n"[adv], &TAB[9-ind], k, v );
+			fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
 			return;	
 		}
 		vv++;
 	}
-	fprintf( stdout, &"%s, .%s = %s\n"[adv], &TAB[9-ind], k, v );
+	fprintf( stdout, &", .%s = %s\n"[adv], k, v );
 }
 
 
