@@ -380,7 +380,6 @@ void free_records ( Dub ***ov ) {
 }
 
 
-#if 0
 void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 	int odv = 0;
 	while ( *ov ) {
@@ -462,7 +461,6 @@ void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 		ov++, odv++;
 	}
 }
-#endif
 
 
 Functor f[] = {
@@ -525,31 +523,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		return nerr( err );
 	}
 
-#if 0
 	output_records( ov, output, stream );
-#else
-	while ( *vv ) {
-		( prefix ) ? fprintf( output, "%s", prefix ) : 0;
-
-		if ( fp.left_fmt ) {
-			fprintf( output, fp.left_fmt, odv ? "," : " " ); 
-		}
-
-		Dub **bv = *vv;
-		while ( *bv && (*bv)->k ) {
-			fp.execute( fp.i, (*bv)->k, (*bv)->v );
-			bv++;
-		}
-
-		if ( fp.right_fmt ) {
-			fprintf( output, fp.right_fmt );
-		}
-
-		( suffix ) ? fprintf( output, "%s", suffix ) : 0;
-		( newline ) ? fprintf( output, NEWLINE ) : 0;
-		vv++;
-	}		
-#endif
 
 	if ( output_file && fclose( output ) ) {
 		snprintf( err, sizeof( err ), "Failed to close file '%s': %s", output_file, strerror(errno) );
@@ -561,8 +535,6 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	free_headers( headers );
 	return 1;
 }
-
-
 
 
 
@@ -639,20 +611,25 @@ int main (int argc, char *argv[]) {
 	if ( opt_set( opts, "--strict" ) )
 		0;//stream_fmt = STREAM_JSON;	
 
-	if ( opt_set( opts, "--json" ) )
+	if ( opt_set( opts, "--json" ) ) {
 		stream_fmt = STREAM_JSON;	
+	}
 
-	if ( opt_set( opts, "--xml" ) )
+	if ( opt_set( opts, "--xml" ) ) {
 		stream_fmt = STREAM_XML;	
+	}
 
-	if ( opt_set( opts, "--cstruct" ) )
+	if ( opt_set( opts, "--cstruct" ) ) {
 		stream_fmt = STREAM_CSTRUCT;	
+	}
 
-	if ( opt_set( opts, "--comma" ) )
+	if ( opt_set( opts, "--comma" ) ) {
 		stream_fmt = STREAM_COMMA;	
+	}
 
-	if ( opt_set( opts, "--carray" ) )
+	if ( opt_set( opts, "--carray" ) ) {
 		stream_fmt = STREAM_CARRAY;	
+	}
 
 	if ( opt_set( opts, "--newline" ) ) {
 		//consider being able to take numbers for newlines...
