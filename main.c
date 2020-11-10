@@ -235,7 +235,6 @@ int get_random_element ( char **list, char **item, int size ) {
 
 
 int get_random_dir ( DIR *dir ) {
-
 	return 0;
 }
 
@@ -302,6 +301,57 @@ void free_headers ( char **headers ) {
 }
 
 
+void extract_value_from_column ( char *src, char **dest, int size ) {
+	if ( !reps && !no_unsigned ) 
+		memcpy( *dest, src, size );
+	else {
+		char *pp = src;
+		int k=0;
+		//just do two seperate passes... 
+		//TODO: wow, this is bad...
+		if ( no_unsigned ) {
+			for ( int i=0; i < size; i++ ) {
+				if ( pp[ i ] < 32 || pp[ i ] > 126 )
+					0;// v->v[ i ] = ' ';
+				else {
+					*dest[ k ] = pp[ i ];
+					k++;
+				}
+			}
+		}
+
+		if ( reps ) {
+			if ( !k ) {
+				k = size;
+			}
+			else {
+				pp = *dest; //v->v;
+			}
+
+			for ( int i=0, l=0; i<k; i++ ) {
+				int j = 0;
+				struct rep **r = reps;
+				while ( (*r)->o ) {
+					if ( pp[ i ] == (*r)->o ) {
+						j = 1;		
+						if ( (*r)->r != 0 ) {
+							*dest[ l ] = (*r)->r;
+							l++;
+						}
+						break;
+					}
+					r++;
+				}
+				if ( !j ) {
+					*dest[ l ] = pp[ i ];
+					l++;
+				}
+			}
+		}
+	}
+}
+
+
 Dub *** generate_records ( char *buf, char *del, char **headers ) {
 	Dub *v = NULL;
 	Dub **iv = NULL;
@@ -310,18 +360,27 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 	int idvlen = 0;
 	int hindex = 0;
 	int boink = 0;
+	int pt = 0;
+	char *newbuf = NULL;	
 	zWalker p = { 0 };
+
+	//Find the first '\n' and skip it
+	while ( *buf != '\n' ) {
+		buf++;
+	}	
 
 	//Now allocate for values
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
 			if ( iv || boink ) {
-				//ADD_ELEMENT( iv, idvlen, Dub *, NULL );
-				//ADD_ELEMENT( ov, odvlen, Dub **, iv );	
-				add_item( &iv, NULL, Dub *, &idvlen );
+				Dub *v = malloc( sizeof( Dub ) );
+				v->k = headers[ hindex ];
+				v->v = malloc( p.size + 1 );
+				memset( v->v, 0, p.size + 1 );
+				extract_value_from_column( &buf[ p.pos ], &v->v, p.size );	
+				add_item( &iv, v, Dub *, &idvlen );
 				add_item( &ov, iv, Dub **, &odvlen );	
 				iv = NULL; 
-				//headers -= hlen; 
 				idvlen = 0;
 				hindex = 0;
 				boink = 0;
@@ -336,72 +395,15 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 		else { /*if ( p.chr == ';' ) {*/
 			Dub *v = malloc( sizeof( Dub ) );
 			v->k = headers[ hindex ];
-			//headers++;
-			hindex++;
 			v->v = malloc( p.size + 1 );
 			memset( v->v, 0, p.size + 1 );
-
-			//Check reps
-		#if 0
-			memcpy( v->v, &buf[p.pos], p.size );   
-		#else
-			if ( !reps && !no_unsigned ) 
-				memcpy( v->v, &buf[p.pos], p.size );   
-			else {
-				char *pp = &buf[ p.pos ];
-				int k=0;
-				//just do two seperate passes... 
-				//TODO: wow, this is bad...
-				if ( no_unsigned ) {
-					for ( int i=0; i<p.size; i++ ) {
-						if ( pp[ i ] < 32 || pp[ i ] > 126 )
-							0;// v->v[ i ] = ' ';
-						else {
-							v->v[ k ] = pp[ i ];
-							k++;
-						}
-					}
-				}
-		
-				if ( reps ) {
-					if ( !k ) {
-						k = p.size;
-					}
-					else {
-						pp = v->v;
-					}
-
-					for ( int i=0, l=0; i<k; i++ ) {
-						int j = 0;
-						struct rep **r = reps;
-						while ( (*r)->o ) {
-							if ( pp[ i ] == (*r)->o ) {
-								j = 1;		
-								if ( (*r)->r != 0 ) {
-									v->v[ l ] = (*r)->r;
-									l++;
-								}
-								break;
-							}
-							r++;
-						}
-						if ( !j ) {
-							v->v[ l ] = pp[ i ];
-							l++;
-						}
-					}
-					//zero out n<p.size
-				}
-			}
-		#endif
-			//ADD_ELEMENT( iv, idvlen, Dub *, v );
+			extract_value_from_column( &buf[ p.pos ], &v->v, p.size );	
 			add_item( &iv, v, Dub *, &idvlen );
-			if ( hindex > hlen ) {
+			if ( ++hindex > hlen ) {
 				boink = 1;	
 			}
 		}
 	}
-	//ADD_ELEMENT( &ov, odvlen, Dub **, NULL );	
 	return ov;
 }
 
@@ -569,17 +571,9 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		return nerr( err );
 	}
 
-
 	if ( !( headers = generate_headers( buf, del ) ) ) {
 		free( buf );
 		return nerr( "Failed to generate headers." );
-	}
-
-	if ( headers_only ) {
-		while ( headers && *headers ) {
-			fprintf( stdout, "%s\n", *headers );
-			headers++;
-		}
 	}
 
 	if ( !( ov = generate_records( buf, del, headers ) ) ) {
@@ -587,7 +581,6 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		free( buf );
 		return nerr( "Failed to generate records." );
 	}
-
 
 	//Output the string or render, should probably be done with function pointers anyway...
 	if ( output_file && !( output = fopen( output_file, "w" ) ) ) {
@@ -710,21 +703,10 @@ int main (int argc, char *argv[]) {
 			stream_fmt = STREAM_CUSTOM;	
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) ) {
 			stream_fmt = STREAM_SQL;
-			
 			if ( !dupval( *(++argv), &sqltable ) ) {
-				fprintf( stderr, "No SQL table specelse ified for this statement.\n" );
+				fprintf( stderr, "No SQL table specified for this argument.\n" );
 				exit( 1 );
 			}
-		#if 0
-			else if ( !(*argv) || !( sqltable = strdup( *argv ) ) ) { 
-				fprintf( stderr, "No SQL table specelse ified for this statement.\n" );
-				exit( 1 );
-			}
-			else if ( *sqltable == '-' ) {
-				fprintf( stderr, "Got flag, expected value.\n" );
-				exit( 1 );
-			}
-		#endif
 		}
 
 		//
