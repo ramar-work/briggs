@@ -3,13 +3,15 @@
 #endif 
 
 #include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
 #include "../vendor/zwalker.h"
-#include "../vendor/zhasher.h"
 
 #ifndef UTIL_H
 #define UTIL_H
