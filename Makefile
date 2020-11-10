@@ -55,6 +55,21 @@ install:
 test:
 	@./$(NAME) -c files/full-tab.csv --delimiter ";"
 
+mysql-test:
+	mysql -u $(USER) --password=$(PSWD) < test/mysql && mysql -u $(USER) --password=$(PSWD) -Dflojo -e 'select * from quickcart_inventory'
+
+sqlite-test:
+	sqlite3 < test/sqlite && echo 'select * from quickcart_inventory' | sqlite3
+
+mssql-test:
+	sqlcmd -U $(USER) -P $(PSWD) < test/sqlserver && sqlcmd -U $(USER) -P $(PSWD) -d flojo -Q 'select * from quickcart_inventory'
+
+oracle-test:
+	???
+
+psql-test:
+	psql -u $(USER) < test/postgresql && psql -u $(USER) --password=$(PSWD) -Dflojo -e 'select * from quickcart_inventory'
+
 # doctest
 doctest:
 	markdown -S README.md > $(DOCFILE)

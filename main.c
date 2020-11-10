@@ -405,10 +405,19 @@ void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 			fprintf( output, "%s{", odv ? "," : " "  );
 		else if ( stream == STREAM_CARRAY )
 			fprintf( output, "%s{ ", odv ? "," : " "  ); 
-		else if ( stream == STREAM_SQL )
-			fprintf( output, "INSERT INTO %s VALUES ( ", sqltable );
-		else if ( stream == STREAM_JSON ) {
+		else if ( stream == STREAM_JSON )
 			fprintf( output, "%s{", odv ? "," : " "  );
+		else if ( stream == STREAM_SQL ) {
+			Dub **hv = *ov;
+			int a = 0;
+			fprintf( output, "INSERT INTO %s ( ", sqltable );
+			while ( *hv && (*hv)->k ) {
+				fprintf( output, "%s%s", ( a++ ) ? "," : "", (*hv)->k );
+				hv++;	
+			}
+	
+			//The VAST majority of engines will be handle specifying the column names 
+			fprintf( output, " ) VALUES ( " );
 		}
 
 		//The body
