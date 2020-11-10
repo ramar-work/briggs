@@ -3,11 +3,7 @@ briggs.c
 ========
 
 TODO
-- Convert ADD_ELEMENT to add_item from vendor/util.c
-- Clean up all of these commented blocks
-- Change name to holyfield
-- Use function pointers to print and output "rendered" data
-- Test more heavily on Windows
+----
 - Handle unsigned characters, then it's easy to digest xls[x], etc
 - Handle Unicode (uint32_t?)
 - Give user the ability to generate values:
@@ -16,6 +12,7 @@ TODO
 	if I give it multiple values, use those
 	if I give it a string, then do yet something else...
 	briggs -t range=[ x, y, z ] 
+- Start testing on Windows
 - Add ability to generate random test data
 	- Numbers
 	- Zips
@@ -30,9 +27,6 @@ TODO
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
 #define TAB "\t\t\t\t\t\t\t\t\t"
-//#include "vendor/single.h"
-//#include "vendor/render.h"
-//#include "vendor/util.h"
 
 #include <stdio.h>
 #include <dirent.h>
@@ -41,21 +35,11 @@ TODO
 #include "vendor/zwalker.h"
 #include "vendor/util.h"
 
-//Error message
 #define nerr( ... ) \
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
 
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
-
-#define ADD_ELEMENT( ptr, ptrListSize, eSize, element ) \
-	if ( ptr ) \
-		ptr = realloc( ptr, sizeof( eSize ) * ( ptrListSize + 1 ) ); \
-	else { \
-		ptr = malloc( sizeof( eSize ) ); \
-	} \
-	*(&ptr[ ptrListSize ]) = element; \
-	ptrListSize++;
 
 #ifdef WIN32
  #define NEWLINE "\r\n"
@@ -65,7 +49,8 @@ TODO
 
 typedef 
 enum {
-  STREAM_PRINTF = 0
+  STREAM_NONE = -1
+, STREAM_PRINTF = 0
 , STREAM_JSON
 , STREAM_XML
 , STREAM_SQL
@@ -139,8 +124,7 @@ long lbetween (long min, long max) {
 	return r;
 }
 
-//Convert word
-//char *w = strdup( "WORD" );snakecase( &w );
+//Convert word to snake_case
 void snakecase ( char **k ) {
 	char *nk = *k;
 	int p=0;
@@ -225,20 +209,7 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 	fprintf( stdout, &", .%s = %s\n"[adv], k, v );
 }
 
-
-//Get a random element from a big list...
-int get_random_element ( char **list, char **item, int size ) {
-	//el[ $RANDOM % size ];
-	//copy to item...
-	return 0;
-}
-
-
-int get_random_dir ( DIR *dir ) {
-	return 0;
-}
-
-
+//Copy a string off as snake_case
 char * copy_and_snakecase( char *src, int size ) {
 	char *b = NULL; 
 	char *a = malloc( size + 1 );
@@ -251,8 +222,7 @@ char * copy_and_snakecase( char *src, int size ) {
 	return a;
 } 
 
-
-
+//Extract the headers from a CSV
 char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
 	zWalker p;// = { 0 };
@@ -262,7 +232,6 @@ char ** generate_headers( char *buf, char *del ) {
 	while ( strwalk( &p, buf, del ) ) {
 		if ( p.chr == '\n' ) {
 			//add_item( &headers, hlen, char *, NULL );
-			//ADD_ELEMENT( headers, hlen, char *, NULL );
 			add_item( &headers, copy_and_snakecase( &buf[ p.pos ], p.size ), char *, &hlen );
 			break;
 		}
@@ -275,13 +244,11 @@ char ** generate_headers( char *buf, char *del ) {
 	#endif
 	#else
 		else if ( p.chr == '\r' && buf[ p.pos + 1 ] == '\n' ) {
-			//ADD_ELEMENT( headers, hlen, char *, NULL );
 			break;
 		}
 	#endif
 		else { //if ( p.chr == ';' ) {
 			if ( p.size == 0 ) { 
-				//ADD_ELEMENT( headers, hlen, char *, strdup( no_header ) );
 				add_item( &headers, strdup( no_header ), char *, &hlen );
 			}
 			else {
@@ -292,14 +259,12 @@ char ** generate_headers( char *buf, char *del ) {
 	return headers;
 }
 
-
 void free_headers ( char **headers ) {
 	while ( *headers ) {
 		free( *headers );
 		headers++;
 	}
 }
-
 
 void extract_value_from_column ( char *src, char **dest, int size ) {
 	if ( !reps && !no_unsigned ) 
@@ -350,7 +315,6 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 		}
 	}
 }
-
 
 Dub *** generate_records ( char *buf, char *del, char **headers ) {
 	Dub *v = NULL;
@@ -420,7 +384,6 @@ void free_records ( Dub ***ov ) {
 		ov++;
 	}
 }
-
 
 void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 	int odv = 0;
@@ -504,7 +467,6 @@ void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 	}
 }
 
-
 Functor f[] = {
 	[STREAM_PRINTF ] = { NULL, NULL, 0, p_default, NULL },
 	[STREAM_XML    ] = { NULL, NULL, 0, p_xml, NULL },
@@ -514,8 +476,6 @@ Functor f[] = {
 	[STREAM_SQL    ] = { NULL, " );", 0, p_sql, NULL },
 	[STREAM_JSON   ] = { NULL, "}", 0, p_json, NULL },
 };
-
-
 
 int headers_f ( const char *file, const char *delim ) {
 	char **headers = NULL;
@@ -550,7 +510,6 @@ int headers_f ( const char *file, const char *delim ) {
 
 //convert CSV or similar to another format
 int convert_f ( const char *file, const char *delim, Stream stream ) {
-
 	char *buf = NULL; 
 	char **headers = NULL;
 	Dub ***vv, ***ov = NULL;
@@ -617,14 +576,14 @@ int help () {
 	//Serialization formats
 	fprintf( stderr, fmt,  "-j", "json",        "Convert into JSON."  );
 	fprintf( stderr, fmt,  "-x", "xml",         "Convert into XML."  );
-	fprintf( stderr, fmt,  "", "comma",       "Convert into XML."  );
 	fprintf( stderr, fmt,  "", "carray",      "Convert into a C-style array."  );
+	fprintf( stderr, fmt,  "", "comma",       "Convert into XML."  );
+	fprintf( stderr, fmt,  "-n", "newline",     "Generate newline after each row."  );
+	fprintf( stderr, fmt,  "", "java-class",  "Convert into a Java class."  );
+#if 0
 	fprintf( stderr, fmt,  "", "cstruct",     "Convert into a C struct."  );
 	fprintf( stderr, fmt,  "", "cfml",        "Convert into CFML structs."  );
 	fprintf( stderr, fmt,  "-q", "sql",         "Generate some random XML." );
-	fprintf( stderr, fmt,  "-n", "newline",     "Generate newline after each row."  );
-#if 0
-	fprintf( stderr, fmt,  "", "java-class",  "Convert into a Java class."  );
 	fprintf( stderr, fmt,  "-m", "msgpack",     "Generate some random msgpack."  );
 #endif
 
@@ -643,8 +602,6 @@ int help () {
 	return 0;
 }
 
-
-
 char *dupval ( char *val, char **setval ) {
 	if ( !val ) 
 		return NULL;
@@ -662,23 +619,12 @@ char *dupval ( char *val, char **setval ) {
 
 int main (int argc, char *argv[]) {
 	SHOW_COMPILE_DATE();
-
+	int stream_fmt = STREAM_PRINTF;
 	char err[ 2048 ] = { 0 };
+
 	if ( argc < 2 || !strcmp( "*argv", "-h" ) || !strcmp(*argv, "--help") ) {
 		return help();
 	}
-
-	int stream_fmt = 0;
-#if 0
-	if ( opt_set( opts, "--rows" ) )
-		rows = opt_get(opts, "--rows").n;	
-
-	if ( opt_set( opts, "--seed" ) )
-		seeddb(); 
-
-	if ( opt_set( opts, "--json" ) )
-		json(); 
-#endif
 
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
@@ -687,6 +633,11 @@ int main (int argc, char *argv[]) {
 			headers_only = 1;	
 		else if ( !strcmp( *argv, "-c" ) || !strcmp( *argv, "--convert" ) )
 			convert = 1;	
+		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--newline" ) )
+			newline = 1; //TODO: Consider being able to take numbers for newlines...
+	#if 0
+		//TODO: Convert to single --stream argument vs all of these flags...
+	#else	
 		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
 			stream_fmt = STREAM_JSON;	
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
@@ -697,10 +648,9 @@ int main (int argc, char *argv[]) {
 			stream_fmt = STREAM_COMMA;	
 		else if ( !strcmp( *argv, "--carray" ) )
 			stream_fmt = STREAM_CARRAY;	
-		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--newline" ) )
-			newline = 1; //TODO: Consider being able to take numbers for newlines...
 		else if ( !strcmp( *argv, "--custom" ) )
 			stream_fmt = STREAM_CUSTOM;	
+	#endif
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) ) {
 			stream_fmt = STREAM_SQL;
 			if ( !dupval( *(++argv), &sqltable ) ) {
@@ -708,26 +658,21 @@ int main (int argc, char *argv[]) {
 				exit( 1 );
 			}
 		}
-
-		//
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) ) {
 				return nerr( "No argument specified for --prefix." );
 			}
 		}
-
 		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--suffix" ) ) {
 			if ( !dupval( *(++argv), &suffix ) ) {
 				return nerr( "No argument specified for --suffix." );
 			}
 		}
-
 		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
 			if ( !dupval( *(++argv), &DELIM ) ) {
 				return nerr( "No argument specified for --delimiter." );
 			}
 		}
-
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--file" ) ) {
 			if ( !dupval( *(++argv), &FFILE ) ) {
 				return nerr( "No file specified with --file..." );
@@ -766,7 +711,7 @@ int main (int argc, char *argv[]) {
 
 	#if 0
 	//Detect characters to cut here...
-	if ( strcmp( *argv, "--cut" ) ) {
+	if ( do_cut ) {
 		char *sopts;
 		zWalker cc;
 
