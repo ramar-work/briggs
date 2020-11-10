@@ -11,7 +11,7 @@ GCCFLAGS = -g -Wall -Werror -Wno-unused \
 	-Wno-deprecated-declarations -O0 \
 	-pedantic-errors -Wno-overlength-strings -DSQROOGE_H
 CFLAGS = $(GCCFLAGS)
-OBJECTS = vendor/single.o vendor/render.o vendor/util.o
+OBJECTS = vendor/zwalker.o vendor/util.o
 
 #Phony targets 
 .PHONY: main clean debug leak run other
