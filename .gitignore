@@ -1,7 +1,12 @@
-files
+# Ignore these
+files/
 *.o
 etc.c
 img
 TODO
-vendor
+vendor/
 briggs
+
+
+! vendor/zwalker.c
+! vendor/zwalker.h
