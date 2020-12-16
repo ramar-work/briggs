@@ -385,6 +385,7 @@ void free_records ( Dub ***ov ) {
 	}
 }
 
+
 void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 	int odv = 0;
 	while ( *ov ) {
@@ -610,6 +611,8 @@ int help () {
 	fprintf( stderr, fmt,  "-h", "help",      "Show help."  );
 	return 0;
 }
+
+
 
 char *dupval ( char *val, char **setval ) {
 	if ( !val ) 
