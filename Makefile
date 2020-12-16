@@ -2,15 +2,14 @@
 NAME = briggs
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
-CC = gcc 
-CLANGFLAGS = -g -Wall -Werror -std=c99 -Wno-unused \
-	-fsanitize=address \
+CLANGFLAGS = -g -Wall -Werror -std=c99 -Wno-unused -fsanitize=address \
 	-fsanitize-undefined-trap-on-error
-GCCFLAGS = -g -Wall -Werror -Wno-unused \
-	-Wstrict-overflow -ansi -std=c99 \
-	-Wno-deprecated-declarations -O0 \
-	-pedantic-errors -Wno-overlength-strings -DSQROOGE_H
-CFLAGS = $(GCCFLAGS)
+GCCFLAGS = -g -Wall -Werror -Wno-unused -Wstrict-overflow -std=c99 \
+	-Wno-deprecated-declarations -O0 -pedantic-errors -Wno-overlength-strings
+CFLAGS = $(CLANGFLAGS)
+#CFLAGS = $(GCCFLAGS)
+CC = clang 
+#CC = gcc
 OBJECTS = vendor/zwalker.o vendor/util.o
 
 #Phony targets 

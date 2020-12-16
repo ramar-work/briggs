@@ -1,28 +1,37 @@
 /* ------------------------------------------------------- *
-briggs.c 
-========
-
-TODO
-----
-- Handle unsigned characters, then it's easy to digest xls[x], etc
-- Handle Unicode (uint32_t?)
-- Give user the ability to generate values:
-	one flag ought to be used to generate some things
-	if I give it a file, use a single line
-	if I give it multiple values, use those
-	if I give it a string, then do yet something else...
-	briggs -t range=[ x, y, z ] 
-- Start testing on Windows
-- Add ability to generate random test data
-	- Numbers
-	- Zips
-	- Addresses
-	- Names
-	- Words
-	- Paragraphs
-	- URLs
-	- Images (probably from a directory is the most useful)
-	
+ * briggs.c 
+ * ========
+ * A tool for converting CSV sheets into other data formats. 
+ *
+ * Usage
+ * -----
+ * briggs can be used to turn CSV data into a SQL upload, a
+ * C-style struct, JSON, XML and more. 
+ *
+ * Options are as follows:
+ *
+ * 
+ * TODO
+ * ----
+ * - Handle unsigned characters, then it's easy to digest xls[x], etc
+ * - Handle Unicode (uint32_t?)
+ * - Give user the ability to generate values:
+ * 	one flag ought to be used to generate some things
+ * 	if I give it a file, use a single line
+ * 	if I give it multiple values, use those
+ * 	if I give it a string, then do yet something else...
+ * 	briggs -t range=[ x, y, z ] 
+ * - Start testing on Windows
+ * - Add ability to generate random test data
+ * 	- Numbers
+ * 	- Zips
+ * 	- Addresses
+ * 	- Names
+ * 	- Words
+ * 	- Paragraphs
+ * 	- URLs
+ * 	- Images (probably from a directory is the most useful)
+ * 	
  * ------------------------------------------------------- */
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
@@ -487,8 +496,9 @@ Functor f[] = {
 	[STREAM_JSON   ] = { NULL, "}", 0, p_json, NULL },
 };
 
+
 int headers_f ( const char *file, const char *delim ) {
-	char **headers = NULL;
+	char **h = NULL, **headers = NULL;
 	char *buf = NULL; 
 	int buflen = 0;
 	char err[ 2048 ] = { 0 };
@@ -498,22 +508,23 @@ int headers_f ( const char *file, const char *delim ) {
 	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
 
 	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
-		return nerr( err );
+		return nerr( "%s", err );
 	}
 
-	if ( !( headers = generate_headers( buf, del ) ) ) {
+	if ( !( h = headers = generate_headers( buf, del ) ) ) {
 		free( buf );
 		return nerr( "Failed to generate headers." );
 	}
 
-	if ( headers_only ) {
-		while ( headers && *headers ) {
-			fprintf( stdout, "%s\n", *headers );
-			headers++;
-		}
+	while ( h && *h ) {
+		fprintf( stdout, "%s\n", *h );
+		free( *h );
+		h++;
 	}
 
 	//TODO: Free the header list
+	free( headers );
+	free( buf );
 	return 1;
 }
 
@@ -537,31 +548,31 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
 
 	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
-		return nerr( err );
+		return nerr( "%s\n", err );
 	}
 
 	if ( !( headers = generate_headers( buf, del ) ) ) {
 		free( buf );
-		return nerr( "Failed to generate headers." );
+		return nerr( "%s\n", "Failed to generate headers." );
 	}
 
 	if ( !( ov = generate_records( buf, del, headers ) ) ) {
 		free_headers( headers );
 		free( buf );
-		return nerr( "Failed to generate records." );
+		return nerr( "%s\n", "Failed to generate records." );
 	}
 
 	//Output the string or render, should probably be done with function pointers anyway...
 	if ( output_file && !( output = fopen( output_file, "w" ) ) ) {
 		snprintf( err, sizeof( err ), "Failed to open file '%s' for writing: %s", output_file, strerror(errno) );
-		return nerr( err );
+		return nerr( "%s\n", err );
 	}
 
 	output_records( ov, output, stream );
 
 	if ( output_file && fclose( output ) ) {
 		snprintf( err, sizeof( err ), "Failed to close file '%s': %s", output_file, strerror(errno) );
-		return nerr( err );
+		return nerr( "%s\n", err );
 	}
 
 	free( buf );
@@ -574,41 +585,32 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 
 //Options
 int help () {
-	const char *fmt = "%-2s, --%-10s       %-30s\n";
-	//Convert may be all I do from here...
-	fprintf( stderr, fmt,  "-f", "file",     "Specify a CSV file for conversion" );
-	fprintf( stderr, fmt,  "-c", "convert",    "Convert a supplied CSV to another format" );
-	fprintf( stderr, fmt,  "", "headers-only","Only display the headers"  );
-	fprintf( stderr, fmt,  "-d", "delimiter",   "Specify a delimiter" );
-	fprintf( stderr, fmt,  "", "cut",         "Cut parts of a string" );
-	fprintf( stderr, fmt,  "", "no-unsigned", "Remove any unsigned character sequences."  );
+	const char *fmt = "%-2s, --%-15s       %-30s\n";
 
-	//Serialization formats
-	fprintf( stderr, fmt,  "-j", "json",        "Convert into JSON."  );
-	fprintf( stderr, fmt,  "-x", "xml",         "Convert into XML."  );
-	fprintf( stderr, fmt,  "", "carray",      "Convert into a C-style array."  );
-	fprintf( stderr, fmt,  "", "comma",       "Convert into XML."  );
-	fprintf( stderr, fmt,  "-n", "newline",     "Generate newline after each row."  );
-	fprintf( stderr, fmt,  "", "java-class",  "Convert into a Java class."  );
-#if 0
-	fprintf( stderr, fmt,  "", "cstruct",     "Convert into a C struct."  );
-	fprintf( stderr, fmt,  "", "cfml",        "Convert into CFML structs."  );
-	fprintf( stderr, fmt,  "-q", "sql",         "Generate some random XML." );
-	fprintf( stderr, fmt,  "-m", "msgpack",     "Generate some random msgpack."  );
-#endif
+	struct help { const char *sarg, *larg, *desc; } msgs[] = {
+		{ "-f", "file <arg>",  "Specify a CSV file for conversion" },
+		{ "-c", "convert",     "Convert a supplied CSV to another format" },
+		{ "",   "headers-only","Only display the headers"  },
+		{ "-d", "delimiter <arg>",   "Specify a delimiter" },
+		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 
-	//Add prefix and suffix to each row
-	fprintf( stderr, fmt,  "-p", "prefix",     "Specify a prefix" );
-	fprintf( stderr, fmt,  "-s", "suffix",     "Specify a suffix" );
-	fprintf( stderr, fmt,  "-d", "dir",     "Specify a suffix" );
-#if 0 
-	//Most of these are just under construction
-	fprintf( stderr, fmt,  "-r", "rows",       "Stop when reaching this number of rows.", 'n'  );
-	fprintf( stderr, fmt,  "-b", "blank",      "Define a default header for blank lines." );
-	fprintf( stderr, fmt,  "-e", "extract",  "Specify fields to extract by name or number" );
-	fprintf( stderr, fmt,  "", "no-blank",   "Do not show blank values." );
-#endif
-	fprintf( stderr, fmt,  "-h", "help",      "Show help."  );
+		//Serialization formats
+		{ "",   "comma",       "Convert into XML." },
+		{ "",   "cstruct",     "Convert into a C struct." },
+		{ "",   "carray",      "Convert into a C-style array." },
+		{ "-j", "json",        "Convert into JSON." },
+		{ "-x", "xml",         "Convert into XML." },
+		{ "-n", "newline",     "Generate newline after each row." },
+		{ "-p", "prefix <arg>","Specify a prefix" },
+		{ "-s", "suffix <arg>","Specify a suffix" },
+		{ "-h", "help",        "Show help." },
+	};
+
+	for ( int i=0; i<sizeof(msgs)/sizeof(struct help); i++ ) {
+		struct help h = msgs[i];
+		fprintf( stderr, fmt, h.sarg, h.larg, h.desc ); 
+	}
+
 	return 0;
 }
 
@@ -634,7 +636,7 @@ int main (int argc, char *argv[]) {
 	int stream_fmt = STREAM_PRINTF;
 	char err[ 2048 ] = { 0 };
 
-	if ( argc < 2 || !strcmp( "*argv", "-h" ) || !strcmp(*argv, "--help") ) {
+	if ( argc < 2 || !strcmp( *argv, "-h" ) || !strcmp( *argv, "--help" ) ) {
 		return help();
 	}
 
@@ -665,29 +667,38 @@ int main (int argc, char *argv[]) {
 	#endif
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) ) {
 			stream_fmt = STREAM_SQL;
-			if ( !dupval( *(++argv), &sqltable ) ) {
+#if 0 
+			argv++;
+			if ( *argv == '-' ) {
+				fprintf( stderr, "Got flag '%s', expected argument for --sql option.\n", *argv );
+				help();
+				return 1;	
+			}
+#endif
+			if ( !dupval( *( ++argv ), &sqltable ) ) {
 				fprintf( stderr, "No SQL table specified for this argument.\n" );
 				exit( 1 );
+				return nerr( "%s\n", "No argument specified for --prefix." );
 			}
 		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) ) {
-				return nerr( "No argument specified for --prefix." );
+				return nerr( "%s\n", "No argument specified for --prefix." );
 			}
 		}
 		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--suffix" ) ) {
 			if ( !dupval( *(++argv), &suffix ) ) {
-				return nerr( "No argument specified for --suffix." );
+				return nerr( "%s\n", "No argument specified for --suffix." );
 			}
 		}
 		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
 			if ( !dupval( *(++argv), &DELIM ) ) {
-				return nerr( "No argument specified for --delimiter." );
+				return nerr( "%s\n", "No argument specified for --delimiter." );
 			}
 		}
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--file" ) ) {
 			if ( !dupval( *(++argv), &FFILE ) ) {
-				return nerr( "No file specified with --file..." );
+				return nerr( "%s\n", "No file specified with --file..." );
 			}
 		}
 
@@ -696,7 +707,7 @@ int main (int argc, char *argv[]) {
 
 	if ( headers_only ) {
 		if ( !DELIM ) {
-			return nerr( "No delimiter specified in conjunction with --convert argument." );
+			return nerr( "%s\n", "No delimiter specified in conjunction with --convert argument." );
 		}
 
 		if ( !headers_f( FFILE, DELIM ) ) {
@@ -706,7 +717,7 @@ int main (int argc, char *argv[]) {
 
 	if ( convert ) {
 		if ( !DELIM ) {
-			return nerr( "No delimiter specified in conjunction with --convert argument." );
+			return nerr( "%s\n", "No delimiter specified in conjunction with --convert argument." );
 		}
 
 		if ( !convert_f( FFILE, DELIM, stream_fmt ) ) {
