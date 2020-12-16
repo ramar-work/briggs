@@ -100,12 +100,12 @@ char *streamtype = NULL;
 struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
 int headers_only = 0;
-int convert=0;
-int newline=0;
-int typesafe=0;
+int convert = 0;
+int newline = 1;
+int typesafe = 0;
 int hlen = 0;
-int no_unsigned=0;
-int adv=0;
+int no_unsigned = 0;
+int adv = 0;
 const char ucases[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 const char lcases[] = "abcdefghijklmnopqrstuvwxyz_";
 const char exchrs[] = "~`!@#$%^&*()-_+={}[]|:;\"'<>,.?/";
@@ -592,17 +592,13 @@ int help () {
 		{ "-e", "headers <arg>", "Only display the headers in <arg>"  },
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
 		{ "-r", "root <arg>",  "Specify a \"root\" name for certain types of structures." },
+		{ "-s", "stream <arg>", "Specify a stream type (c-struct, json, xml, etc)" },
+		{ "-n", "no-newline", "Do not insert newlines after each row." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 
 		//Serialization formats
-		{ "",   "comma",       "Convert into XML." },
-		{ "",   "cstruct",     "Convert into a C struct." },
-		{ "",   "carray",      "Convert into a C-style array." },
-		{ "-j", "json",        "Convert into JSON." },
-		{ "-x", "xml",         "Convert into XML." },
-		{ "-i", "insert-newline", "Generate newline after each row." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
-		{ "-s", "suffix <arg>","Specify a suffix" },
+		{ "-x", "suffix <arg>","Specify a suffix" },
 		{ "-h", "help",        "Show help." },
 
 	#if 0
@@ -630,10 +626,12 @@ int main (int argc, char *argv[]) {
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;	
+		#if 0
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
 			typesafe = 1;	
-		else if ( !strcmp( *argv, "-i" ) || !strcmp( *argv, "--insert-newline" ) )
-			newline = 1; //TODO: Consider being able to take numbers for newlines...
+		#endif
+		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
+			newline = 0; //TODO: Consider being able to take numbers for newlines...
 		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--stream" ) ) {
 			if ( !dupval( *( ++argv ), &streamtype ) )
 				return nerr( "%s\n", "No argument specified for --stream." );
@@ -642,36 +640,30 @@ int main (int argc, char *argv[]) {
 			}	
 		}
 		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
-			if ( !dupval( *( ++argv ), &root ) ) {
-				return nerr( "%s\n", "No argument specified for --root." );
-			}
+			if ( !dupval( *( ++argv ), &root ) )
+			return nerr( "%s\n", "No argument specified for --root." );
 		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
-			if ( !dupval( *(++argv), &prefix ) ) {
-				return nerr( "%s\n", "No argument specified for --prefix." );
-			}
+			if ( !dupval( *(++argv), &prefix ) )
+			return nerr( "%s\n", "No argument specified for --prefix." );
 		}
-		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--suffix" ) ) {
-			if ( !dupval( *(++argv), &suffix ) ) {
-				return nerr( "%s\n", "No argument specified for --suffix." );
-			}
+		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--suffix" ) ) {
+			if ( !dupval( *(++argv), &suffix ) )
+			return nerr( "%s\n", "No argument specified for --suffix." );
 		}
 		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
-			if ( !dupval( *(++argv), &DELIM ) ) {
-				return nerr( "%s\n", "No argument specified for --delimiter." );
-			}
+			if ( !dupval( *(++argv), &DELIM ) )
+			return nerr( "%s\n", "No argument specified for --delimiter." );
 		}
 		else if ( !strcmp( *argv, "-e" ) || !strcmp( *argv, "--headers" ) ) {
 			headers_only = 1;	
-			if ( !dupval( *(++argv), &FFILE ) ) {
-				return nerr( "%s\n", "No file specified with --convert..." );
-			}
+			if ( !dupval( *(++argv), &FFILE ) )
+			return nerr( "%s\n", "No file specified with --convert..." );
 		}
 		else if ( !strcmp( *argv, "-c" ) || !strcmp( *argv, "--convert" ) ) {
 			convert = 1;	
-			if ( !dupval( *(++argv), &FFILE ) ) {
-				return nerr( "%s\n", "No file specified with --convert..." );
-			}
+			if ( !dupval( *(++argv), &FFILE ) )
+			return nerr( "%s\n", "No file specified with --convert..." );
 		}
 		argv++;
 	}
@@ -704,7 +696,6 @@ int main (int argc, char *argv[]) {
 	//Clean up by freeing everything.
 	char *destroy[] = { DELIM, FFILE, prefix, suffix, root };
 	for ( int i = 0; i<5; i++ ) {
-fprintf( stderr, "%d\n", i );
 		( destroy[i] ) ? free( destroy[ i ] ) : 0;
 	}
 
