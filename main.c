@@ -587,7 +587,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 int help () {
 	const char *fmt = "%-2s, --%-15s       %-30s\n";
 	struct help { const char *sarg, *larg, *desc; } msgs[] = {
-		//{ "-f", "file <arg>",  "Specify a CSV file for conversion" },
+		//Action options
 		{ "-c", "convert <arg>", "Convert a supplied CSV file <arg> to another format" },
 		{ "-e", "headers <arg>", "Only display the headers in <arg>"  },
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
