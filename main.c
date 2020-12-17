@@ -91,18 +91,18 @@ typedef struct Functor {
 char *no_header = "nothing";
 char *output_file = NULL;
 char *FFILE = NULL;
-char *DELIM = NULL;
+char *DELIM = ",";
 char *prefix = NULL;
 char *suffix = NULL;
 char *stream_chars = NULL;
-char *root = NULL;
+char *root = "root";
 char *streamtype = NULL;
 char *ld = "'", *rd = "'", *od = "'";
 struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
 int headers_only = 0;
 int convert=0;
-int newline=0;
+int newline=1;
 int typesafe=0;
 int hlen = 0;
 int no_unsigned=0;
@@ -350,6 +350,7 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 
 	//Now allocate for values
 	while ( strwalk( &p, buf, del ) ) {
+		//fprintf( stderr, "%d, %d\n", p.chr, *p.ptr );
 		if ( p.chr == '\r' ) 
 			continue;
 		else if ( hindex >= hlen ) {
@@ -365,11 +366,12 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 		add_item( &iv, v, Dub *, &il );
 		hindex++;
 
-		if ( p.chr == '\n' ) {
+		if ( p.chr == '\n' || *p.ptr == '\n' ) {
 			add_item( &ov, iv, Dub **, &ol );	
 			iv = NULL, il = 0, hindex = 0;
 		}
 	}
+
 	return ov;
 }
 
@@ -585,25 +587,23 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 
 //Options
 int help () {
-	const char *fmt = "%-2s, --%-15s       %-30s\n";
+	const char *fmt = "%-2s%s --%-24s%-30s\n";
 	struct help { const char *sarg, *larg, *desc; } msgs[] = {
-		//{ "-f", "file <arg>",  "Specify a CSV file for conversion" },
 		{ "-c", "convert <arg>", "Convert a supplied CSV file <arg> to another format" },
 		{ "-e", "headers <arg>", "Only display the headers in <arg>"  },
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
-		{ "-r", "root <arg>",  "Specify a \"root\" name for certain types of structures." },
-		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
-		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings" },
-
-		//Serialization formats
-		{ "",   "comma",       "Convert into XML." },
-		{ "",   "cstruct",     "Convert into a C struct." },
-		{ "",   "carray",      "Convert into a C-style array." },
+		{ "-r", "root <arg>",  "Specify a $root name for certain types of structures.\n"
+			"                              (Example using XML: <$root> <key1></key1> </$root>)" }, 
+		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings\n"
+			"                              (NOTE: VERY useful for SQL)" },
+		{ "-f", "format <arg>","Specify a format to convert to" },
 		{ "-j", "json",        "Convert into JSON." },
 		{ "-x", "xml",         "Convert into XML." },
-		{ "-i", "insert-newline", "Generate newline after each row." },
+		{ "-q", "sql",         "Convert into general SQL INSERT statement." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
 		{ "-s", "suffix <arg>","Specify a suffix" },
+		{ "-n", "no-newline",  "Do not generate a newline after each row." },
+		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 		{ "-h", "help",        "Show help." },
 
 	#if 0
@@ -613,7 +613,7 @@ int help () {
 
 	for ( int i=0; i<sizeof(msgs)/sizeof(struct help); i++ ) {
 		struct help h = msgs[i];
-		fprintf( stderr, fmt, h.sarg, h.larg, h.desc ); 
+		fprintf( stderr, fmt, h.sarg, strlen( h.sarg ) ? "," : " ", h.larg, h.desc );
 	}
 
 	return 0;
@@ -637,11 +637,17 @@ int main (int argc, char *argv[]) {
 		#endif
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
 			newline = 0;
-		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--stream" ) ) {
+		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
+			stream_fmt = STREAM_JSON;
+		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
+			stream_fmt = STREAM_XML;
+		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) )
+			stream_fmt = STREAM_SQL;
+		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
 			if ( !dupval( *( ++argv ), &streamtype ) )
-				return nerr( "%s\n", "No argument specified for --stream." );
+				return nerr( "%s\n", "No argument specified for --format." );
 			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
-				return nerr( "Invalid stream '%s' requested.\n", streamtype );
+				return nerr( "Invalid format '%s' requested.\n", streamtype );
 			}	
 		}
 		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
@@ -697,35 +703,27 @@ int main (int argc, char *argv[]) {
 	}
 
 	if ( headers_only ) {
-		if ( !DELIM ) {
-			return nerr( "%s\n", "No delimiter specified in conjunction with --convert argument." );
-		}
-
 		if ( !headers_f( FFILE, DELIM ) ) {
 			return 1; //nerr( "conversion of file failed...\n" );
 		}
 	}
 	else if ( convert ) {
-		if ( !DELIM ) {
-			return nerr( "%s\n", "No delimiter specified in conjunction with --convert argument." );
-		}
-
-		//A default root should always be filled out
-		if ( !root ) {
-			root = strdup( "root" );
-			//STREAM_XML | STREAM_CSTRUCT | STREAM_CARRAY | STREAM_SQL   
-		}
-
 		if ( !convert_f( FFILE, DELIM, stream_fmt ) ) {
 			return 1; //nerr( "conversion of file failed...\n" );
 		}
 	}
 
 	//Clean up by freeing everything.
-	char *destroy[] = { DELIM, FFILE, prefix, suffix, root };
-	for ( int i = 0; i<5; i++ ) {
-		( destroy[i] ) ? free( destroy[ i ] ) : 0;
+	if ( *DELIM != ',' || strlen( DELIM ) > 1 ) {
+		free( DELIM ); 
 	}
 
+	if ( strcmp( root, "root" ) != 0 ) {
+		free( root );
+	} 
+
+	free( FFILE );
+	free( prefix );
+	free( suffix );
 	return 0;
 }
