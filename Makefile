@@ -21,20 +21,10 @@ main: build
 main: 
 	@printf '' >/dev/null
 
-#Tests or static data
-static:
-	@$(CC) -c data/words.c -o data/words.o
-	@$(CC) -c data/address.c -o data/address.o
-
 # build
 build: $(OBJECTS)
 	@echo $(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
 	@$(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
-
-# tests
-tests: vendor/single.o
-	@echo $(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS)
-	@$(CC) vendor/single.o data/words.o data/address.o main.c -o $(NAME) $(CFLAGS)
 
 # objects
 %.o: %.c 
@@ -42,8 +32,7 @@ tests: vendor/single.o
 
 #clean
 clean:
-	-rm -f *.o vendor/*.o
-	-rm -f $(NAME)
+	-rm -f *.o vendor/*.o $(NAME)
 
 #install
 install:
@@ -62,3 +51,11 @@ doctest:
 # mantest 
 mantest:
 	man -l briggs.1
+	
+# pkg
+pkg:
+	git archive --format tar master | gzip > $(NAME)-master.tar.gz
+
+# pkgdev
+pkgdev:
+	git archive --format tar dev | gzip > $(NAME)-dev.tar.gz
