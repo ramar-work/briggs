@@ -18,6 +18,13 @@ main: build
 main: 
 	@printf '' >/dev/null
 
+# clang - Default build using clang, suitable for most people
+clang: CFLAGS=$(CLANGFLAGS)
+clang: CC=clang 
+clang: build
+clang: 
+	@printf '' >/dev/null
+
 # dev - Development target, using clang and asan for bulletproof-ness
 dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error
 dev: CC=clang 
