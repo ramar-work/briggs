@@ -4,7 +4,7 @@ PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 CLANGFLAGS = -g -Wall -Werror -std=c99 -fsanitize=address \
 	-fsanitize-undefined-trap-on-error
-#CLANGFLAGS = -g -Wall -Werror -std=c99
+CLANGFLAGS = -g -Wall -Werror -std=c99
 GCCFLAGS = -g -Wall -Werror -Wno-unused -Wstrict-overflow -std=c99 \
 	-Wno-deprecated-declarations -O0 -pedantic-errors -Wno-overlength-strings
 CFLAGS = $(CLANGFLAGS)
@@ -54,21 +54,6 @@ install:
 # test
 test:
 	@./$(NAME) -c files/full-tab.csv --delimiter ";"
-
-mysql-test:
-	mysql -u $(USER) --password=$(PSWD) < test/mysql && mysql -u $(USER) --password=$(PSWD) -Dflojo -e 'select * from quickcart_inventory'
-
-sqlite-test:
-	sqlite3 < test/sqlite && echo 'select * from quickcart_inventory' | sqlite3
-
-mssql-test:
-	sqlcmd -U $(USER) -P $(PSWD) < test/sqlserver && sqlcmd -U $(USER) -P $(PSWD) -d flojo -Q 'select * from quickcart_inventory'
-
-oracle-test:
-	???
-
-psql-test:
-	psql -u $(USER) < test/postgresql && psql -u $(USER) --password=$(PSWD) -Dflojo -e 'select * from quickcart_inventory'
 
 # doctest
 doctest:
