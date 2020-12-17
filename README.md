@@ -121,12 +121,12 @@ inv_description
 While not terribly useful on it's own, the --headers option can be used in
 conjunction with `sed` or similar to do quick data formatting.
 <pre>
-//Output of briggs --headers test/inventory.csv | sed 's/\_/entory /g; s;\(.\*\);<h2>\1</h2>;'
-<h2>inventory cost</h2>
-<h2>inventory qty</h2>
-<h2>inventory item</h2>
-<h2>inventory image</h2>
-<h2>inventory description</h2>
+//Output of briggs --headers test/inventory.csv | sed 's/\_/entory /g; s;\(.\*\);&lt;h2&gt;\1&lt;/h2&gt;;'
+&lt;h2&gt;inventory cost&lt;/h2&gt;
+&lt;h2&gt;inventory qty&lt;/h2&gt;
+&lt;h2&gt;inventory item&lt;/h2&gt;
+&lt;h2&gt;inventory image&lt;/h2&gt;
+&lt;h2&gt;inventory description&lt;/h2&gt;
 </pre>
 
 Let's say we've been tasked with saving this data to a sqlite database of
