@@ -119,9 +119,14 @@ inv_description
 </pre>
 
 While not terribly useful on it's own, the --headers option can be used in
-conjunction with `sed` or similar to do quick data formatting.
+conjunction with `sed` or similar to do quick data formatting.  So with the
+following:
 <pre>
-//Output of briggs --headers test/inventory.csv | sed 's/\_/entory /g; s;\(.\*\);&lt;h2&gt;\1&lt;/h2&gt;;'
+briggs --headers test/inventory.csv | sed 's/\_/entory /g; s;\(.\*\);&lt;h2&gt;\1&lt;/h2&gt;;'
+</pre>
+
+...we'll get:
+<pre>
 &lt;h2&gt;inventory cost&lt;/h2&gt;
 &lt;h2&gt;inventory qty&lt;/h2&gt;
 &lt;h2&gt;inventory item&lt;/h2&gt;
@@ -129,7 +134,10 @@ conjunction with `sed` or similar to do quick data formatting.
 &lt;h2&gt;inventory description&lt;/h2&gt;
 </pre>
 
-Let's say we've been tasked with saving this data to a sqlite database of
+
+### Conversion to SQL
+
+Now, let's say we've been tasked with saving this data to a sqlite database of
 some sort.   Assuming we're using something like sqlite, this should be a
 fairly trivial operation.
 
