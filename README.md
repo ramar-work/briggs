@@ -18,22 +18,24 @@ Let's go champ...
 Installation
 ------------
 
-### The Skinny
+### 3-step install
 
 On Unix-like systems (e.g. not Windows) `make && make install` should be all 
-that's needed to run on your system.  Windows users can get running fairly 
-easily on Cygwin.
+that's needed to run on your system.  Windows users can get up and running fairly
+easily via Cygwin.  
 
+Provided you have wget or curl on your system, run the following three commands
+to get briggs built and installed on your system.
 
-### Dependencies
+<pre>
+$ wget https://github.com/zaiah-dj/briggs/archive/master.zip
+$ unzip master.zip && cd briggs-master/ && make
+$ sudo make install 
+</pre>
 
-To run briggs, you'll need at least:
-- gcc
-
-
-### Slightly Less Skinny
-
-
+briggs can be compiled with either `gcc` or `clang`.  Because of its simplicity,
+briggs is currently not using Autotools (`configure && make`).  So to build with
+`clang` instead, just use `make clang` instead of `make`.
 
 
 
@@ -329,6 +331,10 @@ too many lines and far too much thought to get at a quick solution.
 Help & Comments
 ---------------
 This is open-source software, and a project currently in beta.
+
+If it is not already a bit obvious, briggs was named in honor of New York's
+Shannon Briggs -- notorious for his vicious (and hilarious) trolling of 
+Vladimir Klitschko before the pair's promised title fight.
 
 Please submit a pull request, or just email me directly at 
 ramar@collinsdesign.net if you're having issues using briggs.
