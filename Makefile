@@ -4,7 +4,7 @@ PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 CLANGFLAGS = -g -Wall -Werror -std=c99 -fsanitize=address \
 	-fsanitize-undefined-trap-on-error
-CLANGFLAGS = -g -Wall -Werror -std=c99
+#CLANGFLAGS = -g -Wall -Werror -std=c99
 GCCFLAGS = -g -Wall -Werror -Wno-unused -Wstrict-overflow -std=c99 \
 	-Wno-deprecated-declarations -O0 -pedantic-errors -Wno-overlength-strings
 CFLAGS = $(CLANGFLAGS)

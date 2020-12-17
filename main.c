@@ -97,6 +97,7 @@ char *suffix = NULL;
 char *stream_chars = NULL;
 char *root = NULL;
 char *streamtype = NULL;
+char *ld = "'", *rd = "'", *od = "'";
 struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
 int headers_only = 0;
@@ -146,7 +147,7 @@ static char *dupval ( char *val, char **setval ) {
 
 //Simple key-value
 void p_default( int ind, const char *k, const char *v ) {
-	fprintf( stdout, "%s => %s\n", k, v );
+	fprintf( stdout, "%s => %s%s%s\n", k, ld, v, rd );
 }  
 
 
@@ -172,7 +173,7 @@ void p_xml( int ind, const char *k, const char *v ) {
 //SQL converter
 void p_sql( int ind, const char *k, const char *v ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, &",'%s'"[adv], v );
+	fprintf( stdout, &",%s%s%s"[adv], ld, v, rd );
 }  
 
 
@@ -288,9 +289,8 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 		}
 
 		if ( reps ) {
-			if ( !k ) {
+			if ( !k )
 				k = size;
-			}
 			else {
 				pp = *dest; //v->v;
 			}
@@ -593,6 +593,7 @@ int help () {
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
 		{ "-r", "root <arg>",  "Specify a \"root\" name for certain types of structures." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
+		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings" },
 
 		//Serialization formats
 		{ "",   "comma",       "Convert into XML." },
@@ -630,10 +631,12 @@ int main (int argc, char *argv[]) {
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;	
+		#if 0
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
 			typesafe = 1;	
-		else if ( !strcmp( *argv, "-i" ) || !strcmp( *argv, "--insert-newline" ) )
-			newline = 1; //TODO: Consider being able to take numbers for newlines...
+		#endif
+		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
+			newline = 0;
 		else if ( !strcmp( *argv, "-s" ) || !strcmp( *argv, "--stream" ) ) {
 			if ( !dupval( *( ++argv ), &streamtype ) )
 				return nerr( "%s\n", "No argument specified for --stream." );
@@ -673,6 +676,23 @@ int main (int argc, char *argv[]) {
 				return nerr( "%s\n", "No file specified with --convert..." );
 			}
 		}
+		else if ( !strcmp( *argv, "-u" ) || !strcmp( *argv, "--output-delimiter" ) ) {
+			//Output delimters can be just about anything, 
+			//so we don't worry about '-' or '--' in the statement
+			if ( ! *( ++argv ) )
+				return nerr( "%s\n", "No argument specified for --output-delimiter." );
+			else {
+				od = strdup( *argv );
+				char *a = memchr( od, ',', strlen( od ) );
+				if ( !a ) 
+					ld = od, rd = od; 	
+				else {
+					*a = '\0';
+					ld = od;	
+					rd = ++a;
+				}
+			}	
+		}
 		argv++;
 	}
 
@@ -704,7 +724,6 @@ int main (int argc, char *argv[]) {
 	//Clean up by freeing everything.
 	char *destroy[] = { DELIM, FFILE, prefix, suffix, root };
 	for ( int i = 0; i<5; i++ ) {
-fprintf( stderr, "%d\n", i );
 		( destroy[i] ) ? free( destroy[ i ] ) : 0;
 	}
 
