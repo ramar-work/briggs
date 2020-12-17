@@ -17,9 +17,23 @@ Let's go champ...
 
 Installation
 ------------
-On Unix-like systems (e.g. not Windows) <code>make && make install</code> 
-should be all that's needed to run on your system.  Windows users can get
-running fairly easily on Cygwin.
+
+### The Skinny
+
+On Unix-like systems (e.g. not Windows) `make && make install` should be all 
+that's needed to run on your system.  Windows users can get running fairly 
+easily on Cygwin.
+
+
+### Dependencies
+
+To run briggs, you'll need at least:
+- gcc
+
+
+### Slightly Less Skinny
+
+
 
 
 
