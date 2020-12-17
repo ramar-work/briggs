@@ -1,6 +1,5 @@
 briggs
 ======
-
 Briggs is a simple C program for converting test data between many popular
 formats, such as:
 
@@ -18,7 +17,6 @@ Let's go champ...
 
 Installation
 ------------
-
 On Unix-like systems (e.g. not Windows) <code>make && make install</code> 
 should be all that's needed to run on your system.  Windows users can get
 running fairly easily on Cygwin.
@@ -27,26 +25,25 @@ running fairly easily on Cygwin.
 
 Usage
 -----
-
 Options for running briggs are as follows.
 
 <pre>
--c, --convert &lt;arg&rt;           Convert a supplied CSV file &lt;arg&rt; to another format
--e, --headers &lt;arg&rt;           Only display the headers in &lt;arg&rt;
--d, --delimiter &lt;arg&rt;         Specify a delimiter           
--r, --root &lt;arg&rt;              Specify a $root name for certain types of structures.
-                              (Example using XML: &lt;$root&rt; &lt;key1&rt;&lt;/key1&rt; &lt;/$root&rt;)
--u, --output-delimiter &lt;arg&rt;  Specify an output delimiter for strings
-                              (NOTE: VERY useful for SQL)
--f, --format &lt;arg&rt;            Specify a format to convert to
--j, --json                    Convert into JSON.            
--x, --xml                     Convert into XML.             
--q, --sql                     Convert into general SQL INSERT statement.
--p, --prefix &lt;arg&rt;            Specify a prefix              
--s, --suffix &lt;arg&rt;            Specify a suffix              
--n, --no-newline              Do not generate a newline after each row.
-    --no-unsigned             Remove any unsigned character sequences.
--h, --help                    Show help.                    
+-c, --convert &lt;arg&gt;          Convert a supplied CSV file &lt;arg&gt; to another format
+-e, --headers &lt;arg&gt;          Only display the headers in &lt;arg&gt;
+-d, --delimiter &lt;arg&gt;        Specify a delimiter           
+-r, --root &lt;arg&gt;             Specify a $root name for certain types of structures.
+                                   (Example using XML: &lt;$root&gt; &lt;key1&gt;&lt;/key1&gt; &lt;/$root&gt;)
+-u, --output-delimiter &lt;arg&gt; Specify an output delimiter for strings
+                                   (NOTE: VERY useful for SQL)
+-f, --format &lt;arg&gt;           Specify a format to convert to
+-j, --json                         Convert into JSON.            
+-x, --xml                          Convert into XML.             
+-q, --sql                          Convert into general SQL INSERT statement.
+-p, --prefix &lt;arg&gt;           Specify a prefix              
+-s, --suffix &lt;arg&gt;           Specify a suffix              
+-n, --no-newline                   Do not generate a newline after each row.
+    --no-unsigned                  Remove any unsigned character sequences.
+-h, --help                         Show help.                    
 </pre>
 
 
@@ -140,15 +137,22 @@ briggs -c test/inventory.csv -f sql --root inventory > inventory.sql
 
 This will yield:
 <pre>
-INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES ( '0.99','-1','2020-11-04-Sunrise.mp3','','Mr. Doctor – Sunrise (MP3 encoded)' );
-INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES ( '0.99','-1','2020-11-04-Scapes-v1.mp3','','Mr. Doctor – Scapes (MP3 encoded)' );
+INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES 
+	( '0.99','-1','2020-11-04-Sunrise.mp3','','Mr. Doctor – Sunrise (MP3 encoded)' );
+INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES 
+	( '0.99','-1','2020-11-04-Scapes-v1.mp3','','Mr. Doctor – Scapes (MP3 encoded)' );
 /* .... more records .... */
-INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES ( '0.99','-1','2020-11-04-MoreLyrical.mp3','','Mr. Doctor – More Lyrical (MP3 encoded)' );
+INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VALUES 
+	( '0.99','-1','2020-11-04-MoreLyrical.mp3','','Mr. Doctor – More Lyrical (MP3 encoded)' );
 </pre>
 
-Notice how we used the `--root` option to specify the name of the table.  If we didn't use it, briggs would have used the word 'root' as our assumed table name. 
+Notice how we used the `--root` option to specify the name of the table.  If we 
+didn't use it, briggs would have used the word 'root' as our assumed table name. 
 
-It's worth noting that for options in which a named data structure will make sense, briggs will rely on the root flag.  So, for example, if we wanted a C structure with a particular variable name, the --root option would be used to specify that name.  Obviously, for certain formats this won't apply.
+It's worth noting that for options in which a named data structure will make 
+sense, briggs will rely on the root flag.  So, for example, if we wanted a C 
+structure with a particular variable name, the --root option would be used to 
+specify that name.  Obviously, for certain formats this won't apply.
 
 
 ### Slightly Advanced
@@ -312,5 +316,6 @@ Help & Comments
 ---------------
 This is open-source software, and a project currently in beta.
 
-Please submit a pull request, or just email me directly at ramar@tubularmodular.com if you're having issues using this.
+Please submit a pull request, or just email me directly at 
+ramar@collinsdesign.net if you're having issues using briggs.
 
