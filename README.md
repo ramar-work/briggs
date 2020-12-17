@@ -122,7 +122,7 @@ While not terribly useful on it's own, the --headers option can be used in
 conjunction with `sed` or similar to do quick data formatting.  So with the
 following:
 <pre>
-briggs --headers test/inventory.csv | sed 's/\_/entory /g; s;\(.\*\);&lt;h2&gt;\1&lt;/h2&gt;;'
+briggs --headers test/inventory.csv | sed 's/_/entory /g; s;\(.*\);&lt;h2&gt;\1&lt;/h2&gt;;'
 </pre>
 
 ...we'll get:
@@ -189,7 +189,7 @@ files? (Leading spaces have been added for clarity.)
 <pre>
 10001, 100 E Santos St., Charlotte, NC, 28201, Fish populate this neighborhood.
 10000, 20 E Flatbush Ave., Charlotte, NC, 28201, It is so nice here.
-10009, 777 Unlucky Cir., Charlotte, NC, 28201, This is sure to trip up ''anyone''.
+10009,777 Unlucky Cir.,Charlotte,NC,28201,This is sure to trip up ' ' 'anyone'   '.
 10007, 80 E Yonkers Ct., Charlotte, NC, 28206, Runaway... fast.
 </pre>
 
