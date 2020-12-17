@@ -1,53 +1,16 @@
 <html>
-<center>
-<pre>
-K0kdc::::::::clllllllllllllllllllllcccccccccc:cllll
-KKKK0kl::::::clllllllloxkOO0000OOkxdlllllllcccc;;;,
-KKKKKKKkc::::llllllok0000000000000000Odlllllllc;;;,
-KKKKKKKK0l:::l,,,',,,oO0KKK0000000000000xlllll:;;;;
-KKKKKKKKK0;;'...........;lk0KKK0KK0000000Oolll:;;;;
-KKKKKKKKdc...... ...........;OK0K0000000000oll:;;cO
-OOK0KKkk......',,,;;,,,......cKKKKKK0000000Oll:;:OO
-ddddddo:..,,;;;::::::;,'....  c00K0000K00000dl:;x00
-kOOOOk'..,;,;::looool:;'''..   dOOkkkOkxOx00xl::O00
-KKKKKK:.';,;;;:clllcc::;,'.....KK0000000KO00dl:;O00
-KKKKK0: ',,;:cldddodo:,........k0K0KK0K00000ll:;d00
-KKKKK0o.;,.....';co:,..'''.....;k0K00000000oll:::O0
-KKKKK0o':..''.;,.;c;.,:,',.,,..'cK00000000olll:;;:x
-KKKKko:,;;'',,,,':l:;;:;;::;'..;:0000000xlllll;;;;;
-kdl::::;:;;:::l;;:cc::;lo:;'...';0000kdlllcccc;;;;;
-cc:::::.;,';:oo;;;lc;,,::l;,....;xdolllllccccc;;;;,
-kkkkkxxl,,'';cc;'.......',:;'....:cccccccccccc::::;
-OOkkkkkd,,.',;...,;;::;;'..;'...'::::::::::::lddddd
-KKK0Okkko,'.'..'';:cll:;'..,'''.,0kxl::::::::oddddd
-KKKKK0kkx:,....'',;,,,,,'. '','..ld0K0xddolc:oddxdd
-KKKKKK0Oko,'.. ...',;;,..  .,''..dXNNNXXXXKK0Okxkxx
-KKKKKKKK0xc;,..    .. .    .,':xoNNWWNNNXKKKK000OOO
-KKKKKKKK0O0Kk..            .ONWxXWWWNNNXXKKKKKKKKKK
-KKKKK00KKKKXox'.          ,0WWdXWWWNNNNXXXXXXXXXNXN
-kkkO00KXKKXNd0K0ol,,,:c;oONMWdKXNNNNNNX0ko:cldNNNNW
-O0KKKKXXXKXXdNXXNWNWWNWWWWWXdKXNNNNNOo;;;;;,;,,0WWW
-KKKKKXXXXXXXoNXXNNNWWWWNNXKoXXNNNNWk';',:cc:,,,.cNW
-KKKKKXXXXXXNoXXNNNNNXXXXNKdXNWWWWWx;:;,:l::::;,,''X
-KKKKXXXXXNNNdKXXXXXXXNNNKdNWWWWWWX:::,:clc:::c:,,,;
-</pre>
-</center>
-
 
 briggs
 ======
 
-Briggs is a pretty simple C program for converting test data into many popular 
-formats, such as
+Briggs is a simple C program for converting test data between many popular
+formats, such as:
 
 - JSON
-- SQLite
 - CSV
-- MySQL
-- SQL Server
-- Java classes
+- XML
 - C / C++ structures
-- ColdFusion
+- SQL
 - and hopefully many more... 
 
 Let's go champ...
