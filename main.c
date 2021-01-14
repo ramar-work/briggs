@@ -611,11 +611,10 @@ int help () {
 	#endif
 	};
 
-	for ( int i=0; i<sizeof(msgs)/sizeof(struct help); i++ ) {
+	for ( int i = 0; i < sizeof(msgs) / sizeof(struct help); i++ ) {
 		struct help h = msgs[i];
 		fprintf( stderr, fmt, h.sarg, strlen( h.sarg ) ? "," : " ", h.larg, h.desc );
 	}
-
 	return 0;
 }
 
@@ -637,6 +636,8 @@ int main (int argc, char *argv[]) {
 		#endif
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
 			newline = 0;
+		#if 0
+		#endif
 		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
 			stream_fmt = STREAM_JSON;
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )

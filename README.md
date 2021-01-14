@@ -6,7 +6,7 @@ formats, such as:
 - JSON
 - CSV
 - XML
-- C / C++ structures
+- C/C++ structures
 - SQL
 - and hopefully many more... 
 
