@@ -366,12 +366,15 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 		add_item( &iv, v, Dub *, &il );
 		hindex++;
 
-		if ( p.chr == '\n' /*|| *p.ptr == '\n'*/ ) {
+		if ( p.chr == '\n' ) {
 			add_item( &ov, iv, Dub **, &ol );	
 			iv = NULL, il = 0, hindex = 0;
 		}
 	}
 
+	//This ensures that the final row is added to list...
+	//TODO: It'd be nice to have this within the above loop.
+	add_item( &ov, iv, Dub **, &ol );	
 	return ov;
 }
 
