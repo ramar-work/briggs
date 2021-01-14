@@ -366,7 +366,7 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 		add_item( &iv, v, Dub *, &il );
 		hindex++;
 
-		if ( p.chr == '\n' || *p.ptr == '\n' ) {
+		if ( p.chr == '\n' /*|| *p.ptr == '\n'*/ ) {
 			add_item( &ov, iv, Dub **, &ol );	
 			iv = NULL, il = 0, hindex = 0;
 		}
