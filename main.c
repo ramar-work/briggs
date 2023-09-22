@@ -36,6 +36,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
 #define TAB "\t\t\t\t\t\t\t\t\t"
+#define ERRLEN 2048
 
 #include <stdio.h>
 #include <dirent.h>
@@ -71,10 +72,26 @@ typedef enum {
 } Stream;
 
 
+
+typedef enum type_t {
+	T_NULL = 0,
+	T_CHAR,
+	T_STRING,
+	T_INTEGER,
+	T_DOUBLE,
+	T_BOOLEAN,
+	/* T_BINARY // If integrating this, consider using a converter */
+} type_t;
+
+
 typedef struct kv { 
   char *k; 
   char *v; 
-} Dub;
+
+	type_t type;
+	type_t exptype;
+
+} record_t;
 
 
 typedef struct Functor {
@@ -82,7 +99,7 @@ typedef struct Functor {
   const char *left_fmt;
   const char *right_fmt;
   int i;
-  void (*execute)( int, const char *, const char * ); 
+  void (*execute)( int, record_t * ); 
   void *p;
 } Functor;
 
@@ -104,12 +121,54 @@ int headers_only = 0;
 int convert=0;
 int newline=1;
 int typesafe=0;
+int schema=0;
 int hlen = 0;
 int no_unsigned=0;
 int adv=0;
 const char ucases[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 const char lcases[] = "abcdefghijklmnopqrstuvwxyz_";
 const char exchrs[] = "~`!@#$%^&*()-_+={}[]|:;\"'<>,.?/";
+type_t **gtypes = NULL;
+
+char * sqlite_coldefs[] = {
+	"NULL",
+	"TEXT",
+	"TEXT",
+	"INTEGER",
+	"REAL",
+	"INTEGER",
+	NULL,		
+};
+
+char * postgres_coldefs[] = {
+	"NULL",
+	"VARCHAR(1)",
+	"VARCHAR(MAX)",
+	"INTEGER",
+	"DOUBLE",
+	"BOOLEAN",
+	NULL,		
+};
+
+char * mysql_coldefs[] = {
+	"NULL",
+	"TEXT",
+	"TEXT",
+	"INTEGER",
+	"INTEGER",
+	"INTEGER",
+	NULL,		
+};
+
+char * oracle_coldefs[] = {
+	"NULL",
+	"TEXT",
+	"TEXT",
+	"INTEGER",
+	"INTEGER",
+	"INTEGER",
+	NULL,		
+};
 
 
 //Convert word to snake_case
@@ -145,60 +204,114 @@ static char *dupval ( char *val, char **setval ) {
 }
 
 
+// Check the type of a value in a field
+static type_t get_type ( char *v, type_t deftype ) {
+	type_t t = T_INTEGER;
+
+	// If the value is blank, then we need some help...
+	// Use deftype in this case...
+	if ( strlen( v ) == 0 ) {
+//fprintf( stderr, "Value is blank or empty.\n" );
+		return deftype;	
+	}
+
+	// If it's just one character, should check if it's a number or char
+	if ( strlen( v ) == 1 ) {
+		if ( !memchr( "0123456789", *v, 10 ) ) {
+			t = T_CHAR;
+		}
+		return t;
+	}
+
+	// Check for booleans	
+	if ( ( *v == 't' && !strcmp( "true", v ) ) || ( *v == 't' && !strcmp( "false", v ) ) ) {
+		t = T_BOOLEAN;
+		return t;
+	}
+
+
+	// Check for other stuff 
+	for ( char *vv = v; *vv; vv++ ) {
+		if ( *vv == '.' && ( t == T_INTEGER ) ) {
+			t = T_DOUBLE;
+		}
+		if ( !memchr( "0123456789.-", *vv, 12 ) ) {
+			t = T_STRING;
+			return t;
+		}
+	}
+
+	return t;
+} 
+
+
 //Simple key-value
-void p_default( int ind, const char *k, const char *v ) {
-	fprintf( stdout, "%s => %s%s%s\n", k, ld, v, rd );
+void p_default( int ind, record_t *r ) {
+	fprintf( stdout, "%s => %s%s%s\n", r->k, ld, r->v, rd );
 }  
 
 
 //JSON converter
-void p_json( int ind, const char *k, const char *v ) {
+void p_json( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, "%s%c\"%s\": \"%s\"\n", &TAB[9-ind], adv ? ' ' : ',', k, v );
+	fprintf( stdout, 
+		"%s%c\"%s\": \"%s\"\n", &TAB[9-ind], adv ? ' ' : ',', r->k, r->v );
 }  
 
 
 //C struct converter
-void p_carray ( int ind, const char *k, const char *v ) {
-	fprintf( stdout, &", \"%s\""[ adv ], v );
+void p_carray ( int ind, record_t *r ) {
+	fprintf( stdout, &", \"%s\""[ adv ], r->v );
 }
 
 
 //XML converter
-void p_xml( int ind, const char *k, const char *v ) {
-	fprintf( stdout, "%s<%s>%s</%s>\n", &TAB[9-ind], k, v, k );
+void p_xml( int ind, record_t *r ) {
+	fprintf( stdout, "%s<%s>%s</%s>\n", &TAB[9-ind], r->k, r->v, r->k );
 }  
 
 
 //SQL converter
-void p_sql( int ind, const char *k, const char *v ) {
+void p_sql( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, &",%s%s%s"[adv], ld, v, rd );
+	if ( !typesafe ) {
+		fprintf( stdout, &",%s%s%s"[adv], ld, r->v, rd );
+	}
+	else {
+#if 1
+		// Should check that they match too
+		if ( r->type != T_STRING && r->type != T_CHAR )
+			fprintf( stdout, &",%s"[adv], r->v );
+		else {
+			fprintf( stdout, &",%s%s%s"[adv], ld, r->v, rd );
+		}
+#endif
+	}
 }  
 
 
 //Simple comma converter
-void p_comma ( int ind, const char *k, const char *v ) {
+void p_comma ( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, &",\"%s\""[adv], v );
+	fprintf( stdout, &",\"%s\""[adv], r->v );
 }
 
 
 //C struct converter
-void p_cstruct ( int ind, const char *k, const char *v ) {
+void p_cstruct ( int ind, record_t *r ) {
 	//check that it's a number
-	char *vv = (char *)v;
+	char *vv = (char *)r->v;
 
 	//Handle blank values
 	if ( !strlen( vv ) ) {
 		fprintf( stdout, "%s", &TAB[9-ind] );
-		fprintf( stdout, &", .%s = \"\"\n"[ adv ], k );
+		fprintf( stdout, &", .%s = \"\"\n"[ adv ], r->k );
 		return;
 	}
 
 #if 1
 	fprintf( stdout, "%s", &TAB[9-ind] );
-	fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
+	fprintf( stdout, &", .%s = \"%s\"\n"[adv], r->k, r->v );
 	return;
 #else
 	if ( !strcmp( vv, "true" ) || !strcmp( vv, "TRUE" ) ) {
@@ -231,17 +344,20 @@ void p_cstruct ( int ind, const char *k, const char *v ) {
 }
 
 
-//Copy a string off as snake_case
-char * copy_and_snakecase( char *src, int size ) {
+//Trim and copy a string, optionally using snake_case
+char * copy( char *src, int size, int toSnakecase ) {
 	char *b = NULL; 
 	char *a = malloc( size + 1 );
 	int nsize = 0;
 	memset( a, 0, size + 1 );
 	b = (char *)trim( (unsigned char *)src, " ", size, &nsize );
 	memcpy( a, b, nsize );
-	snakecase( &a );
+	if ( toSnakecase ) {	
+		snakecase( &a );
+	}
 	return a;
-} 
+}
+
 
 
 //Extract the headers from a CSV
@@ -249,12 +365,13 @@ char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
 	zWalker p = { 0 };
 	while ( strwalk( &p, buf, del ) ) {
-		char *t = ( !p.size ) ? no_header : copy_and_snakecase( &buf[ p.pos ], p.size - 1 );
+		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, 1 );
 		add_item( &headers, t, char *, &hlen );
 		if ( p.chr == '\n' || p.chr == '\r' ) break;
 	}
 	return headers;
 }
+
 
 
 //Free headers allocated previously
@@ -266,6 +383,7 @@ void free_headers ( char **headers ) {
 	}
 	free( headers );
 }
+
 
 
 //Get a value from a column
@@ -319,8 +437,8 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 }
 
 
-void free_inner_records( Dub **v ) {
-	Dub **iv = v;	
+void free_inner_records( record_t **v ) {
+	record_t **iv = v;	
 	while ( *iv ) {
 		free( (*iv)->v );
 		free( *iv );
@@ -330,8 +448,9 @@ void free_inner_records( Dub **v ) {
 }
 
 
-void free_records ( Dub ***v ) {
-	Dub ***ov = v;
+
+void free_records ( record_t ***v ) {
+	record_t ***ov = v;
 	while ( *ov ) {
 		free_inner_records( *ov );
 		ov++;
@@ -340,9 +459,10 @@ void free_records ( Dub ***v ) {
 }
 
 
-Dub *** generate_records ( char *buf, char *del, char **headers ) {
-	Dub **iv = NULL, ***ov = NULL;
-	int ol = 0, il = 0, hindex = 0;
+
+record_t *** generate_records ( char *buf, char *del, char **headers, char *err ) {
+	record_t **iv = NULL, ***ov = NULL;
+	int ol = 0, il = 0, hindex = 0, line = 2;
 	zWalker p = { 0 };
 
 	//Find the first '\n' and skip it
@@ -351,39 +471,62 @@ Dub *** generate_records ( char *buf, char *del, char **headers ) {
 	//Now allocate for values
 	while ( strwalk( &p, buf, del ) ) {
 		//fprintf( stderr, "%d, %d\n", p.chr, *p.ptr );
-		if ( p.chr == '\r' ) 
+		if ( p.chr == '\r' ) {	
+			line++;
 			continue;
-		else if ( hindex >= hlen ) {
+		}
+		else if ( hindex > hlen ) {
 			( !ov ) ? free_inner_records( iv ) : free_records( ov );
+			snprintf( err, ERRLEN - 1,
+				"There may be more columns than headers in this file. "
+				"(hindex = %d, hlen = %d)\n", hindex, hlen );
 			return NULL;
 		}
 
-		Dub *v = malloc( sizeof( Dub ) );
+		//TODO: There are other places to pay more attention to, but
+		//this whole block just looks off to me
+		record_t *v = malloc( sizeof( record_t ) );
 		v->k = headers[ hindex ];
 		v->v = malloc( p.size + 1 );
 		memset( v->v, 0, p.size + 1 );
 		extract_value_from_column( &buf[ p.pos ], &v->v, p.size - 1 );	
-		add_item( &iv, v, Dub *, &il );
+
+		// Do the typecheck ehre
+		if ( typesafe ) {
+			v->exptype = *(gtypes[ hindex ]);
+			v->type = get_type( v->v, v->exptype );
+
+			if ( typesafe && v->exptype != v->type ) {
+				( !ov ) ? free_inner_records( iv ) : free_records( ov );
+				snprintf( err, ERRLEN - 1, 
+					"Type check for value at column '%s', line %d failed: %s != %s ( '%s' )\n", 
+					v->k, line, sqlite_coldefs[(int)v->exptype], sqlite_coldefs[(int)v->type], 
+					v->v );
+				return NULL;
+			}
+		}
+
+		add_item( &iv, v, record_t *, &il );
 		hindex++;
 
 		if ( p.chr == '\n' ) {
-			add_item( &ov, iv, Dub **, &ol );	
-			iv = NULL, il = 0, hindex = 0;
+			add_item( &ov, iv, record_t **, &ol );	
+			iv = NULL, il = 0, hindex = 0, line++;
 		}
 	}
 
 	//This ensures that the final row is added to list...
 	//TODO: It'd be nice to have this within the above loop.
-	add_item( &ov, iv, Dub **, &ol );	
+	add_item( &ov, iv, record_t **, &ol );	
 	return ov;
 }
 
 
 
-void output_records ( Dub ***ov, FILE *output, Stream stream ) {
+void output_records ( record_t ***ov, FILE *output, Stream stream ) {
 	int odv = 0;
 	while ( *ov ) {
-		Dub **bv = *ov;
+		record_t **bv = *ov;
 
 		//Prefix
 		if ( prefix ) {
@@ -414,7 +557,7 @@ void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 		#endif
 		}
 		else if ( stream == STREAM_SQL ) {
-			Dub **hv = *ov;
+			record_t **hv = *ov;
 			int a = 0;
 			fprintf( output, "INSERT INTO %s ( ", root );
 			while ( *hv && (*hv)->k ) {
@@ -429,23 +572,23 @@ void output_records ( Dub ***ov, FILE *output, Stream stream ) {
 		//The body
 		adv = 1;
 		while ( *bv && (*bv)->k ) {
-			Dub *ib = *bv;
+			record_t *ib = *bv;
 			//Sadly, you'll have to use a buffer...
 			//Or, use hlen, since that should contain a count of columns...
 			if ( stream == STREAM_PRINTF )
-				p_default( 0, ib->k, ib->v );
+				p_default( 0, ib );
 			else if ( stream == STREAM_XML )
-				p_xml( 1, ib->k, ib->v );
+				p_xml( 1, ib );
 			else if ( stream == STREAM_CSTRUCT )
-				p_cstruct( 1, ib->k, ib->v );
+				p_cstruct( 1, ib );
 			else if ( stream == STREAM_CARRAY )
-				p_carray( 0, ib->k, ib->v );
+				p_carray( 0, ib );
 			else if ( stream == STREAM_COMMA )
-				p_comma( 1, ib->k, ib->v );
+				p_comma( 1, ib );
 			else if ( stream == STREAM_SQL )
-				p_sql( 0, ib->k, ib->v );
+				p_sql( 0, ib );
 			else if ( stream == STREAM_JSON ) {
-				p_json( 1, ib->k, ib->v );
+				p_json( 1, ib );
 			}
 			adv = 0, bv++;
 		}
@@ -497,6 +640,7 @@ Functor f[] = {
 };
 
 
+
 //check for a valid stream
 int check_for_valid_stream ( char *st ) {
 	for ( int i = 0; i < sizeof(f) / sizeof(Functor); i++ ) {
@@ -506,11 +650,75 @@ int check_for_valid_stream ( char *st ) {
 }
 
 
+
+// Extract one row only
+static char * extract_row( char *buf, int buflen ) {
+	// Extract just the first row of real values
+	char *start = memchr( buf, '\n', buflen );  
+	int slen = 0;
+	for ( char *s = ++start; ( *s != '\n' && *s != '\r' ); s++, slen++ );
+
+	// 
+	slen++;
+	char *str = malloc( slen );
+	memset( str, 0, slen );
+	memcpy( str, start, slen );
+	return str;
+}
+
+
+
+// Return all the types
+static type_t ** get_types ( char *str, const char *delim ) {
+	//... 
+	type_t **ts = NULL;
+	int tlen = 0;
+	zWalker p = { 0 };
+//fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
+
+	while ( strwalk( &p, str, delim ) ) {
+//fprintf( stderr, "ONE: '%s'\n", str );
+		char *t = NULL;
+		int len = 0;
+
+		if ( !p.size ) {
+			type_t *p = malloc( sizeof( type_t ) );
+			memset( p, 0, sizeof( type_t ) );
+			*p = T_STRING;
+			add_item( &ts, p, type_t *, &tlen );
+			//fprintf( stderr, "%s -> %s ( %d )\n", *j, "", (int)*p); j++;
+			continue;
+		}
+
+		t = copy( &str[ p.pos ], p.size - 1, 0 );
+		//fprintf( stderr, "%d\n", ( len = strlen( t ) ) );
+		if ( ( len = strlen( t ) ) == 0 ) {
+			// ?
+			type_t *p = malloc( sizeof( type_t ) );
+			memset( p, 0, sizeof( type_t ) );
+			*p = T_STRING;
+			add_item( &ts, p, type_t *, &tlen );
+			//fprintf( stderr, "%s -> %s ( %d )\n", *j, "", (int)*p); j++;
+			continue;
+		}
+
+		type_t type = get_type( t, T_STRING ); 
+		type_t *x = malloc( sizeof( type_t ) );
+		memset( x, 0, sizeof( type_t ) );
+		*x = type;
+
+		//fprintf( stderr, "%s -> %s ( %d )\n", *j, t, (int)type ); j++;
+		add_item( &ts, x, type_t *, &tlen );
+	}
+
+	return ts;
+}
+
 int headers_f ( const char *file, const char *delim ) {
 	char **h = NULL, **headers = NULL;
 	char *buf = NULL; 
 	int buflen = 0;
-	char err[ 2048 ] = { 0 };
+	char err[ ERRLEN ] = { 0 };
 	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
 
 	//Create the new delimiter string.
@@ -538,11 +746,112 @@ int headers_f ( const char *file, const char *delim ) {
 }
 
 
+#if 0 
+char mysql_coldefs[10][10] = {
+	{ "NULL", "TEXT", "TEXT", "INTEGER", "INTEGER", "TEXT" } 
+	NULL,		
+} };
+#endif
+
+
+// Generate a schema according to a specific type
+int schema_f ( const char *file, const char *delim ) {
+	char **h = NULL, **headers = NULL;
+	char *buf = NULL; 
+	int buflen = 0;
+	char err[ ERRLEN ] = { 0 };
+	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+
+	//Create the new delimiter string.
+	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
+
+	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
+		return nerr( "%s", err );
+	}
+
+	if ( !( h = headers = generate_headers( buf, del ) ) ) {
+		free( buf );
+		return nerr( "Failed to generate headers." );
+	}
+
+//write( 2, start, slen ); exit(0);
+
+	//
+	char *str = extract_row( buf, buflen );
+	if ( !str ) {
+		free( buf );
+		return nerr( "Failed to extract first row..." );
+	}
+
+	type_t **types = get_types( str, del );
+
+	// Root should have been specified
+	// If not, I don't know...
+	fprintf( stdout, "CREATE TABLE %s (\n", root );
+
+	while ( h && *h ) {
+		char *type = sqlite_coldefs[ (int)**types ];
+		//fprintf( stderr, "%s -> %s\n", *j, type );
+		fprintf( stdout, "%s %s,\n", *h, type );
+		free( *h ), free( *types );
+		h++, types++;
+	}
+
+	fprintf( stdout, ");\n" );
+
+	//TODO: Free the header list
+	free( headers );
+	free( buf );
+	return 1;
+}
+
+
+
+// Generate a list of types
+int types_f ( const char *file, const char *delim ) {
+	char **h = NULL, **headers = NULL;
+	char *buf = NULL; 
+	int buflen = 0;
+	char err[ ERRLEN ] = { 0 };
+	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+
+	//Create the new delimiter string.
+	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
+	
+	//...
+	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
+		return nerr( "%s", err );
+	}
+
+	// Move up the string to the next line
+	char *start = memchr( buf, '\n', buflen );  
+return 0;
+#if 0
+	while ( strwalk( &p, buf, del ) ) {
+		char *t = ( !p.size ) ? no_header : copy_and_snakecase( &buf[ p.pos ], p.size - 1 );
+		add_item( &headers, t, char *, &hlen );
+		if ( p.chr == '\n' || p.chr == '\r' ) break;
+	}
+#endif
+	while ( h && *h ) {
+		fprintf( stdout, "%s\n", *h );
+		free( *h );
+		h++;
+	}
+
+	//TODO: Free the header list
+	free( headers );
+	free( buf );
+	return 1;
+}
+
+
+
 //convert CSV or similar to another format
 int convert_f ( const char *file, const char *delim, Stream stream ) {
 	char *buf = NULL, **headers = NULL;
- 	char err[2048] = { 0 }, del[8] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
-	Dub ***ov = NULL;
+ 	char err[ ERRLEN ] = { 0 }, del[8] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	record_t ***ov = NULL;
 	FILE *output = stdout;
 	int buflen = 0;
 
@@ -562,10 +871,19 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 		return nerr( "%s\n", "Failed to generate headers." );
 	}
 
-	if ( !( ov = generate_records( buf, del, headers ) ) ) {
+//fprintf( stderr, "DEL: %s\n", delim );
+	//
+	if ( typesafe ) {
+		char *str = extract_row( buf, buflen );
+//fprintf( stderr, "STR: %s\n", str );
+		type_t ** types = get_types( str, del );
+		gtypes = types;
+	}
+
+	if ( !( ov = generate_records( buf, del, headers, err ) ) ) {
 		free_headers( headers );
 		free( buf );
-		return nerr( "%s\n", "There seem to be more columns than headers in this file, stopping...\n" );
+		return nerr( "%s\n", err );
 	}
 
 	//Output the string or render, should probably be done with function pointers anyway...
@@ -588,6 +906,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 }
 
 
+
 //Options
 int help () {
 	const char *fmt = "%-2s%s --%-24s%-30s\n";
@@ -599,19 +918,23 @@ int help () {
 			"                              (Example using XML: <$root> <key1></key1> </$root>)" }, 
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings\n"
 			"                              (NOTE: VERY useful for SQL)" },
+	#if 1
+		{ "-t", "typesafe",    "Enforce and/or enable typesafety." },
+	#endif
 		{ "-f", "format <arg>","Specify a format to convert to" },
 		{ "-j", "json",        "Convert into JSON." },
 		{ "-x", "xml",         "Convert into XML." },
 		{ "-q", "sql",         "Convert into general SQL INSERT statement." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
 		{ "-s", "suffix <arg>","Specify a suffix" },
+		{ "-k", "schema <arg>","Generate an SQL schema using file <arg> as data\n"
+      "                              (sqlite is the default backend)" },
+		{ "",   "for <arg>",   "Use <arg> as the backend when generating a schema.\n"
+			"                              (e.g. for=[ 'oracle', 'postgres', 'mysql',\n" 
+		  "                              'sqlserver' or 'sqlite'.])" },
 		{ "-n", "no-newline",  "Do not generate a newline after each row." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 		{ "-h", "help",        "Show help." },
-
-	#if 0
-		{ "-t", "typesafe",    "Attempt to be typesafe with conversion." },
-	#endif
 	};
 
 	for ( int i = 0; i < sizeof(msgs) / sizeof(struct help); i++ ) {
@@ -620,6 +943,7 @@ int help () {
 	}
 	return 0;
 }
+
 
 
 int main (int argc, char *argv[]) {
@@ -633,14 +957,10 @@ int main (int argc, char *argv[]) {
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;	
-		#if 0
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
-			typesafe = 1;	
-		#endif
+			typesafe = 1;
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
 			newline = 0;
-		#if 0
-		#endif
 		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
 			stream_fmt = STREAM_JSON;
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
@@ -653,6 +973,12 @@ int main (int argc, char *argv[]) {
 			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
 				return nerr( "Invalid format '%s' requested.\n", streamtype );
 			}	
+		}
+		else if ( !strcmp( *argv, "-k" ) || !strcmp( *argv, "--schema" ) ) {
+			schema = 1;	
+			if ( !dupval( *( ++argv ), &FFILE ) ) {
+				return nerr( "%s\n", "No argument specified for --schema." );
+			}
 		}
 		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
 			if ( !dupval( *( ++argv ), &root ) ) {
@@ -711,7 +1037,13 @@ int main (int argc, char *argv[]) {
 			return 1; //nerr( "conversion of file failed...\n" );
 		}
 	}
+	else if ( schema ) {
+		if ( !schema_f( FFILE, DELIM ) ) {
+			return 1;
+		}
+	}
 	else if ( convert ) {
+		// Check if the user wants types or not
 		if ( !convert_f( FFILE, DELIM, stream_fmt ) ) {
 			return 1; //nerr( "conversion of file failed...\n" );
 		}
