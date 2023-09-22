@@ -104,6 +104,26 @@ typedef struct Functor {
 } Functor;
 
 
+typedef struct sqldef_t {
+	const char *id_fmt;
+	const char *coldefs[8];
+} sqldef_t;
+
+
+typedef enum sqltype_t {
+	SQLITE3,
+	POSTGRES,
+	ORACLE,
+	MSSQLSRV,
+	MYSQL	
+} sqltype_t;
+
+
+sqldef_t coldefs[1] = {
+	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
+};
+
+
 //Global variables to ease testing
 char *no_header = "nothing";
 char *output_file = NULL;
@@ -125,10 +145,19 @@ int schema=0;
 int hlen = 0;
 int no_unsigned=0;
 int adv=0;
+int stream_fmt = STREAM_PRINTF;
 const char ucases[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 const char lcases[] = "abcdefghijklmnopqrstuvwxyz_";
 const char exchrs[] = "~`!@#$%^&*()-_+={}[]|:;\"'<>,.?/";
 type_t **gtypes = NULL;
+int want_id = 0;
+char *id_name = "id";
+int want_datestamps = 0;
+char *datestamp_name = "date";
+
+
+
+char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT"; 
 
 char * sqlite_coldefs[] = {
 	"NULL",
@@ -268,7 +297,7 @@ void p_carray ( int ind, record_t *r ) {
 //XML converter
 void p_xml( int ind, record_t *r ) {
 	fprintf( stdout, "%s<%s>%s</%s>\n", &TAB[9-ind], r->k, r->v, r->k );
-}  
+}
 
 
 //SQL converter
@@ -761,6 +790,9 @@ int schema_f ( const char *file, const char *delim ) {
 	int buflen = 0;
 	char err[ ERRLEN ] = { 0 };
 	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	
+	// Set this to keep commas at the beginning
+	adv = 1;
 
 	//Create the new delimiter string.
 	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
@@ -789,12 +821,28 @@ int schema_f ( const char *file, const char *delim ) {
 	// If not, I don't know...
 	fprintf( stdout, "CREATE TABLE %s (\n", root );
 
+	// Add an ID if we specify it? (unsure how to do this)
+	if ( want_id ) {
+		fprintf( stdout, "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", id_name );
+		adv = 0;
+	}
+
+	//
+	if ( want_datestamps ) {
+		( adv == 1 ) ? 0 : fprintf( stdout, "," );
+		fprintf( stdout, "%s_created INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP\n", datestamp_name );
+		fprintf( stdout, ",%s_updated INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP\n", datestamp_name );
+		adv = 0;
+	}
+
+	// Add the rest of the rows
 	while ( h && *h ) {
 		char *type = sqlite_coldefs[ (int)**types ];
 		//fprintf( stderr, "%s -> %s\n", *j, type );
-		fprintf( stdout, "%s %s,\n", *h, type );
+		( adv == 1 ) ? 0 : fprintf( stdout, "," );
+		fprintf( stdout, "%s %s\n", *h, type );
 		free( *h ), free( *types );
-		h++, types++;
+		h++, types++, adv = 0;
 	}
 
 	fprintf( stdout, ");\n" );
@@ -934,6 +982,8 @@ int help () {
 		  "                              'sqlserver' or 'sqlite'.])" },
 		{ "-n", "no-newline",  "Do not generate a newline after each row." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
+		{ "",   "add-id",      "Add a unique ID column."  },
+		{ "",   "add-datestamps","Add columns for date created and date updated"  },
 		{ "-h", "help",        "Show help." },
 	};
 
@@ -948,7 +998,6 @@ int help () {
 
 int main (int argc, char *argv[]) {
 	SHOW_COMPILE_DATE();
-	int stream_fmt = STREAM_PRINTF;
 
 	if ( argc < 2 || !strcmp( *argv, "-h" ) || !strcmp( *argv, "--help" ) ) {
 		return help();
@@ -957,6 +1006,10 @@ int main (int argc, char *argv[]) {
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;	
+		else if ( !strcmp( *argv, "--add-id" ) )
+			want_id = 1;	
+		else if ( !strcmp( *argv, "--add-datestamps" ) )
+			want_datestamps = 1;	
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
 			typesafe = 1;
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
