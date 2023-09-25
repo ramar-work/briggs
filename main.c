@@ -466,10 +466,6 @@ char * copy( char *src, int size, case_t t ) {
 	}
 	else if ( t == CASE_CAMEL ) {	
 		camelcase( &a );
-fprintf( stderr, "KEY: '" );
-fprintf( stderr, "%s", a );
-//write( 2, a, nsize );
-fprintf( stderr, "'\n" );
 	}
 	return a;
 }
@@ -965,7 +961,7 @@ int struct_f ( const char *file, const char *delim ) {
 		free( buf );
 		return nerr( "Failed to generate headers." );
 	}
-exit(0);
+
 	//
 	if ( !( str = extract_row( buf, buflen ) ) ) {
 		free( buf );
