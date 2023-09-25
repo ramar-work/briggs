@@ -73,6 +73,13 @@ typedef enum {
 
 
 
+typedef enum case_t {
+	NONE = 0,
+	CASE_SNAKE,
+	CASE_CAMEL
+} case_t;
+
+
 typedef enum type_t {
 	T_NULL = 0,
 	T_CHAR,
@@ -154,10 +161,33 @@ int want_id = 0;
 char *id_name = "id";
 int want_datestamps = 0;
 char *datestamp_name = "date";
-
-
+int structdata=0;
+int classdata=0;
+case_t case_type = CASE_SNAKE;
 
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT"; 
+
+
+//Different languages need their own definitions
+char * struct_coldefs[] = {
+	"NULL",
+	"char",
+	"char *",
+	"int",
+	"double",
+	"int",
+	NULL,		
+};
+
+char * class_coldefs[] = {
+	"NULL",
+	"int",
+	"String",
+	"int",
+	"double",
+	"bool",
+	NULL,		
+};
 
 char * sqlite_coldefs[] = {
 	"NULL",
@@ -214,6 +244,56 @@ static void snakecase ( char **k ) {
 		}
 		nk++;
 	}
+}
+
+
+//Convert word to camelCase
+static void camelcase ( char **k ) {
+	char *nk = *k;
+	char *ok = *k;
+	int first = 0;
+	int cap = 0;
+	int len = strlen( *k );
+	int plen = 0;
+
+	while ( *ok ) {
+		char *u = (char *)ucases; 
+		char *l = (char *)lcases;
+
+		// Replace any spaces or underscores
+		if ( *ok == ' ' || *ok == '_' ) {
+			ok++, *nk = *ok;
+		#if 1
+			// 
+			while ( *l ) {
+				if ( *nk == *l ) {
+					*nk = *u;	
+					break;
+				}
+				u++, l++;
+			}
+		#endif
+			nk++, ok++, plen++;
+		}
+		else {
+			// Find the lower case equivalent
+			while ( *u ) {
+				if ( *ok == *u ) { 
+					*ok = *l;
+					break;
+				}
+				u++, l++;
+			}
+		}
+
+		*nk = *ok, nk++, ok++, plen++;
+	}
+
+#if 1
+	if ( plen > 0 ) {
+		(*k)[plen] = 0;
+	}
+#endif
 }
 
 
@@ -374,15 +454,22 @@ void p_cstruct ( int ind, record_t *r ) {
 
 
 //Trim and copy a string, optionally using snake_case
-char * copy( char *src, int size, int toSnakecase ) {
+char * copy( char *src, int size, case_t t ) {
 	char *b = NULL; 
 	char *a = malloc( size + 1 );
 	int nsize = 0;
 	memset( a, 0, size + 1 );
 	b = (char *)trim( (unsigned char *)src, " ", size, &nsize );
 	memcpy( a, b, nsize );
-	if ( toSnakecase ) {	
+	if ( t == CASE_SNAKE ) {	
 		snakecase( &a );
+	}
+	else if ( t == CASE_CAMEL ) {	
+		camelcase( &a );
+fprintf( stderr, "KEY: '" );
+fprintf( stderr, "%s", a );
+//write( 2, a, nsize );
+fprintf( stderr, "'\n" );
 	}
 	return a;
 }
@@ -394,7 +481,7 @@ char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
 	zWalker p = { 0 };
 	while ( strwalk( &p, buf, del ) ) {
-		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, 1 );
+		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, case_type );
 		add_item( &headers, t, char *, &hlen );
 		if ( p.chr == '\n' || p.chr == '\r' ) break;
 	}
@@ -855,6 +942,84 @@ int schema_f ( const char *file, const char *delim ) {
 
 
 
+// Generate a schema according to a specific type
+int struct_f ( const char *file, const char *delim ) {
+	char **h = NULL, **headers = NULL;
+	char *buf = NULL, *str = NULL;
+	int buflen = 0;
+	char err[ ERRLEN ] = { 0 };
+	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	type_t **types = NULL;
+	
+	// Set this to keep commas at the beginning
+	adv = 1;
+
+	//Create the new delimiter string.
+	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
+
+	if ( !( buf = (char *)read_file( file, &buflen, err, sizeof( err ) ) ) ) {
+		return nerr( "%s", err );
+	}
+
+	if ( !( h = headers = generate_headers( buf, del ) ) ) {
+		free( buf );
+		return nerr( "Failed to generate headers." );
+	}
+exit(0);
+	//
+	if ( !( str = extract_row( buf, buflen ) ) ) {
+		free( buf );
+		return nerr( "Failed to extract first row..." );
+	}
+
+	// TODO: Catch this failure should it happen
+	types = get_types( str, del );
+
+	// Root should have been specified
+	// If not, I don't know...
+	if ( !strcmp( root, "root" ) ) {
+		return nerr( "Class or struct name unspecified when generating structure\n" );
+	}
+
+#if 0
+	// Add an ID if we specify it? (unsure how to do this)
+	if ( want_id ) {
+		fprintf( stdout, "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", id_name );
+		adv = 0;
+	}
+#endif
+
+	//
+	char **defs = NULL; 
+	if ( classdata ) {
+		defs = class_coldefs; 
+		fprintf( stdout, "class %s {\n", root );
+	}
+	else {
+		defs = struct_coldefs; 
+		fprintf( stdout, "struct %s {\n", root );
+	}
+	
+
+	// Add the rest of the rows
+	while ( h && *h ) {
+		char *type = defs[ (int)**types ];
+		//fprintf( stderr, "%s -> %s\n", *j, type );
+		fprintf( stdout, "\t%s %s;\n", type, *h );
+		free( *h ), free( *types );
+		h++, types++, adv = 0;
+	}
+
+	fprintf( stdout, "};\n" );
+
+	//TODO: Free the header list
+	free( headers );
+	free( buf );
+	return 1;
+}
+
+
+
 // Generate a list of types
 int types_f ( const char *file, const char *delim ) {
 	char **h = NULL, **headers = NULL;
@@ -964,6 +1129,7 @@ int help () {
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
 		{ "-r", "root <arg>",  "Specify a $root name for certain types of structures.\n"
 			"                              (Example using XML: <$root> <key1></key1> </$root>)" }, 
+		{ "",   "name <arg>",  "Synonym for root.\n" },
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings\n"
 			"                              (NOTE: VERY useful for SQL)" },
 	#if 1
@@ -975,14 +1141,17 @@ int help () {
 		{ "-q", "sql",         "Convert into general SQL INSERT statement." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
 		{ "-s", "suffix <arg>","Specify a suffix" },
+		{ "",   "class <arg>", "Generate a class using headers in <arg> as input\n" },
+		{ "",   "struct <arg>","Generate a struct using headers in <arg> as input\n"  },
 		{ "-k", "schema <arg>","Generate an SQL schema using file <arg> as data\n"
       "                              (sqlite is the default backend)" },
 		{ "",   "for <arg>",   "Use <arg> as the backend when generating a schema.\n"
 			"                              (e.g. for=[ 'oracle', 'postgres', 'mysql',\n" 
 		  "                              'sqlserver' or 'sqlite'.])" },
+		{ "",   "camel-case",  "Use camel case for struct names\n" },
 		{ "-n", "no-newline",  "Do not generate a newline after each row." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
-		{ "",   "add-id",      "Add a unique ID column."  },
+		{ "",   "id <arg>",      "Add a unique ID column named <arg>."  },
 		{ "",   "add-datestamps","Add columns for date created and date updated"  },
 		{ "-h", "help",        "Show help." },
 	};
@@ -1006,8 +1175,6 @@ int main (int argc, char *argv[]) {
 	while ( *argv ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;	
-		else if ( !strcmp( *argv, "--add-id" ) )
-			want_id = 1;	
 		else if ( !strcmp( *argv, "--add-datestamps" ) )
 			want_datestamps = 1;	
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
@@ -1020,6 +1187,14 @@ int main (int argc, char *argv[]) {
 			stream_fmt = STREAM_XML;
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) )
 			stream_fmt = STREAM_SQL;
+		else if ( !strcmp( *argv, "" ) || !strcmp( *argv, "--camel-case" ) )
+			case_type = CASE_CAMEL;	
+		else if ( !strcmp( *argv, "--id" ) ) {
+			want_id = 1;	
+			if ( !dupval( *( ++argv ), &id_name ) ) {
+				return nerr( "%s\n", "No argument specified for --id." );
+			}
+		}
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
 			if ( !dupval( *( ++argv ), &streamtype ) )
 				return nerr( "%s\n", "No argument specified for --format." );
@@ -1028,14 +1203,32 @@ int main (int argc, char *argv[]) {
 			}	
 		}
 		else if ( !strcmp( *argv, "-k" ) || !strcmp( *argv, "--schema" ) ) {
-			schema = 1;	
+			schema = 1;
 			if ( !dupval( *( ++argv ), &FFILE ) ) {
 				return nerr( "%s\n", "No argument specified for --schema." );
 			}
 		}
 		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
 			if ( !dupval( *( ++argv ), &root ) ) {
-				return nerr( "%s\n", "No argument specified for --root." );
+				return nerr( "%s\n", "No argument specified for --root / --name." );
+			}
+		}
+		else if ( !strcmp( *argv, "--name" ) ) {
+			if ( !dupval( *( ++argv ), &root ) ) {
+				return nerr( "%s\n", "No argument specified for --name / --root." );
+			}
+		}
+		else if ( !strcmp( *argv, "--class" ) ) {
+			classdata = 1;
+			case_type = CASE_CAMEL;
+			if ( !dupval( *( ++argv ), &FFILE ) ) {
+				return nerr( "%s\n", "No argument specified for --class." );
+			}
+		}
+		else if ( !strcmp( *argv, "--struct" ) ) {
+			structdata = 1;
+			if ( !dupval( *( ++argv ), &FFILE ) ) {
+				return nerr( "%s\n", "No argument specified for --struct." );
 			}
 		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
@@ -1092,6 +1285,11 @@ int main (int argc, char *argv[]) {
 	}
 	else if ( schema ) {
 		if ( !schema_f( FFILE, DELIM ) ) {
+			return 1;
+		}
+	}
+	else if ( classdata || structdata ) {
+		if ( !struct_f( FFILE, DELIM ) ) {
 			return 1;
 		}
 	}
