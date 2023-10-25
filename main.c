@@ -118,16 +118,27 @@ typedef struct sqldef_t {
 
 
 typedef enum sqltype_t {
-	SQLITE3,
-	POSTGRES,
-	ORACLE,
-	MSSQLSRV,
-	MYSQL	
+	SQL_NONE,
+	SQL_SQLITE3,
+	SQL_POSTGRES,
+	SQL_ORACLE,
+	SQL_MSSQLSRV,
+	SQL_MYSQL
 } sqltype_t;
 
 
-sqldef_t coldefs[1] = {
+sqldef_t coldefs[] = {
+	/* sqlite */
+	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
+	/* postgres */
+	{ "%s SERIAL PRIMARY KEY\n", { "NULL",	"VARCHAR(1)",	"TEXT",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
+	/* oracle */
 	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
+	/* mssql */
+	{ "%s INTEGER IDENTITY(1,1) NOT NULL\n", { "NULL",	"VARCHAR(1)",	"VARCHAR(MAX)",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
+	/* mysql */
+	{ "%s INTEGER NOT NULL\n", { "NULL",	"VARCHAR(1)",	"VARCHAR(MAX)",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
+	/* sqlite */
 };
 
 
@@ -165,6 +176,7 @@ char *datestamp_name = "date";
 int structdata=0;
 int classdata=0;
 case_t case_type = CASE_SNAKE;
+sqltype_t dbengine = SQL_SQLITE3;
 
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT"; 
 
@@ -608,9 +620,10 @@ record_t *** generate_records ( char *buf, char *del, char **headers, char *err 
 
 			if ( typesafe && v->exptype != v->type ) {
 				( !ov ) ? free_inner_records( iv ) : free_records( ov );
+				sqldef_t *col = &coldefs[ dbengine ];
 				snprintf( err, ERRLEN - 1, 
 					"Type check for value at column '%s', line %d failed: %s != %s ( '%s' )\n", 
-					v->k, line, sqlite_coldefs[(int)v->exptype], sqlite_coldefs[(int)v->type], 
+					v->k, line, col->coldefs[ (int)v->exptype ], col->coldefs[ (int)v->type ],
 					v->v );
 				return NULL;
 			}
@@ -784,10 +797,8 @@ static type_t ** get_types ( char *str, const char *delim ) {
 	type_t **ts = NULL;
 	int tlen = 0;
 	zWalker p = { 0 };
-fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
 
 	while ( strwalk( &p, str, delim ) ) {
-//fprintf( stderr, "ONE: '%s'\n", str );
 		char *t = NULL;
 		int len = 0;
 
@@ -870,9 +881,11 @@ char mysql_coldefs[10][10] = {
 int schema_f ( const char *file, const char *delim ) {
 	char **h = NULL, **headers = NULL;
 	char *buf = NULL; 
+	char *str = NULL;
 	int buflen = 0;
 	char err[ ERRLEN ] = { 0 };
 	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	type_t **types = NULL;
 	
 	// Set this to keep commas at the beginning
 	adv = 1;
@@ -889,16 +902,12 @@ int schema_f ( const char *file, const char *delim ) {
 		return nerr( "Failed to generate headers." );
 	}
 
-//write( 2, start, slen ); exit(0);
-
-	//
-	char *str = extract_row( buf, buflen );
-	if ( !str ) {
+	if ( !( str = extract_row( buf, buflen ) ) ) {
 		free( buf );
 		return nerr( "Failed to extract first row..." );
 	}
 
-	type_t **types = get_types( str, del );
+	types = get_types( str, del );
 
 	// Root should have been specified
 	// If not, I don't know...
@@ -906,7 +915,8 @@ int schema_f ( const char *file, const char *delim ) {
 
 	// Add an ID if we specify it? (unsure how to do this)
 	if ( want_id ) {
-		fprintf( stdout, "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", id_name );
+		sqldef_t *col = &coldefs[ dbengine ];
+		fprintf( stdout, col->id_fmt, id_name );
 		adv = 0;
 	}
 
@@ -920,7 +930,8 @@ int schema_f ( const char *file, const char *delim ) {
 
 	// Add the rest of the rows
 	while ( h && *h ) {
-		char *type = sqlite_coldefs[ (int)**types ];
+		sqldef_t *col = &coldefs[ dbengine ];
+		const char *type = col->coldefs[ (int)**types ];
 		//fprintf( stderr, "%s -> %s\n", *j, type );
 		( adv == 1 ) ? 0 : fprintf( stdout, "," );
 		fprintf( stdout, "%s %s\n", *h, type );
@@ -1265,6 +1276,29 @@ int main (int argc, char *argv[]) {
 			if ( !dupval( *( ++argv ), &root ) ) {
 				return nerr( "%s\n", "No argument specified for --name / --root." );
 			}
+		}
+		else if ( !strcmp( *argv, "--for" ) ) {
+
+			if ( *( ++argv ) == NULL ) {
+				return nerr( "%s\n", "No argument specified for flag --for." );
+			}
+
+			if ( !strcasecmp( *argv, "sqlite3" ) )
+				dbengine = SQL_SQLITE3;
+			else if ( !strcasecmp( *argv, "postgres" ) )
+				dbengine = SQL_POSTGRES;
+			else if ( !strcasecmp( *argv, "mysql" ) )
+				dbengine = SQL_MYSQL;
+			else if ( !strcasecmp( *argv, "mssql" ) )
+				dbengine = SQL_MSSQLSRV;
+			else if ( !strcasecmp( *argv, "oracle" ) ) {
+				dbengine = SQL_ORACLE;
+				return nerr( "Oracle SQL dialect is currently unsupported, sorry...\n" );
+			}
+			else {
+				return nerr( "Argument specified '%s' for flag --for is an invalid option.", *argv );
+			}
+
 		}
 		else if ( !strcmp( *argv, "--class" ) ) {
 			classdata = 1;
