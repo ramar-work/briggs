@@ -47,34 +47,6 @@
 #ifndef ZWALKER_H
 #define ZWALKER_H
 
-typedef struct {
-	//Current position within user's block
-	int pos;  
-
-	//Position of character found
-	int next;
-
-	//Size of block between current position and character position
-	int size;  
-
-	//Options
-	int keep_token;
-
-	//...
-	int rsize;
-  
-	//Character found
-	unsigned char chr; 
-
-	//Internal pointers
-	unsigned char *ptr, *rptr;
-} zWalker;
-
-enum zWalkerToken {
-	ZWALKER_KEEP_TOKEN = 0,
-	ZWALKER_DISCARD_TOKEN
-};
-
 #define strwalk(a,b,c) \
 	memwalk(a, (unsigned char *)b, (unsigned char *)c, strlen(b), strlen((char *)c))
 
@@ -93,6 +65,23 @@ enum zWalkerToken {
 #define memstr(blk,str,blklen) \
 	memblk( blk, str, blklen, strlen( str ) )
 
+
+typedef struct zw_t {
+	int pos; //Current position within user's block 
+	int next; //Position of character found
+	int size; //Size of block between current position and character position
+	int rsize; 	//...
+	unsigned char chr; //Character found
+	//Internal pointers
+	unsigned char *ptr, *rptr;
+	//Current position in block
+	unsigned char *src;
+} zw_t ;
+
+
+//Keep me for backwards compat
+typedef zw_t zWalker;
+
 int memchrocc (const void *, const char, int);
 
 int memchrat (const void *, const char, int);
@@ -107,12 +96,12 @@ int memtok (const void *, const unsigned char *, int, int );
 
 int memmatch (const void *, const char *, int, char ); 
 
-int memwalk (zWalker *, const unsigned char *, const unsigned char *, const int, const int ) ;
+int memwalk (zw_t *, const unsigned char *, const unsigned char *, const int, const int ) ;
 
-void zwalker_discard_tokens( zWalker * );
+void zwalker_discard_tokens( zw_t * );
 
-void zwalker_init( zWalker * );
+void zwalker_init( zw_t * );
 
-int memjump (zWalker *, const unsigned char *, const unsigned char **, const int, const int * );
+int memjump (zw_t *, const unsigned char *, const unsigned char **, const int, const int * );
 
 #endif

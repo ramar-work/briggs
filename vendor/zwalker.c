@@ -42,7 +42,7 @@
 //Return count of occurences of a character in some block.
 int memchrocc (const void *a, const char b, int size) {
 	int occ = 0;
-	while ( --size ) {
+	while ( size-- ) {
 		*( (const unsigned char *)a++ ) == b ? occ++ : 0; 
 	}
 	return occ;
@@ -51,8 +51,8 @@ int memchrocc (const void *a, const char b, int size) {
 
 //Where exactly is a character in memory
 int memchrat (const void *a, const char b, int size) {
-	int pos = 0, osize = size - 1;
-	while ( --size ) {
+	int pos = 0, osize = size;
+	while ( size-- ) {
 		if ( *( (unsigned char *)a++ ) == b ) {
 			return pos;
 		}
@@ -102,20 +102,42 @@ int memblkocc (const void *a, const void *b, int size_a, int size_b ) {
 
 
 //Walk through unsigned character data 
-int memwalk ( zWalker *w
+int memwalk ( zw_t *w
 	, const unsigned char * data
 	, const unsigned char * tokens
 	, const int datalen
 	, const int toklen )
 {
-	//Setup the structure
+#if 0
+fprintf( stderr, "[ %s - %d ] POS: %d, SIZE: %d, NEXT: %d, LEN: %d, TOKLEN: %d\n", 
+	__FILE__, __LINE__, w->pos, w->size, w->next, datalen, toklen );
+#endif
+
+	//ptr will be the front pointer in our data block as we walk through
 	w->ptr = (unsigned char *)( !w->ptr ? data : w->ptr );
-	if ( ( w->pos = w->next ) == datalen ) {
+	#if 0
+	w->src = &data[ w->pos ];
+	//w->src = ( !w->src ) ? (unsigned char *)data : ( w->src += w->size ) ; 
+	#else
+	//src will be the rear pointer in our data block as we walk through
+	if ( !w->src )
+		w->src = (unsigned char *)data;
+	else {
+		w->src += w->size;
+	}
+	#endif
+
+	// Stop if we are at the end of the data
+	if ( ( w->pos = w->next ) >= datalen ) { 
 		return 0;
 	}
+#if 0
+fprintf( stderr, "datalen - w->pos = %d\n", datalen - w->pos );
+getchar();
+#endif
 
 	//Find the tokens specified, and bring back that position
-	while ( ++w->next < datalen && !memchr( tokens, *(w->ptr++), toklen ) ) { 
+	while ( w->next++ < datalen && !memchr( tokens, *(w->ptr++), toklen ) ) { 
 		;//fprintf( stderr, "%d, %d\n", w->next, datalen );
 	}
 #if 0
@@ -124,7 +146,6 @@ int memwalk ( zWalker *w
 		//fprintf(stderr, "No tokens found, stopping.\n" );
 		return 0;
 	}	
-	//fprintf(stderr, "Got token '%c'.\n", *( w->ptr - 1 ) );
 #endif
 	//TODO: If you want to include the token, specify it...
 	w->size = w->next - w->pos;
@@ -135,7 +156,7 @@ int memwalk ( zWalker *w
 
 
 //"Jump" through unsigned character data (by looking for blocks larger than one character)
-int memjump ( zWalker *w
+int memjump ( zw_t *w
 	, const unsigned char * data
 	, const unsigned char ** tokens
 	, const int datalen
@@ -184,14 +205,9 @@ int memjump ( zWalker *w
 }
 
 
-//Initialize a zWalker structure
-void zwalker_init( zWalker *w ) {
-	memset( w, 0, sizeof( zWalker ) );
+//Initialize a zw_t structure
+void zwalker_init( zw_t *w ) {
+	memset( w, 0, sizeof( zw_t ) );
 } 
 
-
-//Return one less than the size of the block found
-void zwalker_discard_tokens( zWalker *w ) {
-	w->keep_token = ZWALKER_DISCARD_TOKEN;	
-}
 
