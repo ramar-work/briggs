@@ -770,8 +770,8 @@ static char * extract_row( char *buf, int buflen ) {
 
 	// 
 	slen++;
-	char *str = malloc( slen );
-	memset( str, 0, slen );
+	char *str = malloc( slen + 1 );
+	memset( str, 0, slen + 1 );
 	memcpy( str, start, slen );
 	return str;
 }
@@ -808,6 +808,7 @@ fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
 			memset( p, 0, sizeof( type_t ) );
 			*p = T_STRING;
 			add_item( &ts, p, type_t *, &tlen );
+			free( t );
 			//fprintf( stderr, "%s -> %s ( %d )\n", *j, "", (int)*p); j++;
 			continue;
 		}
@@ -819,6 +820,7 @@ fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
 
 		//fprintf( stderr, "%s -> %s ( %d )\n", *j, t, (int)type ); j++;
 		add_item( &ts, x, type_t *, &tlen );
+		free( t );
 	}
 
 	return ts;
@@ -929,6 +931,7 @@ int schema_f ( const char *file, const char *delim ) {
 	fprintf( stdout, ");\n" );
 
 	//TODO: Free the header list
+	free( str );
 	free( headers );
 	free( buf );
 	return 1;
@@ -1007,6 +1010,7 @@ int struct_f ( const char *file, const char *delim ) {
 	fprintf( stdout, "};\n" );
 
 	//TODO: Free the header list
+	free( str );
 	free( headers );
 	free( buf );
 	return 1;
@@ -1085,6 +1089,7 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 //fprintf( stderr, "STR: %s\n", str );
 		type_t ** types = get_types( str, del );
 		gtypes = types;
+		free( str );
 	}
 
 	if ( !( ov = generate_records( buf, del, headers, err ) ) ) {
