@@ -146,6 +146,7 @@ struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
 int headers_only = 0;
 int convert=0;
+int ascii=0;
 int newline=1;
 int typesafe=0;
 int schema=0;
@@ -251,9 +252,6 @@ static void snakecase ( char **k ) {
 static void camelcase ( char **k ) {
 	char *nk = *k;
 	char *ok = *k;
-	int first = 0;
-	int cap = 0;
-	int len = strlen( *k );
 	int plen = 0;
 
 	while ( *ok ) {
@@ -786,7 +784,7 @@ static type_t ** get_types ( char *str, const char *delim ) {
 	type_t **ts = NULL;
 	int tlen = 0;
 	zWalker p = { 0 };
-//fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
+fprintf( stderr, "STR: '%s', DEL: '%s'\n", str, delim );
 
 	while ( strwalk( &p, str, delim ) ) {
 //fprintf( stderr, "ONE: '%s'\n", str );
@@ -1016,6 +1014,7 @@ int struct_f ( const char *file, const char *delim ) {
 
 
 
+#if 0
 // Generate a list of types
 int types_f ( const char *file, const char *delim ) {
 	char **h = NULL, **headers = NULL;
@@ -1035,13 +1034,11 @@ int types_f ( const char *file, const char *delim ) {
 	// Move up the string to the next line
 	char *start = memchr( buf, '\n', buflen );  
 return 0;
-#if 0
 	while ( strwalk( &p, buf, del ) ) {
 		char *t = ( !p.size ) ? no_header : copy_and_snakecase( &buf[ p.pos ], p.size - 1 );
 		add_item( &headers, t, char *, &hlen );
 		if ( p.chr == '\n' || p.chr == '\r' ) break;
 	}
-#endif
 	while ( h && *h ) {
 		fprintf( stdout, "%s\n", *h );
 		free( *h );
@@ -1053,6 +1050,7 @@ return 0;
 	free( buf );
 	return 1;
 }
+#endif
 
 
 
@@ -1115,6 +1113,54 @@ int convert_f ( const char *file, const char *delim, Stream stream ) {
 }
 
 
+int ascii_f ( const char *file, const char *delim, const char *output ) {
+	unsigned char *buf = NULL;
+	char err[ ERRLEN ] = { 0 };
+	int buflen = 0, len = 0;
+	#if 0
+	int fd = -1; 
+	#endif
+
+	// Check for bad characters in the delimiter
+	for ( const char *d = delim; *d; d++ ) {
+		if ( *d > 127 ) {
+			return nerr( "delimiter contains something not ASCII\n" );
+		}
+	}
+
+	// Load the entire file
+	if ( !( buf = read_file( file, &buflen, err, sizeof( err ) ) ) ) {
+		return nerr( "%s\n", err );
+	}
+
+	#if 0
+	// Open whatever you asked for 
+	if ( ( fd = open( output, O_RDWR | O_CREAT, 0755 ) ) == -1 ) {
+		return nerr( "Failed to open file %s: %s\n", output, strerror( errno ) );
+	}
+	#endif
+
+	// Check for bad characters in the file
+	// NOTE: Written this way b/c *d can easily be \0 if we're running this...
+	for ( const unsigned char *d = buf; buflen; buflen--, len++, d++ ) {
+	#if 0
+		// Maybe you need to stop here?  Or convert certain byte sequences? 
+	#endif
+		if ( *d < 128 && ( write( 1, d, 1 ) == -1 ) ) {
+			return nerr( "Failed to write byte %d from %s to new file %s: %s\n", 
+				len, file, output, strerror( errno ) );
+		}
+	}
+
+	#if 0
+		// Using another file, you can close it here 
+	#endif
+
+	free( buf );
+	return 1;
+}
+
+
 
 //Options
 int help () {
@@ -1149,6 +1195,7 @@ int help () {
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 		{ "",   "id <arg>",      "Add a unique ID column named <arg>."  },
 		{ "",   "add-datestamps","Add columns for date created and date updated"  },
+		{ "a",   "ascii",      "Remove any characters that aren't ASCII and reproduce"  },
 		{ "-h", "help",        "Show help." },
 	};
 
@@ -1227,6 +1274,12 @@ int main (int argc, char *argv[]) {
 				return nerr( "%s\n", "No argument specified for --struct." );
 			}
 		}
+		else if ( !strcmp( *argv, "-a" ) || !strcmp( *argv, "--ascii" ) ) {
+			ascii = 1;	
+			if ( !dupval( *( ++argv ), &FFILE ) ) {
+				return nerr( "%s\n", "No argument specified for --id." );
+			}
+		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) ) {
 				return nerr( "%s\n", "No argument specified for --prefix." );
@@ -1293,6 +1346,11 @@ int main (int argc, char *argv[]) {
 		// Check if the user wants types or not
 		if ( !convert_f( FFILE, DELIM, stream_fmt ) ) {
 			return 1; //nerr( "conversion of file failed...\n" );
+		}
+	}
+	else if ( ascii ) {
+		if ( !ascii_f( FFILE, DELIM, "somethin" ) ) {
+			return 1;
 		}
 	}
 
