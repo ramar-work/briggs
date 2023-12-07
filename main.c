@@ -263,7 +263,7 @@ static void snakecase ( char **k ) {
 static void camelcase ( char **k ) {
 	char *nk = *k;
 	char *ok = *k;
-	int plen = 0;
+	unsigned int plen = 0;
 
 	while ( *ok ) {
 		char *u = (char *)ucases; 

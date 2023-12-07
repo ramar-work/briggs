@@ -3,8 +3,8 @@ NAME = briggs
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 CLANGFLAGS = -g -Wall -Werror -std=c99
-GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith
-# -Wstrict-overflow -pedantic-errors 
+GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow
+#  -pedantic-errors 
 CFLAGS = $(GCCFLAGS)
 #CFLAGS = $(CLANGFLAGS)
 CC = gcc
