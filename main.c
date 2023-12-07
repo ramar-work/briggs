@@ -263,7 +263,7 @@ static void snakecase ( char **k ) {
 static void camelcase ( char **k ) {
 	char *nk = *k;
 	char *ok = *k;
-	int plen = 0;
+	unsigned int plen = 0;
 
 	while ( *ok ) {
 		char *u = (char *)ucases; 
@@ -513,7 +513,7 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 		memcpy( *dest, src, size );
 	else {
 		char *pp = src;
-		int k = 0;
+		unsigned int k = 0;
 		//just do two seperate passes... 
 		//TODO: wow, this is bad...
 		if ( no_unsigned ) {
@@ -534,7 +534,7 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 				pp = *dest; //v->v;
 			}
 
-			for ( int i=0, l=0; i<k; i++ ) {
+			for ( unsigned int i = 0, l = 0; i<k; i++ ) {
 				int j = 0;
 				struct rep **r = reps;
 				while ( (*r)->o ) {
