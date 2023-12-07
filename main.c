@@ -72,7 +72,6 @@ typedef enum {
 } Stream;
 
 
-
 typedef enum case_t {
 	NONE = 0,
 	CASE_SNAKE,
@@ -514,11 +513,11 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 		memcpy( *dest, src, size );
 	else {
 		char *pp = src;
-		int k=0;
+		int k = 0;
 		//just do two seperate passes... 
 		//TODO: wow, this is bad...
 		if ( no_unsigned ) {
-			for ( int i=0; i < size; i++ ) {
+			for ( int i = 0; i < size; i++ ) {
 				if ( pp[ i ] < 32 || pp[ i ] > 126 )
 					;// v->v[ i ] = ' ';
 				else {
