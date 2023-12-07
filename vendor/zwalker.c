@@ -42,9 +42,12 @@
 //Return count of occurences of a character in some block.
 int memchrocc (const void *a, const char b, int size) {
 	int occ = 0;
+	const unsigned char *vp = a;
+
 	while ( size-- ) {
-		*( (const unsigned char *)a++ ) == b ? occ++ : 0; 
+		( *( vp++ ) == b ) ? occ++ : 0; 
 	}
+	
 	return occ;
 }
 
@@ -52,24 +55,31 @@ int memchrocc (const void *a, const char b, int size) {
 //Where exactly is a character in memory
 int memchrat (const void *a, const char b, int size) {
 	int pos = 0, osize = size;
+	const unsigned char *vp = a;
+
 	while ( size-- ) {
-		if ( *( (unsigned char *)a++ ) == b ) {
+		if ( *( vp++ ) == b ) {
 			return pos;
 		}
 		pos++;
 	}
+
 	return ( pos == osize ) ? -1 : pos;
 }
 
 
 //Find a specific string in memory
 void * memblk (const void *a, const void *b, int size_a, int size_b) {
+	const unsigned char *av = a;
+	const unsigned char *bv = b;
+	
 	while ( size_a >= size_b ) {
-		if ( *(unsigned char *)a == *(unsigned char *)b && !memcmp(a, b, size_b) ) {
-			return (void *)a;
+		if ( *av == *bv && !memcmp( av, bv, size_b ) ) {
+			return (void *)av;
 		}
-		a++, size_a--;
+		av++, size_a--;
 	}
+
 	return NULL;	
 }
 
@@ -77,12 +87,16 @@ void * memblk (const void *a, const void *b, int size_a, int size_b) {
 //Where exactly is a substr in memory
 int memblkat (const void *a, const void *b, int size_a, int size_b) {
 	int pos = 0;
+	const unsigned char *av = a;
+	const unsigned char *bv = b;
+
 	while ( size_a >= size_b ) {
-		if ( *(unsigned char *)a == *(unsigned char *)b && !memcmp(a, b, size_b) ) {
+		if ( *av == *bv && !memcmp( av, bv, size_b ) ) {
 			return pos;
 		}
-		a++, pos++, size_a--;
+		av++, pos++, size_a--;
 	}
+	
 	return -1;	
 }
 
@@ -90,13 +104,17 @@ int memblkat (const void *a, const void *b, int size_a, int size_b) {
 //Return count of occurences of a string in some block.
 int memblkocc (const void *a, const void *b, int size_a, int size_b ) {
 	int occ = 0;
+	const unsigned char *av = a;
+	const unsigned char *bv = b;
+
 	while ( size_a >= size_b ) {
-		if ( *(unsigned char *)a == *(unsigned char *)b && !memcmp(a, b, size_b) ) {
-			occ++, a += size_b, size_a -= size_b;
+		if ( *av == *bv && !memcmp( av, bv, size_b ) ) {
+			occ++, av += size_b, size_a -= size_b;
 			continue;	
 		}
-		a++, size_a--; 
+		av++, size_a--; 
 	}
+
 	return occ;
 }
 
