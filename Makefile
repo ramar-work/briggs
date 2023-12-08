@@ -58,8 +58,9 @@ mantest:
 	man -l briggs.1
 	
 # pkg - Create a package of the latest version of 'master'
+pkg: TARGET=master
 pkg:
-	git archive --format tar master | gzip > $(NAME)-master.tar.gz
+	git archive --format tar $(TARGET) | gzip > $(NAME)-$(TARGET).tar.gz
 
 # pkgdev - Create a package of the latest version of 'dev'
 pkgdev:
