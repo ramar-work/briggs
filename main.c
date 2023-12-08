@@ -43,6 +43,12 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <errno.h>
+
+/* Optionally include support for MySQL */
+#if 1
+ #include <mysql.h>
+#endif
+
 #include "vendor/zwalker.h"
 #include "vendor/util.h"
 
@@ -93,10 +99,8 @@ typedef enum type_t {
 typedef struct kv { 
   char *k; 
   char *v; 
-
 	type_t type;
 	type_t exptype;
-
 } record_t;
 
 
@@ -148,6 +152,8 @@ char *FFILE = NULL;
 char *DELIM = ",";
 char *prefix = NULL;
 char *suffix = NULL;
+char *datasource = NULL;
+char *query = NULL;
 char *stream_chars = NULL;
 char *root = "root";
 char *streamtype = NULL;
@@ -1177,6 +1183,161 @@ int ascii_f ( const char *file, const char *delim, const char *output ) {
 
 
 
+// DB type
+typedef enum {
+	DB_NONE,
+	DB_MYSQL,
+	DB_POSTGRESQL,
+	DB_SQLITE
+} dbtype_t;
+
+
+// A structure to handle general connections to db
+typedef struct dsn_t {
+	int type;
+	char username[ 64 ];
+	char password[ 64 ];
+	char hostname[ 256 ];
+	char dbname[ 64 ];
+	char socketpath[ 2048 ];
+	int port;
+	int options;	
+} dsn_t;
+
+
+
+// Dump the DSN
+void print_dsn ( dsn_t *conninfo ) {
+	printf( "dsn->type:       %d\n", conninfo->type );
+	printf( "dsn->username:   '%s'\n", conninfo->username );
+	printf( "dsn->password:   '%s'\n", conninfo->password );
+	printf( "dsn->hostname:   '%s'\n", conninfo->hostname );
+	printf( "dsn->dbname:     '%s'\n", conninfo->dbname );
+	printf( "dsn->socketpath: '%s'\n", conninfo->socketpath );
+	printf( "dsn->port:       %d\n", conninfo->port );
+	printf( "dsn->options:    %d\n", conninfo->options );	
+}
+
+
+// A function to safely copy a string with an optional delimiter
+int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
+
+	unsigned int len = maxlen;
+	unsigned int dpos = 0;
+	unsigned int copied = 0;
+
+	// Stop if neither of these are specified
+	if ( !src || !dest ) {
+		return;
+	}
+
+	// Find delim, if not use maxlen
+	if ( delim && memchr( src, *delim, strlen( src ) ) ) {
+		// TODO: Can't we subtract pointers to get this count?
+		// Get the position
+		const char *s = src;
+		while ( *s ) {
+			if ( *s == *delim ) {
+				break;
+			}
+			s++, dpos;
+		}
+
+		// Break if dpos > maxlen
+		if ( dpos > maxlen ) {
+			return;
+		}
+
+		len = dpos;
+	}
+
+	// Finally, copy the string into whatever destination
+	// TODO: This can fail, so consider that
+	memcpy( dest, src, len );
+	return copied;
+}
+
+
+
+// Parse DSN info the above structure
+//
+// We will only support URI styles for ease here.
+// Maybe will support them with commas like postgrs
+// 
+// NOTE: Postgres seems to include support for connecting to multiple hosts
+// This doesn't make sense to support here...
+//
+int parse_dsn_info( const char *dsn, dsn_t *conninfo, char *err ) {
+	
+	// Define	
+	dbtype_t type = DB_NONE;
+	int locpos = -1;
+	unsigned int port = 0;
+	const unsigned int dsnlen = strlen( dsn );
+
+
+	// Cut out silly stuff
+	if ( !dsn || strlen( dsn ) < 16 ) {
+		snprintf( err, ERRLEN - 1, "DSN either invalid or unspecified...\n" );
+		return 0;
+	}
+
+
+	// Get the database type
+	if ( !memcmp( dsn, "mysql://", 8 ) ) 
+		type = DB_MYSQL, port = 3306, dsn += 8;
+	else if ( !memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) ) 
+		type = DB_POSTGRES, port = 3306, dsn += 11;
+	#if 0
+	else if ( !memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
+		type = DB_SQLITE, port = 3306, dsn += 10;
+	#endif
+	else {
+		snprintf( err, ERRLEN - 1, "Invalid database type specified in DSN...\n" );
+		return 0;
+	}	
+
+
+	// Handle the different string types as best you can
+	// A) localhost, localhost:port doesn't make much sense...
+	if ( !memchr( dsn, ':', dsnlen ) && !memchr( dsn, '@', dsnlen ) && !memchr( dsn, '/', dsnlen ) ) {
+		safecpypos( dsn, conninfo->hostname, NULL, 256 ); 	
+	} 
+
+	// C) localhost/database, localhost:port/database
+	else if ( memchr( dsn, '/', dsnlen ) && !memchr( dsn, '@', dsnlen ) ) {
+		safecpypos( dsn, conninfo->hostname, ':', 256 );
+	} 
+	// D) user@localhost
+	// E) user:secret@localhost
+	// F) user:secret@localhost[ /? ]
+	// G) 
+	// G) other@localhost/otherdb?
+		
+	return 1;
+}
+
+
+
+// the idea would be to roll through and stream to the same format
+unsigned char * mysql() {
+	// connect to the database
+
+	// you MIGHT be able to extract the schema (column names and datatypes)
+	// if the user is privileged enough
+
+	// after that, you can select the requested columns (or all of them)
+	// and stream to record_t's
+
+	// streaming is going to be really important here to keep memory at a 
+	// minimum
+
+	// do some stuff 
+return NULL;
+}
+
+
+
 //Options
 int help () {
 	const char *fmt = "%-2s%s --%-24s%-30s\n";
@@ -1210,7 +1371,9 @@ int help () {
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 		{ "",   "id <arg>",      "Add a unique ID column named <arg>."  },
 		{ "",   "add-datestamps","Add columns for date created and date updated"  },
-		{ "a",   "ascii",      "Remove any characters that aren't ASCII and reproduce"  },
+		{ "-a", "ascii",      "Remove any characters that aren't ASCII and reproduce"  },
+		{ "-D", "datasource <arg>",   "Use the specified connection string to connect to a database for source data"  },
+		{ "-Q", "query <arg>",   "Use this query to filter data from datasource"  },
 		{ "-h", "help",        "Show help." },
 	};
 
@@ -1357,9 +1520,32 @@ int main (int argc, char *argv[]) {
 				}
 			}	
 		}
+		else if ( !strcmp( *argv, "-D" ) || !strcmp( *argv, "--datasource" ) ) {
+			if ( !dupval( *(++argv), &datasource ) )
+			return nerr( "%s\n", "No argument specified for --datasource." );
+		}
+		else if ( !strcmp( *argv, "-Q" ) || !strcmp( *argv, "--query" ) ) {
+			if ( !dupval( *(++argv), &query ) )
+			return nerr( "%s\n", "No argument specified for --query." );
+		}
 		argv++;
 	}
 
+
+	// Test the DSN argument
+	if ( datasource ) {
+		char err[ ERRLEN ] = { 0 };
+		dsn_t ds;
+		memset( &ds, 0, sizeof( dsn_t ) );
+		parse_dsn_info( datasource, &ds, err ); 	
+		print_dsn( &ds );
+		free( datasource );
+		return 1;	
+	}
+
+
+
+	// Processor stuff
 	if ( headers_only ) {
 		if ( !headers_f( FFILE, DELIM ) ) {
 			return 1; //nerr( "conversion of file failed...\n" );
@@ -1386,6 +1572,8 @@ int main (int argc, char *argv[]) {
 			return 1;
 		}
 	}
+
+
 
 	//Clean up by freeing everything.
 	if ( *DELIM != ',' || strlen( DELIM ) > 1 ) {

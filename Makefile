@@ -2,6 +2,18 @@
 NAME = briggs
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
+
+# Add MySQL
+MYSQL_IFLAGS=-I/opt/mariadb/include/mysql/
+MYSQL_LDFLAGS=-L/opt/mariadb/lib/ -lmariadb
+
+# Include flags (to handle outside dependencies)
+IFLAGS=$(MYSQL_IFLAGS)
+
+# Lib support flags
+LDFLAGS=$(MYSQL_LDFLAGS)
+
+#
 CLANGFLAGS = -g -Wall -Werror -std=c99
 GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors 
 CFLAGS = $(GCCFLAGS)
@@ -32,9 +44,9 @@ dev:
 	@printf '' >/dev/null
 
 # build - Build dependent objects
+# mariadb_config --include --libs
 build: $(OBJECTS)
-	@echo $(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
-	@$(CC) $(OBJECTS) main.c -o $(NAME) $(CFLAGS)
+	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) lib/libmariadbclient.a $(MYSQL_IFLAGS)
 
 %.o: %.c 
 	$(CC) -c -o $@ $< $(CFLAGS)
