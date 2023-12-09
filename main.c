@@ -64,6 +64,12 @@
  #define NEWLINE "\n"
 #endif
 
+#if 1
+	#define DPRINTF( ... ) 0
+#else
+	#define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
+#endif
+
 typedef enum {
   STREAM_NONE = -1
 , STREAM_PRINTF = 0
@@ -98,7 +104,7 @@ typedef enum type_t {
 
 typedef struct kv { 
   char *k; 
-  char *v; 
+  unsigned char *v; 
 	type_t type;
 	type_t exptype;
 } record_t;
@@ -130,6 +136,44 @@ typedef enum sqltype_t {
 } sqltype_t;
 
 
+#if 0
+enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
+			MYSQL_TYPE_SHORT,  MYSQL_TYPE_LONG,
+			MYSQL_TYPE_FLOAT,  MYSQL_TYPE_DOUBLE,
+			MYSQL_TYPE_NULL,   MYSQL_TYPE_TIMESTAMP,
+			MYSQL_TYPE_LONGLONG,MYSQL_TYPE_INT24,
+			MYSQL_TYPE_DATE,   MYSQL_TYPE_TIME,
+			MYSQL_TYPE_DATETIME, MYSQL_TYPE_YEAR,
+			MYSQL_TYPE_NEWDATE, MYSQL_TYPE_VARCHAR,
+			MYSQL_TYPE_BIT,
+                        /*
+                          mysql-5.6 compatibility temporal types.
+                          They're only used internally for reading RBR
+                          mysql-5.6 binary log events and mysql-5.6 frm files.
+                          They're never sent to the client.
+                        */
+                        MYSQL_TYPE_TIMESTAMP2,
+                        MYSQL_TYPE_DATETIME2,
+                        MYSQL_TYPE_TIME2,
+                        /* Compressed types are only used internally for RBR. */
+                        MYSQL_TYPE_BLOB_COMPRESSED= 140,
+                        MYSQL_TYPE_VARCHAR_COMPRESSED= 141,
+
+                        MYSQL_TYPE_NEWDECIMAL=246,
+			MYSQL_TYPE_ENUM=247,
+			MYSQL_TYPE_SET=248,
+			MYSQL_TYPE_TINY_BLOB=249,
+			MYSQL_TYPE_MEDIUM_BLOB=250,
+			MYSQL_TYPE_LONG_BLOB=251,
+			MYSQL_TYPE_BLOB=252,
+			MYSQL_TYPE_VAR_STRING=253,
+			MYSQL_TYPE_STRING=254,
+			MYSQL_TYPE_GEOMETRY=255
+
+};
+#endif
+
+
 sqldef_t coldefs[] = {
 	/* sqlite */
 	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
@@ -153,6 +197,7 @@ char *DELIM = ",";
 char *prefix = NULL;
 char *suffix = NULL;
 char *datasource = NULL;
+char *table = NULL;
 char *query = NULL;
 char *stream_chars = NULL;
 char *root = "root";
@@ -160,6 +205,7 @@ char *streamtype = NULL;
 char *ld = "'", *rd = "'", *od = "'";
 struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
+int limit = 0;
 int headers_only = 0;
 int convert = 0;
 int ascii = 0;
@@ -588,7 +634,7 @@ void free_records ( record_t ***v ) {
 
 
 record_t *** generate_records ( char *buf, char *del, char **headers, char *err ) {
-	record_t **iv = NULL, ***ov = NULL;
+	record_t **columns = NULL, ***rows = NULL;
 	int ol = 0, il = 0, hindex = 0, line = 2;
 	zWalker p = { 0 };
 
@@ -603,7 +649,7 @@ record_t *** generate_records ( char *buf, char *del, char **headers, char *err 
 			continue;
 		}
 		else if ( hindex > hlen ) {
-			( !ov ) ? free_inner_records( iv ) : free_records( ov );
+			( !rows ) ? free_inner_records( columns ) : free_records( rows );
 			snprintf( err, ERRLEN - 1,
 				"There may be more columns than headers in this file. "
 				"(hindex = %d, hlen = %d)\n", hindex, hlen );
@@ -616,15 +662,15 @@ record_t *** generate_records ( char *buf, char *del, char **headers, char *err 
 		v->k = headers[ hindex ];
 		v->v = malloc( p.size + 1 );
 		memset( v->v, 0, p.size + 1 );
-		extract_value_from_column( &buf[ p.pos ], &v->v, p.size - 1 );	
+		extract_value_from_column( &buf[ p.pos ], ( char ** )&v->v, p.size - 1 );	
 
 		// Do the typecheck ehre
 		if ( typesafe ) {
 			v->exptype = *(gtypes[ hindex ]);
-			v->type = get_type( v->v, v->exptype );
+			v->type = get_type( ( char * )v->v, v->exptype );
 
 			if ( typesafe && v->exptype != v->type ) {
-				( !ov ) ? free_inner_records( iv ) : free_records( ov );
+				( !rows ) ? free_inner_records( columns ) : free_records( rows );
 				sqldef_t *col = &coldefs[ dbengine ];
 				snprintf( err, ERRLEN - 1, 
 					"Type check for value at column '%s', line %d failed: %s != %s ( '%s' )\n", 
@@ -634,19 +680,19 @@ record_t *** generate_records ( char *buf, char *del, char **headers, char *err 
 			}
 		}
 
-		add_item( &iv, v, record_t *, &il );
+		add_item( &columns, v, record_t *, &il );
 		hindex++;
 
 		if ( p.chr == '\n' ) {
-			add_item( &ov, iv, record_t **, &ol );	
-			iv = NULL, il = 0, hindex = 0, line++;
+			add_item( &rows, columns, record_t **, &ol );	
+			columns = NULL, il = 0, hindex = 0, line++;
 		}
 	}
 
 	//This ensures that the final row is added to list...
-	//TODO: It'd be nice to have this within the above loop.
-	add_item( &ov, iv, record_t **, &ol );	
-	return ov;
+	//TODO: It'd be nice to have this within the abrowse loop.
+	add_item( &rows, columns, record_t **, &ol );	
+	return rows;
 }
 
 
@@ -841,6 +887,9 @@ static type_t ** get_types ( char *str, const char *delim ) {
 
 	return ts;
 }
+
+
+
 
 int headers_f ( const char *file, const char *delim ) {
 	char **h = NULL, **headers = NULL;
@@ -1194,14 +1243,15 @@ typedef enum {
 
 // A structure to handle general connections to db
 typedef struct dsn_t {
-	int type;
 	char username[ 64 ];
 	char password[ 64 ];
 	char hostname[ 256 ];
 	char dbname[ 64 ];
-	char socketpath[ 2048 ];
+	char tablename[ 64 ];
+	int type;
 	int port;
 	int options;	
+	char socketpath[ 2048 ];
 } dsn_t;
 
 
@@ -1213,12 +1263,14 @@ void print_dsn ( dsn_t *conninfo ) {
 	printf( "dsn->password:   '%s'\n", conninfo->password );
 	printf( "dsn->hostname:   '%s'\n", conninfo->hostname );
 	printf( "dsn->dbname:     '%s'\n", conninfo->dbname );
+	printf( "dsn->tablename:  '%s'\n", conninfo->tablename );
 	printf( "dsn->socketpath: '%s'\n", conninfo->socketpath );
 	printf( "dsn->port:       %d\n", conninfo->port );
 	printf( "dsn->options:    %d\n", conninfo->options );	
 }
 
 
+#if 1
 // A function to safely copy a string with an optional delimiter
 int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 
@@ -1228,7 +1280,7 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 
 	// Stop if neither of these are specified
 	if ( !src || !dest ) {
-		return;
+		return 0;
 	}
 
 	// Find delim, if not use maxlen
@@ -1237,15 +1289,13 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 		// Get the position
 		const char *s = src;
 		while ( *s ) {
-			if ( *s == *delim ) {
-				break;
-			}
-			s++, dpos;
+			if ( *s == *delim ) break; 
+			s++, dpos++;
 		}
 
 		// Break if dpos > maxlen
 		if ( dpos > maxlen ) {
-			return;
+			return 0;
 		}
 
 		len = dpos;
@@ -1254,9 +1304,18 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 	// Finally, copy the string into whatever destination
 	// TODO: This can fail, so consider that
 	memcpy( dest, src, len );
+	copied = strlen( dest );	
 	return copied;
 }
 
+
+int safecpynumeric( char *numtext ) {
+	for ( char *p = numtext; *p; p++ ) {
+		if ( !memchr( "0123456789", *p, 10 ) ) return -1;
+	}
+
+	return atoi( numtext );
+}
 
 
 // Parse DSN info the above structure
@@ -1267,33 +1326,33 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 // NOTE: Postgres seems to include support for connecting to multiple hosts
 // This doesn't make sense to support here...
 //
-int parse_dsn_info( const char *dsn, dsn_t *conninfo, char *err ) {
+int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 	
 	// Define	
-	dbtype_t type = DB_NONE;
-	int locpos = -1;
-	unsigned int port = 0;
-	const unsigned int dsnlen = strlen( dsn );
+	//dbtype_t type = DB_NONE;
+	int lp = -1;
+	char port[ 6 ] = {0};
+	unsigned int dsnlen = strlen( dsn );
 
 
 	// Cut out silly stuff
-	if ( !dsn || strlen( dsn ) < 16 ) {
-		snprintf( err, ERRLEN - 1, "DSN either invalid or unspecified...\n" );
+	if ( !dsn || dsnlen < 16 ) {
+		fprintf( stderr, "DSN either invalid or unspecified...\n" );
 		return 0;
 	}
 
 
 	// Get the database type
 	if ( !memcmp( dsn, "mysql://", 8 ) ) 
-		type = DB_MYSQL, port = 3306, dsn += 8;
+		conn->type = DB_MYSQL, conn->port = 3306, dsn += 8, dsnlen -= 8;
 	else if ( !memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) ) 
-		type = DB_POSTGRES, port = 3306, dsn += 11;
+		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 8;
 	#if 0
 	else if ( !memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
-		type = DB_SQLITE, port = 3306, dsn += 10;
+		conn->type = DB_SQLITE3, port = 0, dsn += 10, dsnlen -= 10;
 	#endif
 	else {
-		snprintf( err, ERRLEN - 1, "Invalid database type specified in DSN...\n" );
+		fprintf( stderr, "Invalid database type specified in DSN...\n" );
 		return 0;
 	}	
 
@@ -1301,39 +1360,439 @@ int parse_dsn_info( const char *dsn, dsn_t *conninfo, char *err ) {
 	// Handle the different string types as best you can
 	// A) localhost, localhost:port doesn't make much sense...
 	if ( !memchr( dsn, ':', dsnlen ) && !memchr( dsn, '@', dsnlen ) && !memchr( dsn, '/', dsnlen ) ) {
-		safecpypos( dsn, conninfo->hostname, NULL, 256 ); 	
+		lp = safecpypos( dsn, conn->hostname, NULL, sizeof( conn->hostname ) ); 	
 	} 
-
 	// C) localhost/database, localhost:port/database
 	else if ( memchr( dsn, '/', dsnlen ) && !memchr( dsn, '@', dsnlen ) ) {
-		safecpypos( dsn, conninfo->hostname, ':', 256 );
+		// Copy the port
+		if ( memchr( dsn, ':', dsnlen ) ) {
+			lp = safecpypos( dsn, conn->hostname, ":", 256 );
+			dsn += lp + 1;
+
+			// Handle port
+			lp = safecpypos( dsn, port, "/", 256 );
+			for ( char *p = port; *p; p++ ) {
+				if ( !memchr( "0123456789", *p, 10 ) ) {
+					fprintf( stderr, "Port number invalid in DSN...\n" );
+					return 0;
+				}
+			}
+			conn->port = atoi( port );
+
+			// Move and copy dbname and options if any
+			dsn += lp + 1;
+			lp = safecpypos( dsn, conn->dbname, "?", sizeof( conn->dbname ) );
+		}
 	} 
-	// D) user@localhost
-	// E) user:secret@localhost
-	// F) user:secret@localhost[ /? ]
-	// G) 
-	// G) other@localhost/otherdb?
+	// E) [ user:secret ] @localhost/db[ .table ]
+	else if ( memchr( dsn, '@', dsnlen ) ) {
+
+		int p = 0;	
+		char a[ 2048 ], b[ 2048 ], *aa = NULL, *bb = NULL; 
+		memset( a, 0, sizeof( a ) );
+		memset( b, 0, sizeof( b ) );
+		aa = a, bb = b;
+
+		// Stop if we get something weird
+		if ( memchrocc( dsn, '@', dsnlen ) > 1 ) {
+			fprintf( stderr, "DSN is invalid... ( '@' character should only appear once )\n" );
+			return 0;
+		}
+
+		// Split the two halves of a proper DSN
+		if ( ( p = memchrat( dsn, '@', dsnlen ) ) < sizeof( a ) ) {
+			memcpy( a, dsn, p );
+		}
+
+		//
+		if ( ( dsnlen - ( p + 1 ) ) < sizeof( b ) ) {
+			memcpy( b, &dsn[ p + 1 ], dsnlen - ( p + 1 ) );
+		}
+
+		// Stop if there is no slash, b/c this means that there is no db
+		if ( memchrocc( b, '/', sizeof( b ) ) < 1 ) {
+			fprintf( stderr, "No database specified in DSN...\n" );
+			return 0;
+		}
+
+		// Get user and optional password
+		if ( memchr( a, ':', sizeof( a ) ) ) {
+			p = safecpypos( aa, conn->username, ":", sizeof( conn->username ) ); 
+			if ( !p ) {
+				fprintf( stderr, "Username in DSN is too large for buffer (max %ld chars)...\n", sizeof( conn->username ) );
+				return 0;
+			}
+			aa += p + 1;
+
+			if ( !safecpypos( aa, conn->password, NULL, sizeof( conn->password ) ) ) {
+				fprintf( stderr, "Password in DSN is too large for buffer (max %ld chars)...\n", sizeof( conn->password ) );
+				return 0;
+			}
+		}
+		else {
+			if ( !safecpypos( a, conn->username, NULL, sizeof( conn->username ) ) ) {
+				fprintf( stderr, "Username in DSN is too large for buffer (max %ld chars)...\n", sizeof( conn->username ) );
+				return 0;
+			}
+		}
+
+		// Disable options for now
+		if ( memchr( b, '?', sizeof( b ) ) ) {
+			fprintf( stderr, "UNFORTUNATELY, ADVANCED CONNECTION OPTIONS ARE NOT CURRENTLY SUPPORTED!...\n" );
+			exit( 0 );
+			return 0;
+		}
+
+		// Get hostname and all of the other stuff if it's there
+		// hostname, port, and / (and maybe something else)
+		if ( memchr( bb, ':', strlen( bb ) ) ) {
+			
+			// copy hostname first
+			p = safecpypos( bb, conn->hostname, ":", sizeof( conn->hostname ) ), bb += p + 1;
+
+			// hostname should always exist
+			if ( !( p = safecpypos( bb, port, "/", sizeof( port ) ) ) ) {
+				fprintf( stderr, "Port number given in DSN is invalid...\n" );
+				return 0;
+			}
+
+			// If this is not all 
+ 			bb += p + 1;
+			if ( ( conn->port = safecpynumeric( port ) ) == -1 ) {
+				fprintf( stderr, "Port number given in DSN (%s) is not numeric...\n", port );
+				return 0;
+			}
+
+			if ( conn->port > 65535 ) {
+				fprintf( stderr, "Port number given in DSN (%d) is invalid...\n", conn->port );
+				return 0;
+			}
+
+			// Copy db or both db and table name
+			if ( !memchr( bb, '.', strlen( bb ) ) ) {
+				if ( !safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) {
+					fprintf( stderr, "Database name is too large for buffer...\n" );
+					return 0;
+				}
+			}
+			else {
+				if ( !( p = safecpypos( bb, conn->dbname, ".", sizeof( conn->dbname ) ) ) ) {
+					fprintf( stderr, "Database name is too large for buffer...\n" );
+					return 0;
+				}
+				
+				bb += p + 1;
+
+				if ( !safecpypos( bb, conn->tablename, NULL, sizeof( conn->tablename ) ) ) {
+					fprintf( stderr, "Table name is too large for buffer...\n" );
+					return 0;
+				}
+			}
+		}
+
+		//
+		else if ( memchr( bb, '/', strlen( bb ) ) ) {
+			if ( !( p = safecpypos( bb, conn->hostname, "/", sizeof( conn->hostname ) ) ) ) {
+				fprintf( stderr, "Hostname too large for buffer (max %ld chars)...\n", sizeof( conn->hostname ) );
+				return 0;
+			}
+
+			bb += p + 1;
+			
+			// Copy db or both db and table name
+			if ( !memchr( bb, '.', strlen( bb ) ) ) {
+				if ( !safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) {
+					fprintf( stderr, "Database name is too large for buffer...\n" );
+					return 0;
+				}
+			}
+			else {
+				if ( !( p = safecpypos( bb, conn->dbname, ".", sizeof( conn->dbname ) ) ) ) {
+					fprintf( stderr, "Database name is too large for buffer...\n" );
+					return 0;
+				}
+				
+				bb += p + 1;
+
+				if ( !safecpypos( bb, conn->tablename, NULL, sizeof( conn->tablename ) ) ) {
+					fprintf( stderr, "Table name is too large for buffer...\n" );
+					return 0;
+				}
+			}
+		}
+	}
 		
 	return 1;
 }
 
+#endif
 
+
+#define CHECK_MYSQL_TYPE( type, type_array ) \
+	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
+
+static const unsigned char _mysql_strings[] = {
+	MYSQL_TYPE_VAR_STRING,
+	MYSQL_TYPE_STRING,
+};
+
+static const unsigned char _mysql_chars[] = {
+	MYSQL_TYPE_VARCHAR,
+};
+
+static const unsigned char _mysql_doubles[] = {
+	MYSQL_TYPE_FLOAT, 
+	MYSQL_TYPE_DOUBLE
+};
+
+static const unsigned char _mysql_integers[] = {
+	MYSQL_TYPE_DECIMAL, 
+	MYSQL_TYPE_TINY,
+	MYSQL_TYPE_SHORT,  
+	MYSQL_TYPE_LONG,
+	MYSQL_TYPE_FLOAT,  
+	MYSQL_TYPE_DOUBLE,
+	MYSQL_TYPE_NULL,   
+	MYSQL_TYPE_TIMESTAMP,
+	MYSQL_TYPE_LONGLONG,
+	MYSQL_TYPE_INT24,
+	MYSQL_TYPE_NEWDECIMAL
+};
+
+static const unsigned char _mysql_dates[] = {
+	MYSQL_TYPE_DATE,   
+	MYSQL_TYPE_TIME,
+	MYSQL_TYPE_DATETIME, 
+	MYSQL_TYPE_YEAR,
+	MYSQL_TYPE_NEWDATE, 
+	MYSQL_TYPE_VARCHAR,
+};
+
+static const unsigned char _mysql_blobs[] = {
+	MYSQL_TYPE_TINY_BLOB,
+	MYSQL_TYPE_MEDIUM_BLOB,
+	MYSQL_TYPE_LONG_BLOB,
+	MYSQL_TYPE_BLOB,
+};
+	
 
 // the idea would be to roll through and stream to the same format
-unsigned char * mysql() {
+int mysql_run( dsn_t *db, const char *tb, const char *query_optl ) {
+/*
++--------------------+
+| Database           |
++--------------------+
+| itdb_local         |
+| schdb              |
++--------------------+
++-------------------------+
+| Tables_in_itdb_local    |
++-------------------------+
+| ncat_bir_definitions    |
+| ncat_bir_specifications |
++-------------------------+
+*/
+	MYSQL *conn = NULL; 
+	MYSQL_RES *res = NULL; 
+	record_t ***rows = NULL;
+	char **headers = NULL;	
+	char *query = NULL;
+	int rowlen = 0;
+	int fcount = 0;
+	int hlen = 0;
+	int blimit = 1000;
+	FILE *output = stdout;
+	char *tablename = NULL;
+
+#if 1
+	// This is an error, I feel like we should never get here
+	if ( !db ) {
+		fprintf( stderr, "No DSN specified for source data...\n" );
+		return 0;
+	}
+
+	// Stop if no table name was specified
+	if ( !*db->tablename && ( !tb || strlen( tb ) < 1 )  ) {
+		fprintf( stderr, "No table name specified for source data...\n" );
+		return 0;
+	}
+
+	// Choose a table name
+	if ( tb ) 
+		tablename = (char *)tb;
+	else {
+		tablename = db->tablename;
+	}
+#else
+	// For testing only
+	dsn_t d = {
+#if 0
+		.type = DB_MYSQL,
+		.username = "itdb_user",
+		.password = "itdb_password88!",
+		.hostname = "localhost",
+		.dbname = "itdb_local",
+		.port = 3306	
+#endif
+#if 1
+		.type = DB_MYSQL,
+		.username = "schtest",
+		.password = "schpass",
+		.hostname = "localhost",
+		.dbname = "schdb",
+		.port = 3306,
+	//.table = 
+#else
+		.type = DB_MYSQL,
+		.username = "root",
+		.password = "",
+		.hostname = "localhost",
+		.dbname = "",
+		.port = 3306	
+#endif
+	};
+
+	// Stop if no table name was specified
+	if ( !tb || strlen( tb ) < 1 ) {
+		fprintf( stderr, "No table name specified for source data...\n" );
+		return NULL;
+	}
+#endif
+
 	// connect to the database
+	if ( !( conn = mysql_init( 0 ) ) ) {
+		fprintf( stderr, "Couldn't initialize MySQL connection: %s\n", mysql_error( conn ) );
+		return 0;
+	}
 
-	// you MIGHT be able to extract the schema (column names and datatypes)
-	// if the user is privileged enough
+	if ( !mysql_real_connect( conn, db->hostname, db->username, db->password, db->dbname, db->port, NULL, 0 ) ) {
+		fprintf( stderr, "Couldn't connect to server: %s\n", mysql_error( conn ) );
+		exit( 1 );
+		return 0;
+	}
 
-	// after that, you can select the requested columns (or all of them)
-	// and stream to record_t's
+	//fprintf( stderr, "Connection to MySQL was successful: (%p)\n", (void *)conn );
+	if ( query_optl )
+		query = (char *)query_optl;	
+	else {
+		query = malloc( 1024 );
+		memset( query, 0, 1024 );
+		snprintf( query, 1023, "SELECT * FROM %s", tablename );
+	}
+	
+	// Execute whatever query
+	if ( mysql_query( conn, query ) > 0 ) {
+		fprintf( stderr, "Failed to run query against selected db and table: %s\n", mysql_error( conn ) );
+		mysql_close( conn );
+		return 0;
+	}
 
-	// streaming is going to be really important here to keep memory at a 
-	// minimum
+	// Use the result
+	if ( !( res = mysql_store_result( conn ) ) ) {
+		fprintf( stderr, "Failed to store results set from last query: %s\n", mysql_error( conn ) );
+		mysql_close( conn );
+		return 0;
+	}
 
-	// do some stuff 
-return NULL;
+	// Get the field count ONCE
+	fcount = mysql_field_count( conn );
+
+	// Get whatever row names and create the headers
+	for ( int i = 0; i < fcount; i++ ) {
+		MYSQL_FIELD *f = mysql_fetch_field_direct( res, i ); 	
+		fprintf( stdout, "%s (len: %ld, charset: %d)\n", f->name, f->length, f->charsetnr ); // list of types is there too
+		// type -> mysql_com.h and enum_field_types will spell this out
+		// char *name = strdup( f->name );
+		add_item( &headers, f->name, char *, &hlen ); 
+
+		// TODO: Optionally, you can create a schema using the info here if that's the idea
+	}
+
+	// If a limit was specified, we'll figure out how to divide that up here
+	// get total rows
+	my_ulonglong rowcount = mysql_num_rows( res );
+	// divide by approximate buffer limit (not sure how to make this make sense)
+	int loopcount = ( rowcount / blimit < 1 ) ? 1 : rowcount / blimit;
+	if ( rowcount % blimit && loopcount > 1 ) {
+		loopcount++;
+	}
+
+	// loop through that
+	//fprintf( stderr, "fc: %d, lc: %d, rc: %lld, x: %lld\n", fcount, loopcount, rowcount, rowcount % blimit );
+
+	// You can stream some at a time to save memory, so an -L, --limit optino will be helpful
+#if 1
+	for ( int lc = 0, rc = 0; lc < loopcount; lc++ ) {
+		for ( int i = 0; i < blimit && rc < rowcount ; i++, rc++ ) {
+		
+			// Define all this	
+			int collen = 0;
+			record_t **columns = NULL;
+			MYSQL_ROW row = mysql_fetch_row( res );
+
+			for ( int x = 0; x < fcount; x++ ) {
+				// Optionally print the row	
+				fprintf( stdout, "%s: %s\n", headers[ x ], *row );
+
+				// Define a new record
+				record_t *cell = malloc( sizeof( record_t ) );
+				memset( cell, 0, sizeof( record_t ) );
+				cell->k = headers[ x ];
+				cell->v = (unsigned char *)strdup( *row++ );
+
+				// Check type	
+				if ( typesafe ) {
+					MYSQL_FIELD *f = mysql_fetch_field_direct( res, x ); 	
+					if ( f->type == MYSQL_TYPE_NULL )
+						cell->type = T_NULL, DPRINTF( "Type of %s was NULL\n", f->name );
+					else if ( f->type == MYSQL_TYPE_BIT )
+						cell->type = T_BOOLEAN, DPRINTF( "Type of %s was BOOLEAN\n", f->name );
+					else if ( CHECK_MYSQL_TYPE( f->type, _mysql_strings ) )
+						cell->type = T_STRING, DPRINTF( "Type of %s was STRING\n", f->name );
+					else if ( CHECK_MYSQL_TYPE( f->type, _mysql_chars ) )
+						cell->type = T_CHAR, DPRINTF( "Type of %s was CHAR\n", f->name );
+					else if ( CHECK_MYSQL_TYPE( f->type, _mysql_integers ) )
+						cell->type = T_INTEGER, DPRINTF( "Type of %s was INTEGER\n", f->name );
+					else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
+						cell->type = T_DOUBLE, DPRINTF( "Type of %s was DOUBLE\n", f->name );
+					else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) || CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
+						// Unfortunately, I don't support blobs yet.
+						// There are so many cool ways to handle this, but we're not there yet...	
+						fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
+						if ( rows ) {
+							free_records( rows ); 
+						}
+						mysql_free_result( res );
+						mysql_close( conn );
+						free( headers );
+						return 0;
+					}
+				}
+
+				// Just figure out types and this is solved...
+				// Type can get written too, but might not be necessary
+				// It will be necessary if trying to create an insert out of it
+				add_item( &columns, cell, record_t *, &collen );  
+			}
+
+			add_item( &rows, columns, record_t **, &rowlen );
+			//fprintf( stdout, "\n" );
+		}
+
+		// You can print each set with output_records(...) 
+		output_records( rows, output, STREAM_SQL );	
+	}
+#endif
+
+	// Destroy everything
+	mysql_free_result( res );
+	free_records( rows );
+	free( headers );
+	if ( !query_optl ) {
+		free( query );
+	} 
+	mysql_close( conn );
+	return 1;
 }
 
 
@@ -1373,6 +1832,9 @@ int help () {
 		{ "",   "add-datestamps","Add columns for date created and date updated"  },
 		{ "-a", "ascii",      "Remove any characters that aren't ASCII and reproduce"  },
 		{ "-D", "datasource <arg>",   "Use the specified connection string to connect to a database for source data"  },
+		{ "-T", "table <arg>",   "Use the specified table when connecting to a database for source data"  },
+		{ "-L", "limit <arg>",   "Limit the result count to <arg>"  },
+		{ "",   "buffer-size <arg>",  "Process only this many rows at a time when using a database for source data"  },
 		{ "-Q", "query <arg>",   "Use this query to filter data from datasource"  },
 		{ "-h", "help",        "Show help." },
 	};
@@ -1524,6 +1986,10 @@ int main (int argc, char *argv[]) {
 			if ( !dupval( *(++argv), &datasource ) )
 			return nerr( "%s\n", "No argument specified for --datasource." );
 		}
+		else if ( !strcmp( *argv, "-T" ) || !strcmp( *argv, "--table" ) ) {
+			if ( !dupval( *(++argv), &table ) )
+			return nerr( "%s\n", "No argument specified for --table." );
+		}
 		else if ( !strcmp( *argv, "-Q" ) || !strcmp( *argv, "--query" ) ) {
 			if ( !dupval( *(++argv), &query ) )
 			return nerr( "%s\n", "No argument specified for --query." );
@@ -1534,11 +2000,20 @@ int main (int argc, char *argv[]) {
 
 	// Test the DSN argument
 	if ( datasource ) {
-		char err[ ERRLEN ] = { 0 };
+		//char err[ ERRLEN ] = { 0 };
 		dsn_t ds;
 		memset( &ds, 0, sizeof( dsn_t ) );
-		parse_dsn_info( datasource, &ds, err ); 	
+		parse_dsn_info( datasource, &ds ); 	
 		print_dsn( &ds );
+
+		// Choose the thing to run and run it
+		if ( ds.type == DB_MYSQL ) {
+			mysql_run( &ds, table, query );
+		}
+
+
+		// TODO: All of the SQL stuff should return records, and perhaps be broken up more
+
 		free( datasource );
 		return 1;	
 	}

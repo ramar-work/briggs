@@ -46,7 +46,7 @@ dev:
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
-	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) lib/libmariadbclient.a $(MYSQL_IFLAGS)
+	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) lib/libmariadbclient.a $(MYSQL_IFLAGS) -lssl -lcrypto -lz
 
 %.o: %.c 
 	$(CC) -c -o $@ $< $(CFLAGS)
