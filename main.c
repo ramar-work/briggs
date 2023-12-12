@@ -1256,6 +1256,15 @@ typedef struct dsn_t {
 
 
 
+// A label and a type, and some other stuff
+typedef struct schema_t {
+	char label[ 128 ];
+	type_t type; 
+	int primary;
+	int options;
+} schema_t;
+
+
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
 	printf( "dsn->type:       %d\n", conninfo->type );
@@ -1696,18 +1705,76 @@ int mysql_run( dsn_t *db, const char *tb, const char *query_optl ) {
 
 	// Get the field count ONCE
 	fcount = mysql_field_count( conn );
+int want_schema = 1;
+
+	// Create the table for PG
+	if ( want_schema ) {
+		fprintf( stdout, "CREATE TABLE IF NOT EXISTS %s (\n", tablename );
+	}
+
+	schema_t **slist = NULL;
+	int slen = 0;
 
 	// Get whatever row names and create the headers
 	for ( int i = 0; i < fcount; i++ ) {
 		MYSQL_FIELD *f = mysql_fetch_field_direct( res, i ); 	
-		fprintf( stdout, "%s (len: %ld, charset: %d)\n", f->name, f->length, f->charsetnr ); // list of types is there too
+		//fprintf( stdout, "%s (len: %ld, charset: %d)\n", f->name, f->length, f->charsetnr ); // list of types is there too
 		// type -> mysql_com.h and enum_field_types will spell this out
 		// char *name = strdup( f->name );
 		add_item( &headers, f->name, char *, &hlen ); 
 
+		if ( want_schema ) {
+			// All of the tables should use this
+			schema_t *st = malloc( sizeof( schema_t ) );
+			memset( st, 0, sizeof( schema_t ) );
+			snprintf( st->label, sizeof( st->label ), "%s", f->name );	
+
 		// TODO: Optionally, you can create a schema using the info here if that's the idea
+			// Generate each row
+			type_t type = 0; 
+			if ( f->type == MYSQL_TYPE_NULL )
+				type = T_NULL;
+			else if ( f->type == MYSQL_TYPE_BIT )
+				type = T_BOOLEAN;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_strings ) )
+				type = T_STRING;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_chars ) )
+				type = T_CHAR;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_integers ) )
+				type = T_INTEGER;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
+				type = T_DOUBLE;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) || CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
+				// Unfortunately, I don't support blobs yet.
+				// There are so many cool ways to handle this, but we're not there yet...	
+				//fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
+				if ( rows ) {
+					free_records( rows ); 
+				}
+				mysql_free_result( res );
+				mysql_close( conn );
+				free( headers );
+				return 0;
+			}
+fprintf( stdout, "%s %s,", f->name, mysql_coldefs[ (int)type ] );		
+fprintf( stdout, "cat: %s, ", f->catalog );
+fprintf( stdout, "def: %s, ", f->def);
+fprintf( stdout, "flags: %d\n", IS_PRI_KEY( f->flags ) );
+
+			if ( IS_PRI_KEY( f->flags ) ) {
+				st->primary = 1;
+			}
+
+			add_item( &slist, st, schema_t *, &slen );
+		}
+
 	}
 
+	if ( want_schema ) {
+		// You can loop through the created headers and figure out how to set the primary key (since mysql can't do it like others) 
+		fprintf( stdout, ");\n" );
+	}
+exit(0);
 	// If a limit was specified, we'll figure out how to divide that up here
 	// get total rows
 	my_ulonglong rowcount = mysql_num_rows( res );
@@ -1732,7 +1799,7 @@ int mysql_run( dsn_t *db, const char *tb, const char *query_optl ) {
 
 			for ( int x = 0; x < fcount; x++ ) {
 				// Optionally print the row	
-				fprintf( stdout, "%s: %s\n", headers[ x ], *row );
+				//fprintf( stdout, "%s: %s\n", headers[ x ], *row );
 
 				// Define a new record
 				record_t *cell = malloc( sizeof( record_t ) );
@@ -2004,7 +2071,7 @@ int main (int argc, char *argv[]) {
 		dsn_t ds;
 		memset( &ds, 0, sizeof( dsn_t ) );
 		parse_dsn_info( datasource, &ds ); 	
-		print_dsn( &ds );
+		//print_dsn( &ds );
 
 		// Choose the thing to run and run it
 		if ( ds.type == DB_MYSQL ) {
