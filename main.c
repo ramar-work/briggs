@@ -44,13 +44,17 @@
 #include <strings.h>
 #include <errno.h>
 
+#include "vendor/zwalker.h"
+#include "vendor/util.h"
+
 /* Optionally include support for MySQL */
 #if 1
  #include <mysql.h>
 #endif
 
-#include "vendor/zwalker.h"
-#include "vendor/util.h"
+#if 1
+ #include <libpq-fe.h>
+#endif
 
 #define nerr( ... ) \
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
@@ -136,6 +140,40 @@ typedef enum sqltype_t {
 } sqltype_t;
 
 
+// DB type
+typedef enum {
+	DB_NONE,
+	DB_MYSQL,
+	DB_POSTGRESQL,
+	DB_SQLITE
+} dbtype_t;
+
+
+// A structure to handle general connections to db
+typedef struct dsn_t {
+	char username[ 64 ];
+	char password[ 64 ];
+	char hostname[ 256 ];
+	char dbname[ 64 ];
+	char tablename[ 64 ];
+	int type;
+	int port;
+	int options;	
+	char socketpath[ 2048 ];
+	char *original;
+} dsn_t;
+
+
+
+// A label and a type, and some other stuff
+typedef struct schema_t {
+	char label[ 128 ];
+	type_t type; 
+	int primary;
+	int options;
+} schema_t;
+
+
 #if 0
 enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 			MYSQL_TYPE_SHORT,  MYSQL_TYPE_LONG,
@@ -146,20 +184,20 @@ enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 			MYSQL_TYPE_DATETIME, MYSQL_TYPE_YEAR,
 			MYSQL_TYPE_NEWDATE, MYSQL_TYPE_VARCHAR,
 			MYSQL_TYPE_BIT,
-                        /*
-                          mysql-5.6 compatibility temporal types.
-                          They're only used internally for reading RBR
-                          mysql-5.6 binary log events and mysql-5.6 frm files.
-                          They're never sent to the client.
-                        */
-                        MYSQL_TYPE_TIMESTAMP2,
-                        MYSQL_TYPE_DATETIME2,
-                        MYSQL_TYPE_TIME2,
-                        /* Compressed types are only used internally for RBR. */
-                        MYSQL_TYPE_BLOB_COMPRESSED= 140,
-                        MYSQL_TYPE_VARCHAR_COMPRESSED= 141,
+		/*
+			mysql-5.6 compatibility temporal types.
+			They're only used internally for reading RBR
+			mysql-5.6 binary log events and mysql-5.6 frm files.
+			They're never sent to the client.
+		*/
+		MYSQL_TYPE_TIMESTAMP2,
+		MYSQL_TYPE_DATETIME2,
+		MYSQL_TYPE_TIME2,
+		/* Compressed types are only used internally for RBR. */
+		MYSQL_TYPE_BLOB_COMPRESSED= 140,
+		MYSQL_TYPE_VARCHAR_COMPRESSED= 141,
 
-                        MYSQL_TYPE_NEWDECIMAL=246,
+		MYSQL_TYPE_NEWDECIMAL=246,
 			MYSQL_TYPE_ENUM=247,
 			MYSQL_TYPE_SET=248,
 			MYSQL_TYPE_TINY_BLOB=249,
@@ -537,15 +575,33 @@ char * copy( char *src, int size, case_t t ) {
 char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
 	zWalker p = { 0 };
-	while ( strwalk( &p, buf, del ) ) {
+
+	for ( int hlen = 0; strwalk( &p, buf, del ); ) {
 		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, case_type );
 		add_item( &headers, t, char *, &hlen );
 		if ( p.chr == '\n' || p.chr == '\r' ) break;
 	}
+
 	return headers;
 }
 
 
+//Extract the headers from a CSV
+schema_t ** generate_headers_from_text( char *buf, char *del ) {
+	schema_t **hxlist = NULL;	
+	zWalker p = { 0 };
+
+	for ( int hlen = 0; strwalk( &p, buf, del ); ) {
+		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, case_type );
+		schema_t *hx = malloc( sizeof( schema_t ) );
+		memset( hx, 0, sizeof( schema_t ) );
+		snprintf( hx->label, sizeof( hx->label ), "%s", t );
+		add_item( &hxlist, hx, schema_t *, &hlen );
+		if ( p.chr == '\n' || p.chr == '\r' ) break;
+	}
+
+	return hxlist;
+}
 
 //Free headers allocated previously
 void free_headers ( char **headers ) {
@@ -891,12 +947,15 @@ static type_t ** get_types ( char *str, const char *delim ) {
 
 
 
+// Generate some headers from some kind of data structure
 int headers_f ( const char *file, const char *delim ) {
-	char **h = NULL, **headers = NULL;
+	char **h = NULL; 
 	char *buf = NULL; 
 	int buflen = 0;
 	char err[ ERRLEN ] = { 0 };
 	char del[ 8 ] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
+	char **headers = NULL;
+	//schema_t **hxlist = NULL;
 
 	//Create the new delimiter string.
 	memcpy( &del[ strlen( del ) ], delim, strlen(delim) );
@@ -905,6 +964,7 @@ int headers_f ( const char *file, const char *delim ) {
 		return nerr( "%s", err );
 	}
 
+#if 1
 	if ( !( h = headers = generate_headers( buf, del ) ) ) {
 		free( buf );
 		return nerr( "Failed to generate headers." );
@@ -915,6 +975,11 @@ int headers_f ( const char *file, const char *delim ) {
 		free( *h );
 		h++;
 	}
+#else
+	if ( !( hxlist = generate_headers_from_text( buf, del ) ) ) {
+
+	}
+#endif
 
 	//TODO: Free the header list
 	free( headers );
@@ -1231,40 +1296,6 @@ int ascii_f ( const char *file, const char *delim, const char *output ) {
 }
 
 
-
-// DB type
-typedef enum {
-	DB_NONE,
-	DB_MYSQL,
-	DB_POSTGRESQL,
-	DB_SQLITE
-} dbtype_t;
-
-
-// A structure to handle general connections to db
-typedef struct dsn_t {
-	char username[ 64 ];
-	char password[ 64 ];
-	char hostname[ 256 ];
-	char dbname[ 64 ];
-	char tablename[ 64 ];
-	int type;
-	int port;
-	int options;	
-	char socketpath[ 2048 ];
-} dsn_t;
-
-
-
-// A label and a type, and some other stuff
-typedef struct schema_t {
-	char label[ 128 ];
-	type_t type; 
-	int primary;
-	int options;
-} schema_t;
-
-
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
 	printf( "dsn->type:       %d\n", conninfo->type );
@@ -1276,6 +1307,7 @@ void print_dsn ( dsn_t *conninfo ) {
 	printf( "dsn->socketpath: '%s'\n", conninfo->socketpath );
 	printf( "dsn->port:       %d\n", conninfo->port );
 	printf( "dsn->options:    %d\n", conninfo->options );	
+	printf( "dsn->original:   %s\n", conninfo->original );	
 }
 
 
@@ -1586,7 +1618,7 @@ static const unsigned char _mysql_blobs[] = {
 	
 
 // the idea would be to roll through and stream to the same format
-int mysql_run( dsn_t *db, const char *tb, const char *query_optl ) {
+int mysql_exec( dsn_t *db, const char *tb, const char *query_optl ) {
 /*
 +--------------------+
 | Database           |
@@ -1756,10 +1788,14 @@ int want_schema = 1;
 				free( headers );
 				return 0;
 			}
+
+fprintf( stdout, "%s %s,", f->name, mysql_coldefs[ (int)type ] );		
+#if 0
 fprintf( stdout, "%s %s,", f->name, mysql_coldefs[ (int)type ] );		
 fprintf( stdout, "cat: %s, ", f->catalog );
 fprintf( stdout, "def: %s, ", f->def);
 fprintf( stdout, "flags: %d\n", IS_PRI_KEY( f->flags ) );
+#endif
 
 			if ( IS_PRI_KEY( f->flags ) ) {
 				st->primary = 1;
@@ -1859,6 +1895,22 @@ exit(0);
 		free( query );
 	} 
 	mysql_close( conn );
+	return 1;
+}
+
+
+
+int postgresql_exec( dsn_t *db, const char *table, const char *qopt ) {
+
+
+	PGconn *conn = NULL;
+	//PGresult *res = NULL;
+
+	// Creat
+
+	conn = PQconnectdb( db->original );
+	fprintf( stderr, "pg conn = %p\n", conn );
+	
 	return 1;
 }
 
@@ -2070,12 +2122,16 @@ int main (int argc, char *argv[]) {
 		//char err[ ERRLEN ] = { 0 };
 		dsn_t ds;
 		memset( &ds, 0, sizeof( dsn_t ) );
+		ds.original = datasource;
 		parse_dsn_info( datasource, &ds ); 	
 		//print_dsn( &ds );
 
 		// Choose the thing to run and run it
 		if ( ds.type == DB_MYSQL ) {
-			mysql_run( &ds, table, query );
+			mysql_exec( &ds, table, query );
+		}
+		else if ( ds.type == DB_POSTGRESQL ) {
+			postgresql_exec( &ds, table, query );
 		}
 
 
