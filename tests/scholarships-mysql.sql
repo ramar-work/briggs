@@ -1,57 +1,55 @@
-------------------------------------------------------------
--- scholarships-postgres.sql
---
---
-------------------------------------------------------------
-
--- Create a new schtest user
-DROP USER IF EXISTS schtest;
-CREATE USER schtest WITH PASSWORD 'schpass';
+-- Create the scholarship db
+CREATE DATABASE IF NOT EXISTS schdb;
 
 
--- Create a new database if its not there...
-DROP DATABASE IF EXISTS schdb;
-CREATE DATABASE schdb WITH OWNER = schtest;
-\connect schdb;
+-- Create a new user
+CREATE USER IF NOT EXISTS 'schtest'@'localhost'
+	IDENTIFIED BY 'schpass';
 
 
--- Set the newly created user
-SET ROLE schtest;
+-- Grant only what's needed
+GRANT SELECT, INSERT, DELETE, UPDATE, ALTER, TRIGGER 
+	ON schdb.*
+	TO 'schtest'@'localhost';
 
 
--- Test tables for whatever database I'm testing against.
+-- Select this?
+USE schdb;
+
+	
+/* Test tables for whatever database I'm testing against. */
 DROP TABLE IF EXISTS scholarships;
-CREATE TABLE scholarships (
-	id SERIAL PRIMARY KEY NOT NULL,
-	date_posted VARCHAR,
-	name VARCHAR,
+CREATE TABLE scholarships ( 
+	id INTEGER NOT NULL,
+	date_posted VARCHAR(64),
+	name VARCHAR(256),
 	award_amount INTEGER,
-	address VARCHAR,
-	city VARCHAR,
-	state VARCHAR,
+	address VARCHAR(256),
+	city VARCHAR(64),
+	state VARCHAR(3),
 	zip INTEGER,
 	zip_sub INTEGER,
-	contact_names VARCHAR,
-	phone VARCHAR,
-	fax VARCHAR,
-	email VARCHAR,
-	web_address VARCHAR,
-	requirements VARCHAR,
-	can_graduate_students_apply INTEGER
+	contact_names VARCHAR(64),
+	phone VARCHAR(64),
+	fax VARCHAR(64),
+	email VARCHAR(64),
+	web_address VARCHAR(256),
+	requirements VARCHAR(1024),
+	can_graduate_students_apply INTEGER,
+	PRIMARY KEY (id)
 );
 
 
--- INSERT into tables
 INSERT INTO scholarships VALUES ( 
 	0,
 	'2019-08-09',
 	'AIChE Minority Affairs Committee Minority Scholarship Awards for College Students',
-	'1000',
+	1000,
 	'120 Wall Street, Flr 23',
 	'New York', 
 	'NY',
-	'10005',
-	'4020',
+	10005,
+	4020,
 	'',
 	'212-591-7338 ',
 	'',
@@ -70,7 +68,7 @@ INSERT INTO scholarships VALUES (
 	'80 Bigelow Avenue Suite 200',
 	'Watertown', 
 	'MA',
-	02472,
+	2472,
 	0,
 	'',
 	'617-926-3801',
@@ -86,7 +84,7 @@ INSERT INTO scholarships VALUES (
 	2,
 	'2023-04-01',
 	'Charles & Lucille King Family Foundation Scholarship',
-	'3500',
+	3500,
 	'1212 Avenue of the Americas 7th Floor', 
 	'New York', 
 	'NY',
