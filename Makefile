@@ -6,11 +6,13 @@ DOCFILE=/tmp/$(NAME).html
 
 # Add MySQL
 MYSQL_IFLAGS=-I/opt/mariadb/include/mysql/
-MYSQL_LDFLAGS=-L/opt/mariadb/lib/ -lmariadb
+MYSQL_LDFLAGS=-L/opt/mariadb/lib
+MYSQL_LIBFLAGS=-lmariadb
 
 # Add Postgres
 POSTGRES_IFLAGS=-I/opt/postgres/include
-POSTGRES_LDFLAGS=-L/opt/postgres/lib/ -lpq
+POSTGRES_LDFLAGS=-L/opt/postgres/lib
+POSTGRES_LIBFLAGS=-lpq
 
 
 # Include flags (to handle outside dependencies)
@@ -18,12 +20,12 @@ IFLAGS=$(MYSQL_IFLAGS) $(POSTGRES_IFLAGS)
 
 
 # Lib support flags
-LDFLAGS=$(MYSQL_LDFLAGS) $(POSTGRES_LDFLAGS)
+LDFLAGS=$(MYSQL_LDFLAGS) $(POSTGRES_LDFLAGS) $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
 
 
 #
 CLANGFLAGS = -g -Wall -Werror -std=c99
-GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors 
+GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
 CFLAGS = $(GCCFLAGS)
 
 #CFLAGS = $(CLANGFLAGS)
@@ -50,7 +52,7 @@ clang:
 
 
 # dev - Development target, using clang and asan for bulletproof-ness
-dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error
+dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
 dev: CC=clang 
 dev: build
 dev: 
@@ -58,7 +60,6 @@ dev:
 
 
 # build - Build dependent objects
-
 # mariadb_config --include --libs
 build: $(OBJECTS)
 	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) $(IFLAGS) $(LDFLAGS) -lssl -lcrypto -lz
