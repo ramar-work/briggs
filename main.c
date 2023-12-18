@@ -48,11 +48,14 @@
 #include "vendor/util.h"
 
 /* Optionally include support for MySQL */
-#if 1
+#define BMYSQL_H
+#ifdef BMYSQL_H
  #include <mysql.h>
 #endif
 
-#if 1
+/* Optionally include support for Postgres */
+#define BPGSQL_H
+#ifdef BPGSQL_H
  #include <libpq-fe.h>
 #endif
 
@@ -62,18 +65,74 @@
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
 
+#define CHECK_MYSQL_TYPE( type, type_array ) \
+	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
+
 #ifdef WIN32
  #define NEWLINE "\r\n"
 #else
  #define NEWLINE "\n"
 #endif
 
-#if 1
-	#define DPRINTF( ... ) 0
+#ifdef DEBUG_H
+ #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
 #else
-	#define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
+ #define DPRINTF( ... ) 0
 #endif
 
+#ifdef BMYSQL_H
+static const unsigned char _mysql_strings[] = {
+	MYSQL_TYPE_VAR_STRING,
+	MYSQL_TYPE_STRING,
+};
+
+static const unsigned char _mysql_chars[] = {
+	MYSQL_TYPE_VARCHAR,
+};
+
+static const unsigned char _mysql_doubles[] = {
+	MYSQL_TYPE_FLOAT, 
+	MYSQL_TYPE_DOUBLE
+};
+
+static const unsigned char _mysql_integers[] = {
+	MYSQL_TYPE_DECIMAL, 
+	MYSQL_TYPE_TINY,
+	MYSQL_TYPE_SHORT,  
+	MYSQL_TYPE_LONG,
+	MYSQL_TYPE_FLOAT,  
+	MYSQL_TYPE_DOUBLE,
+	MYSQL_TYPE_NULL,   
+	MYSQL_TYPE_TIMESTAMP,
+	MYSQL_TYPE_LONGLONG,
+	MYSQL_TYPE_INT24,
+	MYSQL_TYPE_NEWDECIMAL
+};
+
+static const unsigned char _mysql_dates[] = {
+	MYSQL_TYPE_DATE,   
+	MYSQL_TYPE_TIME,
+	MYSQL_TYPE_DATETIME, 
+	MYSQL_TYPE_YEAR,
+	MYSQL_TYPE_NEWDATE, 
+	MYSQL_TYPE_VARCHAR,
+};
+
+static const unsigned char _mysql_blobs[] = {
+	MYSQL_TYPE_TINY_BLOB,
+	MYSQL_TYPE_MEDIUM_BLOB,
+	MYSQL_TYPE_LONG_BLOB,
+	MYSQL_TYPE_BLOB,
+};
+#endif	
+
+
+/**
+ * stream_t
+ *
+ * A stream type or format to convert the records into.
+ *
+ */
 typedef enum {
   STREAM_NONE = -1
 , STREAM_PRINTF = 0
@@ -85,9 +144,21 @@ typedef enum {
 , STREAM_CARRAY
 , STREAM_JCLASS
 , STREAM_CUSTOM
-} Stream;
+#ifdef BPGSQL_H
+, STREAM_PGSQL
+#endif
+#ifdef BMYSQL_H
+, STREAM_MYSQL
+#endif
+} stream_t;
 
 
+/**
+ * case_t 
+ *
+ * Case choice for output formats. 
+ *
+ */
 typedef enum case_t {
 	NONE = 0,
 	CASE_SNAKE,
@@ -95,6 +166,13 @@ typedef enum case_t {
 } case_t;
 
 
+
+/**
+ * type_t 
+ *
+ * Choose a general type when reading from or writing to a source.
+ *
+ */
 typedef enum type_t {
 	T_NULL = 0,
 	T_CHAR,
@@ -106,30 +184,27 @@ typedef enum type_t {
 } type_t;
 
 
-typedef struct kv { 
-  char *k; 
-  unsigned char *v; 
-	type_t type;
-	type_t exptype;
-} record_t;
 
 
-typedef struct Functor {
-	const char *type;
-  const char *left_fmt;
-  const char *right_fmt;
-  int i;
-  void (*execute)( int, record_t * ); 
-  void *p;
-} Functor;
-
-
+/**
+ * sqldef_t 
+ *
+ * ? 
+ *
+ */
 typedef struct sqldef_t {
 	const char *id_fmt;
 	const char *coldefs[8];
 } sqldef_t;
 
 
+
+/**
+ * sqltype_t 
+ *
+ * Choices of SQL backend
+ *
+ */
 typedef enum sqltype_t {
 	SQL_NONE,
 	SQL_SQLITE3,
@@ -140,7 +215,13 @@ typedef enum sqltype_t {
 } sqltype_t;
 
 
-// DB type
+
+/**
+ * dbtype_t 
+ *
+ * Choose a database type 
+ *
+ */
 typedef enum {
 	DB_NONE,
 	DB_MYSQL,
@@ -149,7 +230,58 @@ typedef enum {
 } dbtype_t;
 
 
-// A structure to handle general connections to db
+
+/**
+ * schema_t 
+ *
+ * General format for headers or column names coming from a datasource
+ *
+ */
+typedef struct schema_t {
+	char label[ 128 ];
+	type_t type; 
+	int primary;
+	int options;
+} schema_t;
+
+
+
+/**
+ * record_t
+ *
+ * General format for values coming from a datasource
+ *
+ */
+typedef struct record_t { 
+  char *k; 
+  unsigned char *v; 
+	type_t type;
+	type_t exptype;
+} record_t;
+
+
+
+
+/**
+ * transport_t 
+ *
+ * Structure to contain headers and records from an input source.
+ *
+ */
+typedef struct transport_t {
+	schema_t **headers;
+	record_t **records;
+	int hlen, rlen;
+} transport_t;
+
+
+
+/**
+ * dsn_t 
+ *
+ * Define how to handle general connections to a database 
+ *
+ */
 typedef struct dsn_t {
 	char username[ 64 ];
 	char password[ 64 ];
@@ -159,57 +291,51 @@ typedef struct dsn_t {
 	int type;
 	int port;
 	int options;	
-	char socketpath[ 2048 ];
-	char *original;
+	//char socketpath[ 2048 ];
+	char *connstr;
+	char *connoptions;
+	//FILE *file;
+	void *conn;
+	void *res;
+	schema_t **headers;
+	record_t ***records;
+	int hlen;
+	int rlen;
 } dsn_t;
 
 
 
-// A label and a type, and some other stuff
-typedef struct schema_t {
-	char label[ 128 ];
-	type_t type; 
-	int primary;
-	int options;
-} schema_t;
+/**
+ * function_t 
+ *
+ * ...
+ *
+ */
+typedef struct function_t {
+	const char *type;
+  const char *left_fmt;
+  const char *right_fmt;
+  int i;
+  void (*execute)( int, record_t * ); 
+  void (*open)( dsn_t * ); 
+  void (*close)( dsn_t * ); 
+  void *p;
+} function_t;
 
 
-#if 0
-enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
-			MYSQL_TYPE_SHORT,  MYSQL_TYPE_LONG,
-			MYSQL_TYPE_FLOAT,  MYSQL_TYPE_DOUBLE,
-			MYSQL_TYPE_NULL,   MYSQL_TYPE_TIMESTAMP,
-			MYSQL_TYPE_LONGLONG,MYSQL_TYPE_INT24,
-			MYSQL_TYPE_DATE,   MYSQL_TYPE_TIME,
-			MYSQL_TYPE_DATETIME, MYSQL_TYPE_YEAR,
-			MYSQL_TYPE_NEWDATE, MYSQL_TYPE_VARCHAR,
-			MYSQL_TYPE_BIT,
-		/*
-			mysql-5.6 compatibility temporal types.
-			They're only used internally for reading RBR
-			mysql-5.6 binary log events and mysql-5.6 frm files.
-			They're never sent to the client.
-		*/
-		MYSQL_TYPE_TIMESTAMP2,
-		MYSQL_TYPE_DATETIME2,
-		MYSQL_TYPE_TIME2,
-		/* Compressed types are only used internally for RBR. */
-		MYSQL_TYPE_BLOB_COMPRESSED= 140,
-		MYSQL_TYPE_VARCHAR_COMPRESSED= 141,
 
-		MYSQL_TYPE_NEWDECIMAL=246,
-			MYSQL_TYPE_ENUM=247,
-			MYSQL_TYPE_SET=248,
-			MYSQL_TYPE_TINY_BLOB=249,
-			MYSQL_TYPE_MEDIUM_BLOB=250,
-			MYSQL_TYPE_LONG_BLOB=251,
-			MYSQL_TYPE_BLOB=252,
-			MYSQL_TYPE_VAR_STRING=253,
-			MYSQL_TYPE_STRING=254,
-			MYSQL_TYPE_GEOMETRY=255
+// Forward declarations for different output formats
+void p_default( int, record_t * );
+void p_xml( int, record_t * );
+void p_comma( int, record_t * );
+void p_cstruct( int, record_t * );
+void p_carray( int, record_t * );
+void p_sql( int, record_t * );
+void p_json( int, record_t * );
+void p_pgsql( int, record_t * );
+void p_mysql( int, record_t * );
 
-};
-#endif
+
 
 
 sqldef_t coldefs[] = {
@@ -236,7 +362,6 @@ char *prefix = NULL;
 char *suffix = NULL;
 char *datasource = NULL;
 char *table = NULL;
-char *query = NULL;
 char *stream_chars = NULL;
 char *root = "root";
 char *streamtype = NULL;
@@ -281,6 +406,7 @@ char * struct_coldefs[] = {
 	NULL,		
 };
 
+
 char * class_coldefs[] = {
 	"NULL",
 	"int",
@@ -290,6 +416,7 @@ char * class_coldefs[] = {
 	"bool",
 	NULL,		
 };
+
 
 char * sqlite_coldefs[] = {
 	"NULL",
@@ -301,6 +428,7 @@ char * sqlite_coldefs[] = {
 	NULL,		
 };
 
+
 char * postgres_coldefs[] = {
 	"NULL",
 	"VARCHAR(1)",
@@ -311,6 +439,7 @@ char * postgres_coldefs[] = {
 	NULL,		
 };
 
+
 char * mysql_coldefs[] = {
 	"NULL",
 	"TEXT",
@@ -320,6 +449,7 @@ char * mysql_coldefs[] = {
 	"INTEGER",
 	NULL,		
 };
+
 
 char * oracle_coldefs[] = {
 	"NULL",
@@ -332,7 +462,8 @@ char * oracle_coldefs[] = {
 };
 
 
-//Convert word to snake_case
+
+// Convert word to snake_case
 static void snakecase ( char **k ) {
 	char *nk = *k;
 	while ( *nk ) {
@@ -349,7 +480,8 @@ static void snakecase ( char **k ) {
 }
 
 
-//Convert word to camelCase
+
+// Convert word to camelCase
 static void camelcase ( char **k ) {
 	char *nk = *k;
 	char *ok = *k;
@@ -396,7 +528,8 @@ static void camelcase ( char **k ) {
 }
 
 
-//Duplicate a value
+
+// Duplicate a value
 static char *dupval ( char *val, char **setval ) {
 	if ( !val ) 
 		return NULL;
@@ -410,6 +543,26 @@ static char *dupval ( char *val, char **setval ) {
 	}
 	return *setval;
 }
+
+
+
+// Trim and copy a string, optionally using snake_case
+static char * copy( char *src, int size, case_t t ) {
+	char *b = NULL; 
+	char *a = malloc( size + 1 );
+	int nsize = 0;
+	memset( a, 0, size + 1 );
+	b = (char *)trim( (unsigned char *)src, " ", size, &nsize );
+	memcpy( a, b, nsize );
+	if ( t == CASE_SNAKE ) {	
+		snakecase( &a );
+	}
+	else if ( t == CASE_CAMEL ) {	
+		camelcase( &a );
+	}
+	return a;
+}
+
 
 
 // Check the type of a value in a field
@@ -453,13 +606,15 @@ static type_t get_type ( char *v, type_t deftype ) {
 } 
 
 
-//Simple key-value
+
+// Simple key-value
 void p_default( int ind, record_t *r ) {
 	fprintf( stdout, "%s => %s%s%s\n", r->k, ld, r->v, rd );
 }  
 
 
-//JSON converter
+
+// JSON converter
 void p_json( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
 	fprintf( stdout, 
@@ -467,19 +622,22 @@ void p_json( int ind, record_t *r ) {
 }  
 
 
-//C struct converter
+
+// C struct converter
 void p_carray ( int ind, record_t *r ) {
 	fprintf( stdout, &", \"%s\""[ adv ], r->v );
 }
 
 
-//XML converter
+
+// XML converter
 void p_xml( int ind, record_t *r ) {
 	fprintf( stdout, "%s<%s>%s</%s>\n", &TAB[9-ind], r->k, r->v, r->k );
 }
 
 
-//SQL converter
+
+// SQL converter
 void p_sql( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
 	if ( !typesafe ) {
@@ -498,14 +656,16 @@ void p_sql( int ind, record_t *r ) {
 }  
 
 
-//Simple comma converter
+
+// Simple comma converter
 void p_comma ( int ind, record_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
 	fprintf( stdout, &",\"%s\""[adv], r->v );
 }
 
 
-//C struct converter
+
+// C struct converter
 void p_cstruct ( int ind, record_t *r ) {
 	//check that it's a number
 	char *vv = (char *)r->v;
@@ -552,26 +712,26 @@ void p_cstruct ( int ind, record_t *r ) {
 }
 
 
-//Trim and copy a string, optionally using snake_case
-char * copy( char *src, int size, case_t t ) {
-	char *b = NULL; 
-	char *a = malloc( size + 1 );
-	int nsize = 0;
-	memset( a, 0, size + 1 );
-	b = (char *)trim( (unsigned char *)src, " ", size, &nsize );
-	memcpy( a, b, nsize );
-	if ( t == CASE_SNAKE ) {	
-		snakecase( &a );
-	}
-	else if ( t == CASE_CAMEL ) {	
-		camelcase( &a );
-	}
-	return a;
+
+#ifdef BPGSQL_H
+// Write a Postgres row
+void p_pgsql ( int i, record_t *r ) {
+return;
 }
+#endif
 
 
 
-//Extract the headers from a CSV
+#ifdef BMYSQL_H
+// Write a MySQL row
+void p_mysql ( int i, record_t *r ) {
+return;
+}
+#endif
+
+
+
+// Extract the headers from a CSV
 char ** generate_headers( char *buf, char *del ) {
 	char **headers = NULL;	
 	zWalker p = { 0 };
@@ -586,7 +746,8 @@ char ** generate_headers( char *buf, char *del ) {
 }
 
 
-//Extract the headers from a CSV
+
+// Extract the headers from a CSV
 schema_t ** generate_headers_from_text( char *buf, char *del ) {
 	schema_t **hxlist = NULL;	
 	zWalker p = { 0 };
@@ -603,7 +764,9 @@ schema_t ** generate_headers_from_text( char *buf, char *del ) {
 	return hxlist;
 }
 
-//Free headers allocated previously
+
+
+// Free headers allocated previously
 void free_headers ( char **headers ) {
 	char **h = headers;
 	while ( *h ) {
@@ -615,7 +778,7 @@ void free_headers ( char **headers ) {
 
 
 
-//Get a value from a column
+// Get a value from a column
 void extract_value_from_column ( char *src, char **dest, int size ) {
 	if ( !reps && !no_unsigned ) 
 		memcpy( *dest, src, size );
@@ -666,6 +829,8 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 }
 
 
+
+// Destroy inner set of records
 void free_inner_records( record_t **v ) {
 	record_t **iv = v;	
 	while ( *iv ) {
@@ -678,6 +843,7 @@ void free_inner_records( record_t **v ) {
 
 
 
+// Destroy all records
 void free_records ( record_t ***v ) {
 	record_t ***ov = v;
 	while ( *ov ) {
@@ -689,6 +855,7 @@ void free_records ( record_t ***v ) {
 
 
 
+// Generate a list of records
 record_t *** generate_records ( char *buf, char *del, char **headers, char *err ) {
 	record_t **columns = NULL, ***rows = NULL;
 	int ol = 0, il = 0, hindex = 0, line = 2;
@@ -753,7 +920,8 @@ record_t *** generate_records ( char *buf, char *del, char **headers, char *err 
 
 
 
-void output_records ( record_t ***ov, FILE *output, Stream stream ) {
+// Output a set of records to whatever output format the user has specified.
+void output_records ( record_t ***ov, FILE *output, stream_t stream ) {
 	int odv = 0;
 	while ( *ov ) {
 		record_t **bv = *ov;
@@ -856,16 +1024,22 @@ void output_records ( record_t ***ov, FILE *output, Stream stream ) {
 }
 
 
-Functor f[] = {
-	[STREAM_PRINTF ] = { "printf", NULL, NULL, 0, p_default, NULL },
-	[STREAM_XML    ] = { "xml", NULL, NULL, 0, p_xml, NULL },
-	[STREAM_COMMA  ] = { "comma", NULL, NULL, 1, p_comma, NULL },
-	[STREAM_CSTRUCT] = { "c-struct", NULL, "}", 1, p_cstruct, NULL },
-	[STREAM_CARRAY ] = { "c-array", NULL, " }", 1, p_carray, NULL },
-	[STREAM_SQL    ] = { "sql", NULL, " );", 0, p_sql, NULL },
-	[STREAM_JSON   ] = { "json", NULL, "}", 0, p_json, NULL },
+function_t f[] = {
+	[STREAM_PRINTF ] = { "printf", NULL, NULL, 0, p_default, NULL, NULL, NULL },
+	[STREAM_XML    ] = { "xml", NULL, NULL, 0, p_xml, NULL, NULL, NULL },
+	[STREAM_COMMA  ] = { "comma", NULL, NULL, 1, p_comma, NULL, NULL, NULL },
+	[STREAM_CSTRUCT] = { "c-struct", NULL, "}", 1, p_cstruct, NULL, NULL, NULL },
+	[STREAM_CARRAY ] = { "c-array", NULL, " }", 1, p_carray, NULL, NULL, NULL },
+	[STREAM_SQL    ] = { "sql", NULL, " );", 0, p_sql, NULL, NULL, NULL },
+	[STREAM_JSON   ] = { "json", NULL, "}", 0, p_json, NULL, NULL, NULL },
+#ifdef BPGSQL_H
+	[STREAM_PGSQL  ] = { "postgres", NULL, "}", 0, p_pgsql, NULL, NULL, NULL },
+#endif
+#ifdef BMYSQL_H
+	[STREAM_MYSQL  ] = { "mysql", NULL, "}", 0, p_mysql, NULL, NULL, NULL },
+#endif
 #if 0
-	[STREAM_JAVA] = { "json" NULL, "}", 0, p_json, NULL },
+	[STREAM_JAVA] = { "json" NULL, "}", 0, p_json, NULL, NULL, NULL },
 #endif
 };
 
@@ -873,7 +1047,7 @@ Functor f[] = {
 
 //check for a valid stream
 int check_for_valid_stream ( char *st ) {
-	for ( int i = 0; i < sizeof(f) / sizeof(Functor); i++ ) {
+	for ( int i = 0; i < sizeof(f) / sizeof(function_t); i++ ) {
 		if ( strcasecmp( st, f[i].type ) == 0 ) return i;
 	}
 	return -1;
@@ -1189,7 +1363,7 @@ return 0;
 
 
 //convert CSV or similar to another format
-int convert_f ( const char *file, const char *delim, Stream stream ) {
+int convert_f ( const char *file, const char *delim, stream_t stream ) {
 	char *buf = NULL, **headers = NULL;
  	char err[ ERRLEN ] = { 0 }, del[8] = { '\r', '\n', 0, 0, 0, 0, 0, 0 };
 	record_t ***ov = NULL;
@@ -1296,22 +1470,7 @@ int ascii_f ( const char *file, const char *delim, const char *output ) {
 }
 
 
-// Dump the DSN
-void print_dsn ( dsn_t *conninfo ) {
-	printf( "dsn->type:       %d\n", conninfo->type );
-	printf( "dsn->username:   '%s'\n", conninfo->username );
-	printf( "dsn->password:   '%s'\n", conninfo->password );
-	printf( "dsn->hostname:   '%s'\n", conninfo->hostname );
-	printf( "dsn->dbname:     '%s'\n", conninfo->dbname );
-	printf( "dsn->tablename:  '%s'\n", conninfo->tablename );
-	printf( "dsn->socketpath: '%s'\n", conninfo->socketpath );
-	printf( "dsn->port:       %d\n", conninfo->port );
-	printf( "dsn->options:    %d\n", conninfo->options );	
-	printf( "dsn->original:   %s\n", conninfo->original );	
-}
 
-
-#if 1
 // A function to safely copy a string with an optional delimiter
 int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 
@@ -1359,26 +1518,28 @@ int safecpynumeric( char *numtext ) {
 }
 
 
-// Parse DSN info the above structure
-//
-// We will only support URI styles for ease here.
-// Maybe will support them with commas like postgrs
-// 
-// NOTE: Postgres seems to include support for connecting to multiple hosts
-// This doesn't make sense to support here...
-//
-int parse_dsn_info( const char *dsn, dsn_t *conn ) {
+/*
+ * Parse DSN info the above structure
+ *
+ * We only support URI styles for consistency.
+ * 
+ * NOTE: Postgres seems to include support for connecting to multiple hosts
+ * This doesn't make sense to support here...
+ * 
+ */
+int parse_dsn_info( dsn_t *conn ) {
 	
 	// Define	
 	//dbtype_t type = DB_NONE;
 	int lp = -1;
 	char port[ 6 ] = {0};
-	unsigned int dsnlen = strlen( dsn );
+	char *dsn = NULL;
+	unsigned int dsnlen = 0;
 
 
 	// Cut out silly stuff
-	if ( !dsn || dsnlen < 16 ) {
-		fprintf( stderr, "DSN either invalid or unspecified...\n" );
+	if ( !( dsn = conn->connstr ) || ( dsnlen = strlen( dsn ) ) < 1 ) {
+		fprintf( stderr, "Input source is either unspecified or zero-length...\n" );
 		return 0;
 	}
 
@@ -1387,14 +1548,23 @@ int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 	if ( !memcmp( dsn, "mysql://", 8 ) ) 
 		conn->type = DB_MYSQL, conn->port = 3306, dsn += 8, dsnlen -= 8;
 	else if ( !memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) ) 
-		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 8;
-	#if 0
+		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 13, dsnlen -= 13;
+	else if ( !memcmp( dsn, "postgres://", strlen( "postgres://" ) ) ) 
+		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 11;
 	else if ( !memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
-		conn->type = DB_SQLITE3, port = 0, dsn += 10, dsnlen -= 10;
-	#endif
+		conn->type = DB_SQLITE, conn->port = 0, dsn += 10, dsnlen -= 10;
+#if 0
+	else if ( !memcmp( dsn, "file://", strlen( "file://" ) ) )
+		conn->type = DB_NONE, conn->port = 0, conn->connstr += 7, dsnlen -= 7;
+#endif
 	else {
-		fprintf( stderr, "Invalid database type specified in DSN...\n" );
-		return 0;
+		if ( !memcmp( dsn, "file://", strlen( "file://" ) ) ) {
+			conn->connstr += 7, dsnlen -= 7;
+		}
+		// TODO: Check valid extensions
+		conn->type = DB_NONE; 
+		conn->port = 0; 
+		return 1;
 	}	
 
 
@@ -1477,12 +1647,14 @@ int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 			}
 		}
 
+		#if 0
 		// Disable options for now
 		if ( memchr( b, '?', sizeof( b ) ) ) {
 			fprintf( stderr, "UNFORTUNATELY, ADVANCED CONNECTION OPTIONS ARE NOT CURRENTLY SUPPORTED!...\n" );
 			exit( 0 );
 			return 0;
 		}
+		#endif
 
 		// Get hostname and all of the other stuff if it's there
 		// hostname, port, and / (and maybe something else)
@@ -1511,12 +1683,19 @@ int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 
 			// Copy db or both db and table name
 			if ( !memchr( bb, '.', strlen( bb ) ) ) {
-				if ( !safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) {
+				char *end = memchr( bb, '?', strlen( bb ) ) ? "?" : NULL;
+				if ( !safecpypos( bb, conn->dbname, end, sizeof( conn->dbname ) ) ) {
 					fprintf( stderr, "Database name is too large for buffer...\n" );
 					return 0;
 				}
+
+				if ( end ) {
+					conn->connoptions = end;
+				}
 			}
 			else {
+				char *end = memchr( bb, '?', strlen( bb ) ) ? "?" : NULL;
+
 				if ( !( p = safecpypos( bb, conn->dbname, ".", sizeof( conn->dbname ) ) ) ) {
 					fprintf( stderr, "Database name is too large for buffer...\n" );
 					return 0;
@@ -1524,9 +1703,13 @@ int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 				
 				bb += p + 1;
 
-				if ( !safecpypos( bb, conn->tablename, NULL, sizeof( conn->tablename ) ) ) {
+				if ( !safecpypos( bb, conn->tablename, end, sizeof( conn->tablename ) ) ) {
 					fprintf( stderr, "Table name is too large for buffer...\n" );
 					return 0;
+				}
+
+				if ( end ) {
+					conn->connoptions = end;
 				}
 			}
 		}
@@ -1566,56 +1749,7 @@ int parse_dsn_info( const char *dsn, dsn_t *conn ) {
 	return 1;
 }
 
-#endif
 
-
-#define CHECK_MYSQL_TYPE( type, type_array ) \
-	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
-
-static const unsigned char _mysql_strings[] = {
-	MYSQL_TYPE_VAR_STRING,
-	MYSQL_TYPE_STRING,
-};
-
-static const unsigned char _mysql_chars[] = {
-	MYSQL_TYPE_VARCHAR,
-};
-
-static const unsigned char _mysql_doubles[] = {
-	MYSQL_TYPE_FLOAT, 
-	MYSQL_TYPE_DOUBLE
-};
-
-static const unsigned char _mysql_integers[] = {
-	MYSQL_TYPE_DECIMAL, 
-	MYSQL_TYPE_TINY,
-	MYSQL_TYPE_SHORT,  
-	MYSQL_TYPE_LONG,
-	MYSQL_TYPE_FLOAT,  
-	MYSQL_TYPE_DOUBLE,
-	MYSQL_TYPE_NULL,   
-	MYSQL_TYPE_TIMESTAMP,
-	MYSQL_TYPE_LONGLONG,
-	MYSQL_TYPE_INT24,
-	MYSQL_TYPE_NEWDECIMAL
-};
-
-static const unsigned char _mysql_dates[] = {
-	MYSQL_TYPE_DATE,   
-	MYSQL_TYPE_TIME,
-	MYSQL_TYPE_DATETIME, 
-	MYSQL_TYPE_YEAR,
-	MYSQL_TYPE_NEWDATE, 
-	MYSQL_TYPE_VARCHAR,
-};
-
-static const unsigned char _mysql_blobs[] = {
-	MYSQL_TYPE_TINY_BLOB,
-	MYSQL_TYPE_MEDIUM_BLOB,
-	MYSQL_TYPE_LONG_BLOB,
-	MYSQL_TYPE_BLOB,
-};
-	
 
 // the idea would be to roll through and stream to the same format
 int mysql_exec( dsn_t *db, const char *tb, const char *query_optl ) {
@@ -1645,7 +1779,6 @@ int mysql_exec( dsn_t *db, const char *tb, const char *query_optl ) {
 	FILE *output = stdout;
 	char *tablename = NULL;
 
-#if 1
 	// This is an error, I feel like we should never get here
 	if ( !db ) {
 		fprintf( stderr, "No DSN specified for source data...\n" );
@@ -1664,41 +1797,6 @@ int mysql_exec( dsn_t *db, const char *tb, const char *query_optl ) {
 	else {
 		tablename = db->tablename;
 	}
-#else
-	// For testing only
-	dsn_t d = {
-#if 0
-		.type = DB_MYSQL,
-		.username = "itdb_user",
-		.password = "itdb_password88!",
-		.hostname = "localhost",
-		.dbname = "itdb_local",
-		.port = 3306	
-#endif
-#if 1
-		.type = DB_MYSQL,
-		.username = "schtest",
-		.password = "schpass",
-		.hostname = "localhost",
-		.dbname = "schdb",
-		.port = 3306,
-	//.table = 
-#else
-		.type = DB_MYSQL,
-		.username = "root",
-		.password = "",
-		.hostname = "localhost",
-		.dbname = "",
-		.port = 3306	
-#endif
-	};
-
-	// Stop if no table name was specified
-	if ( !tb || strlen( tb ) < 1 ) {
-		fprintf( stderr, "No table name specified for source data...\n" );
-		return NULL;
-	}
-#endif
 
 	// connect to the database
 	if ( !( conn = mysql_init( 0 ) ) ) {
@@ -1903,14 +2001,473 @@ exit(0);
 int postgresql_exec( dsn_t *db, const char *table, const char *qopt ) {
 
 
+	char *start = NULL;
+	char *tablename = NULL;
+	char query[ 1024 ]; 
+	int fcount = 0;
+	int rcount = 0;
 	PGconn *conn = NULL;
-	//PGresult *res = NULL;
+	PGresult *res = NULL;
 
-	// Creat
+	// Do init stuff
+	memset( query, 0, 1024 );
 
-	conn = PQconnectdb( db->original );
-	fprintf( stderr, "pg conn = %p\n", conn );
+	// DSN should always be specified
+	if ( !db ) {
+		fprintf( stderr, "No DSN specified for source data...\n" );
+		return 0;
+	}
+
+	// Stop if no table name was specified
+	if ( !(*db->tablename) && ( !table || strlen( table ) < 1 )  ) {
+		fprintf( stderr, "No table name specified for source data...\n" );
+		return 0;
+	}
+
+	// Choose a table name
+	if ( table ) 
+		tablename = (char *)table;
+	else {
+		tablename = db->tablename;
+	}
+
+	// It is possible that regular connections don't work, so either
+	// make the special one or get rid of the table notation
+	if ( db->connstr && ( start = memchr( db->connstr, '@', strlen( db->connstr ) ) ) ) {
+		// If the table has been specified, get rid of everything before the '?'
+		char *tstart = memchr( start, '.', strlen( start ) );
+		char *qstart = memchr( start, '?', strlen( start ) );
+
+	#if 1
+		if ( tstart ) {
+			// Terminate the string and disregard the rest of the string for initializing PG
+			if ( !qstart ) {
+				*tstart = '\0';
+			}
+			else {
+				int qlen = strlen( qstart );
+				memmove( tstart, qstart, qlen ); 
+				*(tstart + qlen) = '\0';
+			}
+
+			//fprintf( stderr, "CONN = %s\n", db->connstr );
+		}
+	#endif
+	}
+
+	// Create a connection
+	conn = PQconnectdb( db->connstr );
+	fprintf( stderr, "pg conn = %p\n", (void *)conn );
+
+	// Check that it was successful
+	if ( PQstatus( conn ) != CONNECTION_OK ) {
+		fprintf( stderr, "No DSN specified for source data...\n" );
+		PQfinish( conn );
+		return 0;
+	}
+
+	#if 0
+	// Set a secure search path?
+	res = PQexec( conn, "SELECT pg_catalog.set_config( 'search_path', '', false )" );
+	if ( PQresultStatus( res ) != PGRES_TUPLES_OK ) {
+		fprintf( stderr, "SET failed: %s...\n", PQerrorMessage( conn ) );
+		PQclear( res );
+		PQfinish( conn );
+		return 0;
+	}
+
+	// Clear any potential leaks from an open connection
+	PQclear( res );
+	#endif
+
+	// Format the query
+	if ( qopt ) 
+		snprintf( query, sizeof( query ) - 1, "%s", qopt );
+	else {
+		snprintf( query, sizeof( query ) - 1, "SELECT * FROM %s", tablename );
+	}
 	
+	// Run the querys
+fprintf(stdout, "%s\n", query );
+fprintf(stdout, "%s\n", tablename );
+	res = PQexec( conn, query );
+	if ( PQresultStatus( res ) != PGRES_COMMAND_OK ) {
+		fprintf( stderr, "Failed to run query against selected db and table: '%s'\n", PQerrorMessage( conn ) );
+		PQclear( res );
+		return 0;
+	}
+
+exit(0);
+
+	// Fetch each field
+	fcount = PQnfields( res );
+	for ( int i = 0; i < fcount; i++ ) {
+		char *cname = PQfname( res, i );
+fprintf( stdout, "CNAME (%d) = %s, ", i, cname );
+
+		Oid ftype = PQftype( res, i );
+fprintf( stdout, "%d\n", ftype );
+	}
+
+	// Then fetch each row
+	rcount = PQntuples( res );
+	for ( int i = 0; i < rcount; i++ ) {
+		for ( int ii = 0; ii < fcount; ii++ ) {
+			// If it's null?  I don't know what to do.  If it's an int, that's a problem
+			// if PQgetisnull( res, i, ii );
+			char *cvalue = PQgetvalue( res, i, ii );
+			fprintf( stdout, "%s => %s\n", PQfname( res, ii ), cvalue );
+		}
+	}
+		
+
+	// Clear the result set
+	PQclear( res );
+
+	// Close the connection
+	PQfinish( conn );
+	return 1;
+}
+
+
+
+#ifndef DEBUG_H
+ #define print_dsn (A) 0
+ #define print_headers(A) 0 
+#else
+// Dump the DSN
+void print_dsn ( dsn_t *conninfo ) {
+	printf( "dsn->connstr:   %s\n", conninfo->connstr );	
+	printf( "dsn->type:       %d\n", conninfo->type );
+	printf( "dsn->username:   '%s'\n", conninfo->username );
+	printf( "dsn->password:   '%s'\n", conninfo->password );
+	printf( "dsn->hostname:   '%s'\n", conninfo->hostname );
+	printf( "dsn->dbname:     '%s'\n", conninfo->dbname );
+	printf( "dsn->tablename:  '%s'\n", conninfo->tablename );
+	//printf( "dsn->socketpath: '%s'\n", conninfo->socketpath );
+	printf( "dsn->port:       %d\n", conninfo->port );
+	printf( "dsn->options:    %d\n", conninfo->options );	
+	printf( "dsn->conn:       %p\n", conninfo->conn );	
+}
+
+
+// Dump any headers
+void print_headers( dsn_t *t ) {
+	for ( schema_t **s = t->headers; s && *s; s++ ) {
+		printf( "%s %d\n", (*s)->label, (*s)->type );
+	}
+}
+#endif
+
+
+
+/**
+ * open_dsn( dsn_t * )
+ * ===================
+ *
+ * Open and manage a data source.
+ * 
+ */
+int open_dsn ( dsn_t *conn, const char *qopt ) {
+	char query[ 2048 ];
+	memset( query, 0, sizeof( query ) );
+
+	// Handle opening the database first
+	if ( conn->type == DB_NONE ) {
+		DPRINTF( "Opening file at %s\n", conn->connstr );
+		FILE *f = fopen( conn->connstr, "r" );
+		//int fd = open( conn->connstr );
+		conn->conn = (void *)f;
+		return 1;
+	}
+
+
+	// Stop if no table name was specified
+	if ( !table && ( !( *conn->tablename ) || strlen( conn->tablename ) < 1 ) ) {
+		fprintf( stderr, "No table name specified for source data...\n" );
+		return 0;
+	}
+
+	// Create the final query from here too
+	if ( qopt ) 
+		snprintf( query, sizeof( query ) - 1, "%s", qopt );
+	else {
+		snprintf( query, sizeof( query ) - 1, "SELECT * FROM %s", conn->tablename );
+	}
+
+#ifdef BMYSQL_H
+	if ( conn->type == DB_MYSQL ) {
+		// Define
+		MYSQL *myconn = NULL; 
+		MYSQL *t = NULL; 
+		MYSQL_RES *myres = NULL; 
+
+		// Initialize the connection
+		if ( !( conn->conn = myconn = mysql_init( 0 ) ) ) {
+			const char fmt[] = "Couldn't initialize MySQL connection: %s\n";
+			fprintf( stderr, fmt, mysql_error( myconn ) );
+			mysql_close( myconn );
+			return 0;
+		}
+
+		// Open the connection
+		t = mysql_real_connect( 
+			conn->conn, 
+			conn->hostname, 
+			conn->username, 
+			conn->password, 
+			conn->dbname, 
+			conn->port, 
+			NULL, 
+			0 
+		);
+
+		// Check the connection
+		if ( !t ) {
+			const char fmt[] = "Couldn't connect to server: %s\n";
+			fprintf( stderr, fmt, mysql_error( myconn ) );
+			return 0;
+		}
+
+		// Execute whatever query
+		if ( mysql_query( myconn, query ) > 0 ) {
+			const char fmt[] = "Failed to run query against selected db and table: %s\n"; 
+			fprintf( stderr, fmt, mysql_error( myconn ) );
+			mysql_close( myconn );
+			return 0;
+		}
+
+		// Use the result
+		if ( !( myres = mysql_store_result( myconn ) ) ) {
+			const char fmt[] = "Failed to store results set from last query: %s\n"; 
+			fprintf( stderr, fmt, mysql_error( myconn ) );
+			mysql_close( myconn );
+			return 0;
+		}
+
+		// Set both of these
+		conn->conn = myconn;
+		conn->res = myres;
+	}
+#endif
+
+#ifdef BPGSQL_H
+	if ( conn->type == DB_POSTGRESQL ) {
+		// Define	
+		PGconn *pgconn = NULL;
+		PGresult *pgres = NULL;
+		char *connstr = conn->connstr;
+		char *start = NULL, *tstart = NULL, *qstart = NULL;
+
+		// Fix the connection string if it hasn't been done yet...
+		if ( connstr && ( start = memchr( connstr, '@', strlen( connstr ) ) ) ) {
+			// If the table has been specified, get rid of everything before the '?'
+		#if 1
+			if ( ( tstart = memchr( start, '.', strlen( start ) ) ) ) {
+				// Terminate the string and disregard the rest of the string for initializing PG
+				if ( !( qstart = memchr( start, '?', strlen( start ) ) ) ) {
+					*tstart = '\0';
+				}
+				else {
+					int qlen = strlen( qstart );
+					memmove( tstart, qstart, qlen ); 
+					*(tstart + qlen) = '\0';
+				}
+
+				//fprintf( stdout, "CONN = %s\n", connstr );
+			}
+		#endif
+		}
+
+		// Attempt to open the connection and handle errors
+		if ( PQstatus( ( pgconn = PQconnectdb( connstr ) ) ) != CONNECTION_OK ) {
+			const char fmt[] = "Couldn't initialize PostsreSQL connection: %s\n";
+			fprintf( stderr, fmt, PQerrorMessage( pgconn ) );
+			PQfinish( pgconn );
+			return 0;
+		}
+
+		// Run the query
+		if ( !( pgres = PQexec( pgconn, query ) ) ) {
+			const char fmt[] = "Failed to run query against selected db and table: '%s'\n";
+			fprintf( stderr, fmt, PQerrorMessage( pgconn ) );
+			//PQclear( res );
+			PQfinish( pgconn );
+			return 0;
+		}
+
+		// Set both of these
+		conn->conn = pgconn;
+		conn->res = pgres;
+	}
+#endif
+
+	return 1;
+}
+
+
+
+/**
+ * headers_from_dsn( dsn_t * )
+ * ===========================
+ *
+ * Get the headers from a data source.
+ * 
+ */
+int headers_from_dsn ( dsn_t *conn ) {
+
+	// Define 
+	int fcount = 0;
+
+	if ( conn->type == DB_NONE && fclose( (FILE *)conn->conn ) == -1 ) {
+		fprintf( stderr, "Couldn't close file at: '%s'\n", conn->connstr );
+	
+	#if 0
+		if ( !( headers = generate_headers( buf, del ) ) ) {
+			free( buf );
+			return nerr( "%s\n", "Failed to generate headers." );
+		}
+	#endif
+
+		return 0;	
+	}
+	else if ( conn->type == DB_SQLITE ) {
+		fprintf( stderr, "SQLite3 not done yet.\n" );
+		return 0;	
+	}
+	else if ( conn->type == DB_MYSQL ) {
+		fcount = mysql_field_count( conn->conn ); 
+		for ( int i = 0; i < fcount; i++ ) {
+			MYSQL_FIELD *f = mysql_fetch_field_direct( conn->res, i ); 	
+			schema_t *st = malloc( sizeof( schema_t ) );
+	
+			// Allocate a new schema_t	
+			if ( !st || !memset( st, 0, sizeof( schema_t ) ) ) {
+				fprintf( stderr, "Memory constraints encountered while building schema" );
+				return 0;	
+			}
+			
+			// Get the type of the column
+			if ( f->type == MYSQL_TYPE_NULL )
+				st->type = T_NULL;
+			else if ( f->type == MYSQL_TYPE_BIT )
+				st->type = T_BOOLEAN;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_strings ) )
+				st->type = T_STRING;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_chars ) )
+				st->type = T_CHAR;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_integers ) )
+				st->type = T_INTEGER;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
+				st->type = T_DOUBLE;
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) || CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
+				fprintf( stderr, "SQLite3 not done yet.\n" );
+				return 0;	
+			#if 0
+				// Unfortunately, I don't support blobs yet.
+				// There are so many cool ways to handle this, but we're not there yet...	
+				//fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
+				if ( rows ) {
+					free_records( rows ); 
+				}
+				mysql_free_result( res );
+				mysql_close( conn );
+				free( headers );
+				return 0;
+			#endif
+			}
+
+			// Write the column name
+			snprintf( st->label, sizeof( st->label ), "%s", f->name );	
+			add_item( &conn->headers, st, schema_t *, &conn->hlen ); 
+		}
+	}
+	else if ( conn->type == DB_POSTGRESQL ) {
+		fcount = PQnfields( conn->res );
+		for ( int i = 0; i < fcount; i++ ) {
+			char *cname = PQfname( conn->res, i );
+			Oid ftype = PQftype( conn->res, i );
+			schema_t *st = malloc( sizeof( schema_t ) );
+
+			// Allocate a new schema_t	
+			if ( !st || !memset( st, 0, sizeof( schema_t ) ) ) {
+				fprintf( stderr, "Memory constraints encountered while building schema" );
+				return 0;	
+			}
+
+
+fprintf( stdout, "CNAME (%d) = %s, ", i, cname );
+fprintf( stdout, "%d\n", ftype );
+
+				st->type = T_NULL;
+#if 0
+			// Get the type of the column
+			if ( ftype == MYSQL_TYPE_NULL )
+				st->type = T_NULL;
+			else if ( ftype == MYSQL_TYPE_BIT )
+				st->type = T_BOOLEAN;
+			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_strings ) )
+				st->type = T_STRING;
+			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_chars ) )
+				st->type = T_CHAR;
+			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_integers ) )
+				st->type = T_INTEGER;
+			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_doubles ) )
+				st->type = T_DOUBLE;
+			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_blobs ) || CHECK_MYSQL_TYPE( ftype, _mysql_dates ) ) {
+				fprintf( stderr, "SQLite3 not done yet.\n" );
+				return 0;	
+			#if 0
+				// Unfortunately, I don't support blobs yet.
+				// There are so many cool ways to handle this, but we're not there yet...	
+				//fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
+				if ( rows ) {
+					free_records( rows ); 
+				}
+				mysql_free_result( res );
+				mysql_close( conn );
+				free( headers );
+				return 0;
+			#endif
+			}
+#endif
+			snprintf( st->label, sizeof( st->label ), "%s", cname );	
+			add_item( &conn->headers, st, schema_t *, &conn->hlen ); 
+		}
+	}
+
+	return 1;
+}
+
+
+
+/**
+ * close_dsn( dsn_t * )
+ * ===================
+ *
+ * Close a data source.
+ * 
+ */
+int close_dsn( dsn_t *conn ) {
+
+	DPRINTF( "Attempting to close connection at %p\n", (void *)conn->conn );
+
+	if ( conn->type == DB_NONE && fclose( (FILE *)conn->conn ) == -1 ) {
+		fprintf( stderr, "Couldn't close file at: '%s'\n", conn->connstr );
+		return 0;	
+	}
+	else if ( conn->type == DB_SQLITE ) {
+		fprintf( stderr, "SQLite3 not done yet.\n" );
+		return 0;	
+	}
+	else if ( conn->type == DB_MYSQL ) {
+		mysql_close( (MYSQL *)conn->conn );
+	}
+	else if ( conn->type == DB_POSTGRESQL ) {
+		PQfinish( (PGconn *)conn->conn );
+	}
+
+	conn->conn = NULL;
 	return 1;
 }
 
@@ -1925,7 +2482,7 @@ int help () {
 		{ "-d", "delimiter <arg>", "Specify a delimiter" },
 		{ "-r", "root <arg>",  "Specify a $root name for certain types of structures.\n"
 			"                              (Example using XML: <$root> <key1></key1> </$root>)" }, 
-		{ "",   "name <arg>",  "Synonym for root.\n" },
+		{ "",   "name <arg>",  "Synonym for root." },
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter for strings\n"
 			"                              (NOTE: VERY useful for SQL)" },
 	#if 1
@@ -1937,14 +2494,14 @@ int help () {
 		{ "-q", "sql",         "Convert into general SQL INSERT statement." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
 		{ "-s", "suffix <arg>","Specify a suffix" },
-		{ "",   "class <arg>", "Generate a class using headers in <arg> as input\n" },
-		{ "",   "struct <arg>","Generate a struct using headers in <arg> as input\n"  },
+		{ "",   "class <arg>", "Generate a class using headers in <arg> as input" },
+		{ "",   "struct <arg>","Generate a struct using headers in <arg> as input"  },
 		{ "-k", "schema <arg>","Generate an SQL schema using file <arg> as data\n"
       "                              (sqlite is the default backend)" },
 		{ "",   "for <arg>",   "Use <arg> as the backend when generating a schema.\n"
 			"                              (e.g. for=[ 'oracle', 'postgres', 'mysql',\n" 
 		  "                              'sqlserver' or 'sqlite'.])" },
-		{ "",   "camel-case",  "Use camel case for struct names\n" },
+		{ "",   "camel-case",  "Use camel case for struct names" },
 		{ "-n", "no-newline",  "Do not generate a newline after each row." },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
 		{ "",   "id <arg>",      "Add a unique ID column named <arg>."  },
@@ -1967,8 +2524,15 @@ int help () {
 
 
 
-int main (int argc, char *argv[]) {
+int main ( int argc, char *argv[] ) {
 	SHOW_COMPILE_DATE();
+
+	// Define an input source, and an output source
+	char *query = NULL;
+	dsn_t input;
+	transport_t transport;
+	memset( &input, 0, sizeof( dsn_t ) );
+	memset( &transport, 0, sizeof( transport_t ) );
 
 	if ( argc < 2 || !strcmp( *argv, "-h" ) || !strcmp( *argv, "--help" ) ) {
 		return help();
@@ -2006,7 +2570,7 @@ int main (int argc, char *argv[]) {
 		}
 		else if ( !strcmp( *argv, "-k" ) || !strcmp( *argv, "--schema" ) ) {
 			schema = 1;
-			if ( !dupval( *( ++argv ), &FFILE ) ) {
+			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return nerr( "%s\n", "No argument specified for --schema." );
 			}
 		}
@@ -2046,19 +2610,19 @@ int main (int argc, char *argv[]) {
 		else if ( !strcmp( *argv, "--class" ) ) {
 			classdata = 1;
 			case_type = CASE_CAMEL;
-			if ( !dupval( *( ++argv ), &FFILE ) ) {
+			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return nerr( "%s\n", "No argument specified for --class." );
 			}
 		}
 		else if ( !strcmp( *argv, "--struct" ) ) {
 			structdata = 1;
-			if ( !dupval( *( ++argv ), &FFILE ) ) {
+			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return nerr( "%s\n", "No argument specified for --struct." );
 			}
 		}
 		else if ( !strcmp( *argv, "-a" ) || !strcmp( *argv, "--ascii" ) ) {
 			ascii = 1;	
-			if ( !dupval( *( ++argv ), &FFILE ) ) {
+			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return nerr( "%s\n", "No argument specified for --id." );
 			}
 		}
@@ -2076,12 +2640,12 @@ int main (int argc, char *argv[]) {
 		}
 		else if ( !strcmp( *argv, "-e" ) || !strcmp( *argv, "--headers" ) ) {
 			headers_only = 1;	
-			if ( !dupval( *(++argv), &FFILE ) )
+			if ( !dupval( *(++argv), &input.connstr ) )
 			return nerr( "%s\n", "No file specified with --convert..." );
 		}
 		else if ( !strcmp( *argv, "-c" ) || !strcmp( *argv, "--convert" ) ) {
 			convert = 1;	
-			if ( !dupval( *(++argv), &FFILE ) )
+			if ( !dupval( *(++argv), &input.connstr ) )
 			return nerr( "%s\n", "No file specified with --convert..." );
 		}
 		else if ( !strcmp( *argv, "-u" ) || !strcmp( *argv, "--output-delimiter" ) ) {
@@ -2102,7 +2666,7 @@ int main (int argc, char *argv[]) {
 			}	
 		}
 		else if ( !strcmp( *argv, "-D" ) || !strcmp( *argv, "--datasource" ) ) {
-			if ( !dupval( *(++argv), &datasource ) )
+			if ( !dupval( *(++argv), &input.connstr ) )
 			return nerr( "%s\n", "No argument specified for --datasource." );
 		}
 		else if ( !strcmp( *argv, "-T" ) || !strcmp( *argv, "--table" ) ) {
@@ -2117,15 +2681,72 @@ int main (int argc, char *argv[]) {
 	}
 
 
-	// Test the DSN argument
-	if ( datasource ) {
-		//char err[ ERRLEN ] = { 0 };
-		dsn_t ds;
-		memset( &ds, 0, sizeof( dsn_t ) );
-		ds.original = datasource;
-		parse_dsn_info( datasource, &ds ); 	
-		//print_dsn( &ds );
+	// The dsn is always going to be the input
+	if ( !parse_dsn_info( &input ) ) {
+		fprintf( stderr, "Input file was invalid.\n" );
+		return 1;
+	}
+	#ifdef DEBUG_H
+	print_dsn( &input );
+	#endif
 
+	// Open the DSN first (regardless of type)	
+	if ( !open_dsn( &input, query ) ) {
+		fprintf( stderr, "DSN open failed...\n" );
+		return 1;
+	}
+
+
+	#ifdef DEBUG_H
+	//print_dsn( &input );
+	#endif
+
+
+	// There is never a time when the headers aren't needed...
+	// Create the schema_t here
+	if ( !headers_from_dsn( &input ) ) {
+		fprintf( stderr, "Header creation failed...\n" );
+		return 1;
+	}
+
+	// Processor stuff
+	if ( headers_only ) {
+		DPRINTF( "Headers only was called...\n" );
+		//if ( !headers_f( FFILE, DELIM ) ) return 1; 
+	}
+	else if ( schema ) {
+		DPRINTF( "Schema only was called...\n" );
+		//if ( !schema_f( FFILE, DELIM ) ) return 1;
+	}
+	else if ( classdata || structdata ) {
+		DPRINTF( "classdata || structdata only was called...\n" );
+		//if ( !struct_f( FFILE, DELIM ) ) return 1;
+	}
+	else if ( convert ) {
+		DPRINTF( "convert was called...\n" );
+		// Check if the user wants types or not
+		//if ( !convert_f( FFILE, DELIM, stream_fmt ) ) return 1; //nerr( "conversion of file failed...\n" );
+	}
+	#if 0
+	else if ( ascii ) {
+		if ( !ascii_f( FFILE, DELIM, "somethin" ) ) {
+			return 1;
+		}
+	}
+	#endif
+
+
+	// Close the DSN
+	if ( !close_dsn( &input ) ) {
+		fprintf( stderr, "DSN close failed...\n" );
+		return 1;
+	}
+
+	#ifdef DEBUG_H
+	print_dsn( &input );
+	#endif
+
+#if 0
 		// Choose the thing to run and run it
 		if ( ds.type == DB_MYSQL ) {
 			mysql_exec( &ds, table, query );
@@ -2133,44 +2754,12 @@ int main (int argc, char *argv[]) {
 		else if ( ds.type == DB_POSTGRESQL ) {
 			postgresql_exec( &ds, table, query );
 		}
+#endif
 
 
 		// TODO: All of the SQL stuff should return records, and perhaps be broken up more
 
-		free( datasource );
-		return 1;	
-	}
-
-
-
-	// Processor stuff
-	if ( headers_only ) {
-		if ( !headers_f( FFILE, DELIM ) ) {
-			return 1; //nerr( "conversion of file failed...\n" );
-		}
-	}
-	else if ( schema ) {
-		if ( !schema_f( FFILE, DELIM ) ) {
-			return 1;
-		}
-	}
-	else if ( classdata || structdata ) {
-		if ( !struct_f( FFILE, DELIM ) ) {
-			return 1;
-		}
-	}
-	else if ( convert ) {
-		// Check if the user wants types or not
-		if ( !convert_f( FFILE, DELIM, stream_fmt ) ) {
-			return 1; //nerr( "conversion of file failed...\n" );
-		}
-	}
-	else if ( ascii ) {
-		if ( !ascii_f( FFILE, DELIM, "somethin" ) ) {
-			return 1;
-		}
-	}
-
+exit(0);
 
 
 	//Clean up by freeing everything.
