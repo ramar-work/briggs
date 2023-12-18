@@ -23,7 +23,7 @@
 
  #define add_item(LIST,ELEMENT,SIZE,LEN) \
 	fprintf( stderr, "%s[%d]: ", __FILE__, __LINE__ ) && \
-	fprintf( stderr, "Adding a new item %p to list: %p\n", ELEMENT, LIST ) && \
+	fprintf( stderr, "Adding a new item %p to list: %p\n", (void *)ELEMENT, (void *)LIST ) && \
 		add_item_to_list( (void ***)LIST, ELEMENT, sizeof( SIZE ), LEN )
 #else
  #define FPRINTF(...)
