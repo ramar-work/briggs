@@ -65,9 +65,6 @@
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
 
-#define CHECK_MYSQL_TYPE( type, type_array ) \
-	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
-
 #ifdef WIN32
  #define NEWLINE "\r\n"
 #else
@@ -80,7 +77,102 @@
  #define DPRINTF( ... ) 0
 #endif
 
+#ifdef BPGSQL_H
+
+#define CHECK_PGSQL_TYPE( type, type_array ) \
+	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
+
+static const unsigned int _pgsql_bools[] = {
+#if 0
+	BOOLOID,
+#else
+	16
+#endif
+};
+
+static const unsigned int _pgsql_strings[] = {
+#if 0
+	TEXTOID,
+	BPCHAROID,
+	VARCHAROID,
+#else
+	25, 1042, 1043
+#endif
+};
+ 
+static const unsigned int _pgsql_dates[] = {
+#if 0
+	DATEOID,
+	TIMEOID,
+	TIMESTAMPOID,
+	TIMESTAMPZOID,
+	TIMETZOID,
+#else
+	1082, 1083, 1114, 1184, 1266
+#endif
+};
+ 
+static const unsigned int _pgsql_integers[] = {
+#if 0
+	INT8OID,
+	INT2OID,
+	INT4OID,
+	OIDOID,
+	NUMERICOID,
+#else
+	20, 21, 23, 26, 1700	
+#endif
+};
+ 
+static const unsigned int _pgsql_doubles[] = {
+#if 0
+	FLOAT4OID,
+	FLOAT8OID 
+#else
+	700, 701
+#endif
+};
+ 
+static const unsigned int _pgsql_bits[] = {
+#if 0
+	BITOID,
+	VARBITOID 
+#else
+	1560, 1562
+#endif
+};
+
+
+ #if 0
+// TODO: This is the preferred way to layout this structure,  
+static const unsigned int _pgsql_bits[] = {
+	BOOLOID,
+	TEXTOID,
+	BPCHAROID,
+	VARCHAROID,
+	DATEOID,
+	TIMEOID,
+	TIMESTAMPOID,
+	TIMESTAMPZOID,
+	TIMETZOID,
+	INT8OID,
+	INT2OID,
+	INT4OID,
+	OIDOID,
+	NUMERICOID,
+	FLOAT4OID,
+	FLOAT8OID 
+	BITOID,
+	VARBITOID 
+};
+ #endif
+#endif
+
 #ifdef BMYSQL_H
+
+#define CHECK_MYSQL_TYPE( type, type_array ) \
+	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
+
 static const unsigned char _mysql_strings[] = {
 	MYSQL_TYPE_VAR_STRING,
 	MYSQL_TYPE_STRING,
@@ -2553,8 +2645,6 @@ int headers_from_dsn ( dsn_t *conn ) {
 	else if ( conn->type == DB_POSTGRESQL ) {
 		fcount = PQnfields( conn->res );
 		for ( int i = 0; i < fcount; i++ ) {
-			char *cname = PQfname( conn->res, i );
-			Oid ftype = PQftype( conn->res, i );
 			schema_t *st = malloc( sizeof( schema_t ) );
 
 			// Allocate a new schema_t	
@@ -2563,43 +2653,32 @@ int headers_from_dsn ( dsn_t *conn ) {
 				return 0;	
 			}
 
-
-fprintf( stdout, "CNAME (%d) = %s, ", i, cname );
-fprintf( stdout, "%d\n", ftype );
-
-				//st->type = T_NULL;
-#if 1
 			// Get the type of the column
-			if ( ftype == MYSQL_TYPE_NULL )
-				st->type = T_NULL;
-			else if ( ftype == MYSQL_TYPE_BIT )
+			Oid ftype = PQftype( conn->res, i );
+
+			// Check it
+			if ( CHECK_PGSQL_TYPE( ftype, _pgsql_bools ) ) 
 				st->type = T_BOOLEAN;
-			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_strings ) )
+			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_strings ) )
 				st->type = T_STRING;
-			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_chars ) )
-				st->type = T_CHAR;
-			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_integers ) )
+			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_integers ) )
 				st->type = T_INTEGER;
-			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_doubles ) )
+			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_doubles ) )
 				st->type = T_DOUBLE;
-			else if ( CHECK_MYSQL_TYPE( ftype, _mysql_blobs ) || CHECK_MYSQL_TYPE( ftype, _mysql_dates ) ) {
-				fprintf( stderr, "SQLite3 not done yet.\n" );
+			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_dates ) ) {
+				fprintf( stderr, "Datestamps are currently unsupported.\n" );
 				return 0;	
-			#if 0
-				// Unfortunately, I don't support blobs yet.
-				// There are so many cool ways to handle this, but we're not there yet...	
-				//fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
-				if ( rows ) {
-					free_records( rows ); 
-				}
-				mysql_free_result( res );
-				mysql_close( conn );
-				free( headers );
-				return 0;
-			#endif
 			}
-#endif
-			snprintf( st->label, sizeof( st->label ), "%s", cname );	
+			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_bits ) ) {
+				fprintf( stderr, "Bit types are currently unsupported.\n" );
+				return 0;	
+			}
+			else {
+				fprintf( stderr, "Got unsupported type.  Exiting...\n" );
+				return 0;	
+			}
+
+			snprintf( st->label, sizeof( st->label ), "%s", PQfname( conn->res, i ) );
 			add_item( &conn->headers, st, schema_t *, &conn->hlen ); 
 		}
 	}
@@ -2906,7 +2985,9 @@ int records_from_dsn( dsn_t *conn, int count, int offset ) {
 		;
 	}
 	else if ( conn->type == DB_MYSQL ) {
-	#if 0
+	#if 1
+		my_ulonglong rowcount = mysql_num_rows( conn->res );
+	#else
 		//MYSQL_RES *res = NULL; 
 		int blimit = 1000;
 		my_ulonglong rowcount = mysql_num_rows( conn->res );
@@ -2918,7 +2999,6 @@ int records_from_dsn( dsn_t *conn, int count, int offset ) {
 		// Move through all of the rows
 		// for ( int lc = 0, rc = 0; lc < loopcount; lc++ ) {
 	#endif
-		my_ulonglong rowcount = mysql_num_rows( conn->res );
 
 		// Move through all of the columns
 		for ( int i = 0; i < rowcount ; i++ ) {
@@ -2940,8 +3020,14 @@ int records_from_dsn( dsn_t *conn, int count, int offset ) {
 
 				// Set the values
 				col->k = conn->headers[ ci ]->label; 
-				col->v = (unsigned char *)strdup( *r );
 				col->len = strlen( *r ); 
+				col->type = conn->headers[ ci ]->type; 
+
+				// Get the value and trim stuff				
+				// TODO: Using trim(...) here might be dangerous and lead to leaks...
+				col->v = (unsigned char *)strdup( *r );
+
+				// Add to the column set
 				add_item( &cols, col, column_t *, &clen );  
 				r++;
 			}
@@ -2965,7 +3051,49 @@ int records_from_dsn( dsn_t *conn, int count, int offset ) {
 		//}
 	}
 	else if ( conn->type == DB_POSTGRESQL )  {
-		;
+		int rcount = PQntuples( conn->res );
+		for ( int i = 0; i < rcount; i++ ) {
+			row_t *row = NULL;
+			column_t **cols = NULL;
+
+			for ( int ci = 0, clen = 0; ci < conn->hlen; ci++ ) {
+				// Define
+				column_t *col = malloc( sizeof( column_t ) ); 
+
+				// Check for alloc failure
+				if ( !col || !memset( col, 0, sizeof( column_t ) ) ) {
+					const char fmt[] = "Out of memory when allocating space for column '%s': %s"; 
+					fprintf( stderr, fmt, "x", strerror( errno ) );
+					return 0;		
+				}
+
+				// Set the value, column name and more for the record
+				col->k = conn->headers[ ci ]->label;
+				col->len = PQgetlength( conn->res, i, ci );
+				col->type = conn->headers[ ci ]->type; 
+				col->v = (unsigned char *)PQgetvalue( conn->res, i, ci );
+				//col->v = (unsigned char *)strdup( PQgetvalue( conn->res, i, ci ) );
+
+				// Add it
+				add_item( &cols, col, column_t *, &clen );	
+			}
+
+			// Add a new row
+			if ( !( row = malloc( sizeof( row_t ) ) ) ) {
+				const char fmt[] = "Out of memory when allocating space for new row at cursor: %s"; 
+				fprintf( stderr, fmt, strerror( errno ) );
+				return 0;
+			}
+
+			// Add an item to said row
+			row->columns = cols;
+
+			// And add this row to rows
+			add_item( &conn->rows, row, row_t *, &conn->rlen );	
+
+			// Reset everything
+			cols = NULL;
+		}
 	}
 
 	return 1;
@@ -3030,18 +3158,12 @@ int transform_from_dsn( dsn_t *conn, dsn_t *out, stream_t t, int count, int offs
 			//The VAST majority of engines will be handle specifying the column names 
 			fprintf( out->output, " ) VALUES ( " );
 		}
-		#if 0	
-		else {
-			//raw sql shouldn't need anything else...
-		}
-		#endif	
 
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++ ) {
 			//Sadly, you'll have to use a buffer...
 			//Or, use hlen, since that should contain a count of columns...
 			int first = *col == *((*row)->columns); 
-#if 1
 			if ( t == STREAM_PRINTF )
 				fprintf( out->output, "%s => %s%s%s\n", (*col)->k, ld, (*col)->v, rd );
 			else if ( t == STREAM_XML )
@@ -3051,13 +3173,24 @@ int transform_from_dsn( dsn_t *conn, dsn_t *out, stream_t t, int count, int offs
 			else if ( t == STREAM_COMMA )
 				fprintf( out->output, &",\"%s\""[ first ], (*col)->v );
 			else if ( t == STREAM_JSON ) {
-				fprintf( out->output, "%s%c\"%s\": \"%s\"\n", &TAB[9-1], first ? ' ' : ',', (*col)->k, (*col)->v );
+				fprintf( out->output, "\t%c\"%s\": ", first ? ' ' : ',', (*col)->k ); 
+				if ( (*col)->type == T_STRING || (*col)->type == T_CHAR )
+					fprintf( out->output, "\"%s\"\n", (*col)->v );
+				else if ( (*col)->type == T_NULL ) 
+					fprintf( out->output, "null\n" );
+				#if 0
+				else if ( (*col)->type == T_BOOLEAN ) {
+					fprintf( out->output, "%s\n", ( *col->v ) ? "true" : "false" );
+				}
+				#endif	
+				else {
+					fprintf( out->output, "%s\n", (*col)->v );
+				}
 			}
 			else if ( t == STREAM_SQL ) {
 				if ( !typesafe ) {
 					fprintf( out->output, &",%s%s%s"[ first ], ld, (*col)->v, rd );
 				}
-#if 1
 				else {
 					// Should check that they match too
 					if ( (*col)->type != T_STRING && (*col)->type != T_CHAR )
@@ -3066,7 +3199,6 @@ int transform_from_dsn( dsn_t *conn, dsn_t *out, stream_t t, int count, int offs
 						fprintf( out->output, &",%s%s%s"[ first ], ld, (*col)->v, rd );
 					}
 				}
-#endif
 			}
 			else if ( t == STREAM_CSTRUCT ) {
 				//p_cstruct( 1, *col );
@@ -3098,7 +3230,6 @@ int transform_from_dsn( dsn_t *conn, dsn_t *out, stream_t t, int count, int offs
 			else if ( t == STREAM_SQLITE3 ) {
 			}
 		#endif
-#endif
 		}
 
 		//Built-in suffix...
@@ -3526,8 +3657,6 @@ int main ( int argc, char *argv[] ) {
 
 			// Block and finish writing before moving further
 			fflush( stdout );
-exit(0);
-
 		}
 
 
@@ -3553,33 +3682,13 @@ exit(0);
 	// Destroy the headers
 	destroy_dsn_headers( &input );
 
-
 	// Close the DSN
 	if ( !close_dsn( &input ) ) {
 		fprintf( stderr, "DSN close failed...\n" );
 		return 1;
 	}
 
-	#ifdef DEBUG_H
-	print_dsn( &input );
-	#endif
-
 #if 0
-		// Choose the thing to run and run it
-		if ( ds.type == DB_MYSQL ) {
-			mysql_exec( &ds, table, query );
-		}
-		else if ( ds.type == DB_POSTGRESQL ) {
-			postgresql_exec( &ds, table, query );
-		}
-#endif
-
-
-		// TODO: All of the SQL stuff should return records, and perhaps be broken up more
-
-exit(0);
-
-
 	//Clean up by freeing everything.
 	if ( *DELIM != ',' || strlen( DELIM ) > 1 ) {
 		free( DELIM ); 
@@ -3592,5 +3701,6 @@ exit(0);
 	free( FFILE );
 	free( prefix );
 	free( suffix );
+#endif
 	return 0;
 }
