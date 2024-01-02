@@ -5,27 +5,31 @@ DOCFILE=/tmp/$(NAME).html
 
 
 # Add MySQL
-MYSQL_IFLAGS=-I/opt/mariadb/include/mysql/
-MYSQL_LDFLAGS=-L/opt/mariadb/lib
+MYSQL_IFLAGS=-Iinclude
+MYSQL_LDFLAGS=-Llib
 MYSQL_LIBFLAGS=-lmariadb
 
 # Add Postgres
-POSTGRES_IFLAGS=-I/opt/postgres/include
-POSTGRES_LDFLAGS=-L/opt/postgres/lib
+POSTGRES_IFLAGS=-Iinclude
+POSTGRES_LDFLAGS=-Llib
 POSTGRES_LIBFLAGS=-lpq
 
 
+PGLIBS=lib/libpq.a lib/libpgcommon.a lib/libpgport.a
+MYLIBS=lib/libmariadbclient.a
+
 # Include flags (to handle outside dependencies)
-IFLAGS=$(MYSQL_IFLAGS) $(POSTGRES_IFLAGS)
+#IFLAGS=$(MYSQL_IFLAGS) $(POSTGRES_IFLAGS)
+IFLAGS=-Iinclude
 
 
 # Lib support flags
-LDFLAGS=$(MYSQL_LDFLAGS) $(POSTGRES_LDFLAGS) $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
+LDFLAGS=-Llib $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
 
 
-#
+# -Wno-unused
 CLANGFLAGS = -g -Wall -Werror -std=c99
-GCCFLAGS = -g -Wall -Werror -Wno-unused -std=c99 -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
+GCCFLAGS = $(CLANGFLAGS) -Wno-unused -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
 CFLAGS = $(GCCFLAGS)
 
 #CFLAGS = $(CLANGFLAGS)
@@ -51,6 +55,12 @@ clang:
 	@printf '' >/dev/null
 
 
+debug: CFLAGS+="-DDEBUG_H"
+debug: build
+debug:
+	@printf '' >/dev/null
+
+
 # dev - Development target, using clang and asan for bulletproof-ness
 dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
 dev: CC=clang 
@@ -62,7 +72,7 @@ dev:
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
-	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) $(IFLAGS) $(LDFLAGS) -lssl -lcrypto -lz
+	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm
 
 #	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) lib/libmariadbclient.a $(MYSQL_IFLAGS) -lssl -lcrypto -lz
 
@@ -110,3 +120,5 @@ list:
 # / { s/# //; 1d; p; }' Makefile | awk -F '-' '{ printf "  %-20s - %s\n", $$1, $$2 }'
 
 
+# Include some test cases
+include tests.mk
