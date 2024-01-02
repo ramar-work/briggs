@@ -52,19 +52,16 @@
 #define MAX_STMT_SIZE 2048
 
 /* Optionally include support for MySQL */
-#define BMYSQL_H
 #ifdef BMYSQL_H
  #include <mysql/mysql.h>
 #endif
 
 /* Optionally include support for Postgres */
-#define BPGSQL_H
 #ifdef BPGSQL_H
  #include <libpq-fe.h>
 #endif
 
 /* Optionally include support for SQLite3 */
-#define BSQLITE_H
 #ifdef BSQLITE_H
  #include <sqlite3.h>
 #endif
@@ -1648,11 +1645,15 @@ void print_stream_type( stream_t t ) {
 		printf( "STREAM_JCLASS\n" );
 	else if ( t == STREAM_CUSTOM )
 		printf( "STREAM_CUSTOM\n" );
+#ifdef BPGSQL_H
 	else if ( t == STREAM_PGSQL )
 		printf( "STREAM_PGSQL\n" );
+#endif
+#ifdef BMYSQL_H
 	else if ( t == STREAM_MYSQL ) {
 		printf( "STREAM_MYSQL\n" );
 	}	
+#endif
 }
 #endif
 
@@ -2102,11 +2103,17 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 	int fcount = 0;
 	char *str = NULL;
 
-	if ( conn->type == DB_SQLITE ) {
+	if ( 0 ) {
+		;
+	}
+#ifdef BSQLITE_H
+	else if ( conn->type == DB_SQLITE ) {
 		snprintf( err, errlen, "%s", "SQLite3 driver not done yet" );
 		return 0;
 	}
+#endif
 
+#ifdef BMYSQL_H
 	else if ( conn->type == DB_MYSQL ) {
 		fcount = mysql_field_count( conn->conn ); 
 		for ( int i = 0; i < fcount; i++ ) {
@@ -2157,6 +2164,9 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			add_item( &conn->headers, st, header_t *, &conn->hlen ); 
 		}
 	}
+#endif
+
+#ifdef BPGSQL_H
 	else if ( conn->type == DB_POSTGRESQL ) {
 		fcount = PQnfields( conn->res );
 		for ( int i = 0; i < fcount; i++ ) {
@@ -2201,6 +2211,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 		}
 
 	}
+#endif
 	else { 
 		// TODO: Reimplement this to read line-by-line
 		zWalker p;
@@ -2459,9 +2470,12 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 	//TODO: It'd be nice to have this within the abrowse loop.
 	//add_item( &rows, columns, record_t **, &ol );	
 	}
+#ifdef BSQLITE_H
 	else if ( conn->type == DB_SQLITE ) {
 		;
 	}
+#endif
+#ifdef BMYSQL_H
 	else if ( conn->type == DB_MYSQL ) {
 	#if 1
 		my_ulonglong rowcount = mysql_num_rows( conn->res );
@@ -2528,6 +2542,8 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		}
 		//}
 	}
+#endif
+#ifdef BPGSQL_H
 	else if ( conn->type == DB_POSTGRESQL )  {
 		int rcount = PQntuples( conn->res );
 		for ( int i = 0; i < rcount; i++ ) {
@@ -2573,6 +2589,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 			cols = NULL;
 		}
 	}
+#endif
 
 	return 1;
 }
@@ -2603,15 +2620,21 @@ int transform_from_dsn(
 	memset( insfmt, 0, sizeof( insfmt ) );
 
 	// Define any db specific stuff
+	int ri = 0;	
+#ifdef BMYSQL_H
 	MYSQL_STMT *mysql_stmt = NULL;
 	MYSQL_BIND *mysql_bind_array = NULL;
+	MYSQL_BIND ms_binds[ iconn->hlen ];
+#endif
+#ifdef BPGSQL_H
 	char **pgsql_bind_array = NULL;
 	int *pgsql_lengths_array = 0;
-	int ri = 0;	
-	MYSQL_BIND ms_binds[ iconn->hlen ];
+#endif
 
 	// Make the thing
-	if ( oconn->type == DB_MYSQL ) {
+	if ( 0 );
+#ifdef BMYSQL_H
+	else if ( oconn->type == DB_MYSQL ) {
 		mysql_stmt = (void *)mysql_stmt_init( oconn->conn );
 #if 1
 		mysql_bind_array = malloc( sizeof( MYSQL_BIND ) * iconn->hlen );
@@ -2619,6 +2642,8 @@ int transform_from_dsn(
 #endif
 		memset( &ms_binds, 0, iconn->hlen );
 	}
+#endif
+#ifdef BPGSQL_H
 	else if ( oconn->type == DB_POSTGRESQL ) {
 		pgsql_bind_array = malloc( sizeof( char * ) * iconn->hlen );
 		memset( pgsql_bind_array, 0, sizeof( char * ) * iconn->hlen );
@@ -2629,6 +2654,7 @@ int transform_from_dsn(
 		memset( pgsql_types_array, 0, sizeof( int ) * iconn->hlen ); 
 	#endif
 	}
+#endif
 
 	// Loop through all rows
 	for ( row_t **row = iconn->rows; row && *row; row++, ri++ ) {
@@ -2677,7 +2703,9 @@ int transform_from_dsn(
 			//The VAST majority of engines will be handle specifying the column names 
 			fprintf( oconn->output, " ) VALUES ( " );
 		}
-		else if ( t == STREAM_PGSQL || t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
+		//else if ( t == STREAM_PGSQL || t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
+	#ifdef BPGSQL_H
+		else if ( t == STREAM_PGSQL ) {
 			// First (and preferably only once) generate the header keys
 			char argfmt[ 256 ];
 			char *ins = insfmt;
@@ -2701,11 +2729,7 @@ int transform_from_dsn(
 			for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
 				// TODO: You're going to need a way to track how big len is
 				//int bw = snprintf( s, l, &",:%d"[ (int)(i == 0) ] , i );
-				if ( t == STREAM_PGSQL ) 
-					bw = snprintf( s, l, &",$%d"[ (int)(i == 1) ], i );
-				else if ( t == STREAM_MYSQL ) {
-					bw = snprintf( s, l, &",%s"[ (int)(i == 1) ], "?" );
-				}
+				bw = snprintf( s, l, &",$%d"[ (int)(i == 1) ], i );
 				l -= bw, s += bw;
 			}
 
@@ -2713,6 +2737,43 @@ int transform_from_dsn(
 			snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", iconn->tablename, insfmt, argfmt );
 			fprintf( stdout, "%s\n", ffmt );
 		}
+	#endif
+	#ifdef BMYSQL_H
+		else if ( t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
+			// First (and preferably only once) generate the header keys
+			char argfmt[ 256 ];
+			char *ins = insfmt;
+			int ilen = sizeof( insfmt );
+			char *s = argfmt;
+
+			// Initialize
+			memset( insfmt, 0, sizeof( insfmt ) );
+			memset( argfmt, 0, sizeof( argfmt ) );
+
+			// Reset the values counter
+			//vbindlen = 0;	
+
+			// Create the header keys 
+			for ( header_t **h = iconn->headers; h && *h; h++ ) {
+				int i = snprintf( ins, ilen, &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
+				ins += i, ilen -= i;
+			} 	
+
+			// Create the insert keys
+			for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
+				// TODO: You're going to need a way to track how big len is
+				//int bw = snprintf( s, l, &",:%d"[ (int)(i == 0) ] , i );
+				bw = snprintf( s, l, &",%s"[ (int)(i == 1) ], "?" );
+				
+				l -= bw, s += bw;
+			}
+
+			// Finally, we create the final bind stmt
+			snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", iconn->tablename, insfmt, argfmt );
+			fprintf( stdout, "%s\n", ffmt );
+		}
+	#endif
+
 
 //fprintf( stdout, "%s\n", ffmt );
 //continue;
@@ -2790,12 +2851,6 @@ int transform_from_dsn(
 				bind->buffer = (*col)->v;
 				bind->is_null = NULL;
 				bind->buffer_length = (*col)->len;
-		#if 0
-				unsigned long *a = malloc( sizeof( unsigned long ) );
-				*a = (*col)->len;
-fprintf( stderr, "collen %ld\n", *a );
-				bind->length = a;
-		#endif		
 				// Use the approximate type as a base for the format
 				if ( (*col)->type == T_NULL )
 					bind->buffer_type = MYSQL_TYPE_STRING;
@@ -2884,18 +2939,12 @@ fprintf( stderr, "collen %ld\n", *a );
 			//fprintf( oconn->output, "," );
 		}
 
+	#ifdef BMYSQL_H
 		else if ( t == STREAM_MYSQL ) {
 		#ifdef DEBUG_H
 			fprintf( stderr, "Writing values to MySQL db\n" );
-#if 0 
-for ( int y = 0; y < iconn->hlen; y++ ) {
-MYSQL_BIND bb = mysql_bind_array[ y ];
-fprintf( stderr, "%p\n", (void *)&bb );
-fprintf( stderr, "%s (%p), %ld\n", (char *)bb.buffer, bb.buffer, bb.buffer_length );
-}
-#endif
 		#endif
-#if 0
+		#if 0
 			int status = 0;
 			status = mysql_bind_param( oconn->conn, iconn->hlen, mysql_bind_array, NULL );
 			if ( status != 0 ) {
@@ -2910,7 +2959,7 @@ fprintf( stderr, "%s (%p), %ld\n", (char *)bb.buffer, bb.buffer, bb.buffer_lengt
 				snprintf( err, errlen, fmt, mysql_error( oconn->conn )  ); 
 				return 0;	
 			}
-#else
+		#else
 			// Prepare the statement
 			if ( mysql_stmt_prepare( mysql_stmt, ffmt, strlen( ffmt ) ) != 0 ) {
 				const char fmt[] = "MySQL statement prepare failure: '%s'";
@@ -2935,9 +2984,11 @@ fprintf( stderr, "%s (%p), %ld\n", (char *)bb.buffer, bb.buffer, bb.buffer_lengt
 				snprintf( err, errlen, fmt, mysql_stmt_error( mysql_stmt ) ); 
 				return 0;	
 			}
-#endif
+		#endif
 		}
+	#endif
 
+	#ifdef BPGSQL_H
 		else if ( t == STREAM_PGSQL ) {
 		#ifdef DEBUG_H
 			fprintf( stderr, "Writing values to Postgres db\n" );
@@ -2962,6 +3013,7 @@ fprintf( stderr, "%s (%p), %ld\n", (char *)bb.buffer, bb.buffer, bb.buffer_lengt
 
 			PQclear( r );
 		}
+	#endif
 
 //fprintf( stdout, "Completed row: %d", ri ), fflush( stdout ), getchar();
 
@@ -2976,14 +3028,19 @@ fprintf( stderr, "%s (%p), %ld\n", (char *)bb.buffer, bb.buffer, bb.buffer_lengt
 	
 	}
 
-	if ( oconn->type == DB_MYSQL ) {
+	if ( 0 ) ;
+#ifdef BMYSQL_H
+	else if ( oconn->type == DB_MYSQL ) {
 		mysql_stmt_close( mysql_stmt );
 		free( mysql_bind_array ); 
 	}
+#endif
+#ifdef BPGSQL_H
 	else if ( oconn->type == DB_POSTGRESQL ) {
 		free( pgsql_bind_array ); 
 		free( pgsql_lengths_array ); 
 	}
+#endif
 
 
 	return 1;
@@ -3007,18 +3064,24 @@ int close_dsn( dsn_t *conn ) {
 		//fprintf( stderr, "Couldn't close file at: '%s'\n", conn->connstr );
 		return 1;	
 	}
+#ifdef BSQLITE_H
 	else if ( conn->type == DB_SQLITE ) {
 		fprintf( stderr, "SQLite3 not done yet.\n" );
 		return 1;	
 	}
+#endif
+#ifdef BMYSQL_H
 	else if ( conn->type == DB_MYSQL ) {
 		mysql_free_result( conn->res );
 		mysql_close( (MYSQL *)conn->conn );
 	}
+#endif
+#ifdef BPGSQL_H
 	else if ( conn->type == DB_POSTGRESQL ) {
 		PQclear( conn->res );
 		PQfinish( (PGconn *)conn->conn );
 	}
+#endif
 
 	free( conn->connstr );
 	conn->conn = NULL;
@@ -3439,16 +3502,21 @@ int main ( int argc, char *argv[] ) {
 				}
 
 				// If this is a database, choose the stream type
-				if ( output.type == DB_SQLITE )
+				if ( 0 ) ;
+			#ifdef BSQLITE_H
+				else if ( output.type == DB_SQLITE )
 					stream_fmt = STREAM_SQLITE;
-				if ( output.type == DB_MYSQL )
+			#endif
+			#ifdef BMYSQL_H
+				else if ( output.type == DB_MYSQL )
 					stream_fmt = STREAM_MYSQL;
+			#endif
+			#ifdef BPGSQL_H
 				else if ( output.type == DB_POSTGRESQL ) {
 					stream_fmt = STREAM_PGSQL;
 				}
+			#endif
 			}
-
-print_dsn( &input ), print_dsn( &output ), print_stream_type( stream_fmt );
 
 			// Do the transport (buffering can be added pretty soon)
 			if ( !transform_from_dsn( &input, &output, stream_fmt, 0, 0, err, sizeof(err) ) ) {
