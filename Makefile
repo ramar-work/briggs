@@ -1,8 +1,14 @@
 #!/usr/bin/make
 NAME = briggs
+VERSION = 1.0
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
-
+DISTDIR = $(NAME)-$(VERSION)
+FILES = \
+	Makefile \
+	briggs.1 \
+	main.c \
+	tests.mk
 
 # Add MySQL
 MYSQL_IFLAGS=-Iinclude
@@ -28,7 +34,7 @@ LDFLAGS=-Llib $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
 
 
 # -Wno-unused
-CLANGFLAGS = -g -Wall -Werror -std=c99
+CLANGFLAGS = -g -Wall -Werror -std=c99 -DBMYSQL_H -DPGSQL_H
 GCCFLAGS = $(CLANGFLAGS) -Wno-unused -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
 CFLAGS = $(GCCFLAGS)
 
@@ -118,6 +124,48 @@ list:
 	@printf 'Available options are:\n'
 	@sed -n '/^
 # / { s/# //; 1d; p; }' Makefile | awk -F '-' '{ printf "  %-20s - %s\n", $$1, $$2 }'
+
+# Create a package (in a different way)
+dist: $(DISTDIR).tar.gz
+
+
+dist-linux: $(DISTDIR).tar.gz
+
+
+dist-win: $(DISTDIR).tar.gz
+
+
+dist-osx: $(DISTDIR).tar.gz
+
+
+# Create a package archive 
+$(DISTDIR).tar.gz: $(DISTDIR)
+	tar chof - $(DISTDIR) | gzip -9 -c > $@	
+	rm -rf $(DISTDIR)
+
+# Create a package directory
+$(DISTDIR):
+	rm -f $(DISTDIR).tar.gz
+	rm -rf $(DISTDIR)
+	mkdir -p \
+		$(DISTDIR)/example \
+		$(DISTDIR)/include \
+		$(DISTDIR)/lib \
+		$(DISTDIR)/vendor
+	cp $(FILES) $(DISTDIR)/
+	cp -r example/* $(DISTDIR)/example/
+	cp -r include/* $(DISTDIR)/include/
+	cp -r lib/* $(DISTDIR)/lib/
+	cp -r vendor/zwalker.c vendor/zwalker.h $(DISTDIR)/vendor/
+	cp -r vendor/util.c vendor/util.h $(DISTDIR)/vendor/
+
+# Check that packaging worked (super useful for other distributions...) 
+distcheck:
+	gzip -cd $(DISTDIR).tar.gz | tar xvf -
+	cd $(DISTDIR) && $(MAKE)
+	cd $(DISTDIR) && $(MAKE) clean
+	rm -rf $(DISTDIR)
+	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
 
 
 # Include some test cases
