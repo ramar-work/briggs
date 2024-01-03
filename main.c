@@ -2130,11 +2130,11 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
 				st->type = T_DOUBLE;
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) ) {
-				snprintf( err, errlen, "%s", "BLOB support not built yet..." );
+				snprintf( err, errlen, "BLOB support not built yet at column '%s'...", f->name );
 				return 0;
 			}
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
-				snprintf( err, errlen, "%s", "DATE support not built yet..." );
+				snprintf( err, errlen, "DATE support not built yet at column '%s'...", f->name );
 				return 0;
 			}
 
@@ -2173,15 +2173,15 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_doubles ) )
 				st->type = T_DOUBLE;
 			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_dates ) ) {
-				snprintf( err, errlen, "Datestamps are currently unsupported" );
+				snprintf( err, errlen, "Postgres DATE support not built yet at column '%s'...", PQfname( conn->res, i ));
 				return 0;	
 			}
 			else if ( CHECK_PGSQL_TYPE( ftype, _pgsql_bits ) ) {
-				snprintf( err, errlen, "Bit types are currently unsupported" );
+				snprintf( err, errlen, "Postgres BIT support not built yet at column '%s'...", PQfname( conn->res, i ));
 				return 0;	
 			}
 			else {
-				snprintf( err, errlen, "Got unsupported type, exiting" );
+				snprintf( err, errlen, "Got unsupported type at column '%s', exiting", PQfname( conn->res, i ) );
 				return 0;	
 			}
 

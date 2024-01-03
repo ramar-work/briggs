@@ -98,7 +98,7 @@ dev:
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
-	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -lpq -ldl -lgnutls
+	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -lpq -ldl -lgnutls
 
 
 build-local: $(OBJECTS)
