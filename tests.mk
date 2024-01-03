@@ -10,6 +10,13 @@ DESTUSER="root"
 DESTPASS=
 
 
+# Test longer hostnames
+ncat_test0:
+	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@hell.to.the.naw.com/washdb.washburn" -X
+	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@localhost/washdb.washburn" -X
+	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@hell.to.the.naw.com/washdb.washburn?x=a&asdfsfd8lasdfas.asdfsafd=asdfsadfsasd8234324nn23" -X
+
+
 # Test #1
 ncat_test1: DBNAME=washdb_postgres_ncat_test_1
 ncat_test1:

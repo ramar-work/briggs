@@ -44,7 +44,6 @@
 #include <strings.h>
 #include <errno.h>
 #include <time.h>
-
 #include "vendor/zwalker.h"
 #include "vendor/util.h"
 
@@ -63,6 +62,7 @@
 
 /* Optionally include support for SQLite3 */
 #ifdef BSQLITE_H
+ #error "SQLite support is incomplete.  Do not enable it yet.  For your own good. Thanks."
  #include <sqlite3.h>
 #endif
 
@@ -284,8 +284,6 @@ streamtype_t streams[] = {
 , { "csv", STREAM_COMMA }
 , { "array", STREAM_CARRAY }
 , { "class", STREAM_JCLASS }
-#if 0
-, { "none", STREAM_CUSTOM }
 #ifdef BSQLITE_H
 , { "sqlite3", STREAM_SQLITE }
 #endif
@@ -295,6 +293,8 @@ streamtype_t streams[] = {
 #ifdef BMYSQL_H
 , { "mysql", STREAM_MYSQL }
 #endif
+#if 0
+, { "none", STREAM_CUSTOM }
 #endif
 , { NULL, 0 }
 };
@@ -379,10 +379,16 @@ typedef struct sqldef_t {
 typedef enum sqltype_t {
 	SQL_NONE,
 	SQL_SQLITE3,
-	SQL_POSTGRES,
+#ifdef BMYSQL_H
+	SQL_MYSQL,
+#endif
+#ifdef BPGSQL_H
+	SQL_POSTGRES
+#endif
+#if 0
 	SQL_ORACLE,
 	SQL_MSSQLSRV,
-	SQL_MYSQL
+#endif
 } sqltype_t;
 
 
@@ -395,9 +401,17 @@ typedef enum sqltype_t {
  */
 typedef enum {
 	DB_NONE,
+	DB_SQLITE,
+#ifdef BMYSQL_H
 	DB_MYSQL,
-	DB_POSTGRESQL,
-	DB_SQLITE
+#endif
+#ifdef BPGSQL_H
+	DB_POSTGRESQL
+#endif
+#if 0
+	SQL_ORACLE,
+	SQL_MSSQLSRV,
+#endif
 } dbtype_t;
 
 
@@ -1318,18 +1332,19 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 	
 	// Get the database type
+	if ( 0 ) ;
+#ifdef BMYSQL_H
 	if ( strlen( dsn ) > 8 && !memcmp( dsn, "mysql://", 8 ) ) 
 		conn->type = DB_MYSQL, conn->port = 3306, dsn += 8, dsnlen -= 8;
-	else if ( strlen( dsn ) > 13 &&!memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) ) 
-		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 13, dsnlen -= 13;
-	else if ( strlen( dsn ) > 11 &&!memcmp( dsn, "postgres://", strlen( "postgres://" ) ) ) 
-		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 11;
-	else if ( strlen( dsn ) > 10 &&!memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
-		conn->type = DB_SQLITE, conn->port = 0, dsn += 10, dsnlen -= 10;
-#if 0
-	else if ( !memcmp( dsn, "file://", strlen( "file://" ) ) )
-		conn->type = DB_NONE, conn->port = 0, conn->connstr += 7, dsnlen -= 7;
 #endif
+#ifdef BPGSQL_H
+	else if ( strlen( dsn ) > 13 && !memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) ) 
+		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 13, dsnlen -= 13;
+	else if ( strlen( dsn ) > 11 && !memcmp( dsn, "postgres://", strlen( "postgres://" ) ) ) 
+		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 11;
+#endif
+	else if ( strlen( dsn ) > 10 && !memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
+		conn->type = DB_SQLITE, conn->port = 0, dsn += 10, dsnlen -= 10;
 	else {
 		if ( strlen( dsn ) > 7 && !memcmp( dsn, "file://", 7 ) ) {
 			conn->connstr += 7, dsnlen -= 7;
@@ -1441,10 +1456,6 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		opts = memchr( bb, '?', strlen( bb ) );
 		end = opts ? "?" : NULL;
 	
-		// Also moving this to the end so we don't miss it
-		opttable = memchr( bb, '.', strlen( bb ) );
-		tableend = opttable ? "." : NULL;
-
 		// If no database was specified, just process the hostname, port and options
 		if ( !memchr( bb, '/', strlen( bb ) ) ) {
 			if ( !memchr( bb, ':', strlen( bb ) ) ) {
@@ -1485,16 +1496,9 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 					return 0;
 				}
 
-#if 1 
-				if ( !( p = safecpypos( bb, conn->dbname, tableend, sizeof( conn->dbname ) ) ) ) {
-					snprintf( err, errlen, "Database name is too large for buffer." );
-					return 0;
-				}
-#else
-
-				// Copy db or both db and table name
-				if ( !memchr( bb, '.', strlen( bb ) ) ) {
-					if ( !safecpypos( bb, conn->dbname, end, sizeof( conn->dbname ) ) ) {
+				// Extract just the database name
+				if ( !memchr( bb, '.', strlen( bb ) ) ) { 
+					if ( !( p = safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) ) {
 						snprintf( err, errlen, "Database name is too large for buffer." );
 						return 0;
 					}
@@ -1504,15 +1508,13 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 						snprintf( err, errlen, "Database name is too large for buffer." );
 						return 0;
 					}
-					
 					bb += p + 1;
-
-					if ( !safecpypos( bb, conn->tablename, end, sizeof( conn->tablename ) ) ) {
+					//if ( !( p = safecpypos( bb, conn->tablename, "?", sizeof( conn->tablename ) ) ) ) {
+					if ( !( p = safecpypos( bb, conn->tablename, memchr( bb, '?', strlen( bb ) ) ? "?" : NULL, sizeof( conn->tablename ) ) ) ) {
 						snprintf( err, errlen, "Table name is too large for buffer." );
 						return 0;
 					}
 				}
-#endif
 			}
 
 			//
@@ -1525,15 +1527,9 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 				bb += p + 1;
 			
-#if 1	
-				if ( !( p = safecpypos( bb, conn->dbname, tableend, sizeof( conn->dbname ) ) ) ) {
-					snprintf( err, errlen, "Database name is too large for buffer." );
-					return 0;
-				}
-#else
-				// Copy db or both db and table name
-				if ( !memchr( bb, '.', strlen( bb ) ) ) {
-					if ( !safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) {
+				// Extract just the database name
+				if ( !memchr( bb, '.', strlen( bb ) ) ) { 
+					if ( !( p = safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) ) {
 						snprintf( err, errlen, "Database name is too large for buffer." );
 						return 0;
 					}
@@ -1543,49 +1539,45 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 						snprintf( err, errlen, "Database name is too large for buffer." );
 						return 0;
 					}
-					
 					bb += p + 1;
-
-					if ( !safecpypos( bb, conn->tablename, NULL, sizeof( conn->tablename ) ) ) {
+					if ( !( p = safecpypos( bb, conn->tablename, memchr( bb, '?', strlen( bb ) ) ? "?" : NULL, sizeof( conn->tablename ) ) ) ) {
 						snprintf( err, errlen, "Table name is too large for buffer." );
 						return 0;
 					}
 				}
-#endif
 			} /*memchr / */
-
-			if ( opttable ) {
-				if ( !safecpypos( ++opttable, conn->tablename, tableend, sizeof( conn->tablename ) ) ) {
-					snprintf( err, errlen, "Table name is too large for buffer." );
-					return 0;
-				}
-			}
 
 			if ( opts ) {
 				snprintf( conn->connoptions, sizeof( conn->connoptions ), "%s", ++opts );
 			}
-
+	
+		#ifdef BPGSQL_H
 			// If it's a PG string, we can fix it here...
 			if ( conn->type == DB_POSTGRESQL ) {
-		// Fix the connection string if it hasn't been done yet...
-		char *start = NULL, *tstart = NULL, *qstart = NULL;
-		if ( ( start = memchr( conn->connstr, '@', strlen( conn->connstr ) ) ) ) {
-			// If the table has been specified, get rid of everything before the '?'
-			if ( ( tstart = memchr( start, '.', strlen( start ) ) ) ) {
-				// Terminate the string and disregard the rest of the string for initializing PG
-				if ( !( qstart = memchr( start, '?', strlen( start ) ) ) ) {
-					*tstart = '\0';
-				}
-				else {
-					int qlen = strlen( qstart );
-					memmove( tstart, qstart, qlen ); 
-					*(tstart + qlen) = '\0';
-				}
+				// Fix the connection string if it hasn't been done yet...
+				char *start = NULL, *tstart = NULL, *qstart = NULL;
+				if ( ( start = memchr( conn->connstr, '@', strlen( conn->connstr ) ) ) ) {
+			
+				// Find this first	
+				if ( ( start = memchr( start, '/', strlen( start ) ) ) ) {	
+					// If the table has been specified, get rid of everything before the '?'
+					if ( ( tstart = memchr( start, '.', strlen( start ) ) ) ) {
+						// Terminate the string and disregard the rest of the string for initializing PG
+						if ( !( qstart = memchr( start, '?', strlen( start ) ) ) ) {
+							*tstart = '\0';
+						}
+						else {
+							int qlen = strlen( qstart );
+							memmove( tstart, qstart, qlen ); 
+							*(tstart + qlen) = '\0';
+						}
 
-				//fprintf( stdout, "CONN = %s\n", conn->connstr );
+						//fprintf( stdout, "CONN = %s\n", conn->connstr );
+					}
+				}
+				}
 			}
-		}
-			}
+		#endif
 		}
 	}
 		
@@ -1595,7 +1587,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 
 #ifndef DEBUG_H
- #define print_dsn (A) 0
+ #define print_dsn(A) 0
  #define print_headers(A) 0 
  #define print_stream_type(A) 0
 #else
@@ -1625,35 +1617,24 @@ void print_headers( dsn_t *t ) {
 
 
 void print_stream_type( stream_t t ) {
-	if ( t == STREAM_NONE )
-		printf( "STREAM_NONE\n" );
-	else if ( t == STREAM_PRINTF )
-		printf( "STREAM_PRINTF\n" );
-	else if ( t == STREAM_JSON )
-		printf( "STREAM_JSON\n" );
-	else if ( t == STREAM_XML )
-		printf( "STREAM_XML\n" );
-	else if ( t == STREAM_SQL )
-		printf( "STREAM_SQL\n" );
-	else if ( t == STREAM_CSTRUCT )
-		printf( "STREAM_CSTRUCT\n" );
-	else if ( t == STREAM_COMMA )
-		printf( "STREAM_COMMA\n" );
-	else if ( t == STREAM_CARRAY )
-		printf( "STREAM_CARRAY\n" );
-	else if ( t == STREAM_JCLASS )
-		printf( "STREAM_JCLASS\n" );
-	else if ( t == STREAM_CUSTOM )
-		printf( "STREAM_CUSTOM\n" );
+	if ( t == STREAM_NONE ) printf( "STREAM_NONE\n" );
+	else if ( t == STREAM_PRINTF ) printf( "STREAM_PRINTF\n" );
+	else if ( t == STREAM_JSON ) printf( "STREAM_JSON\n" );
+	else if ( t == STREAM_XML ) printf( "STREAM_XML\n" );
+	else if ( t == STREAM_SQL ) printf( "STREAM_SQL\n" );
+	else if ( t == STREAM_CSTRUCT ) printf( "STREAM_CSTRUCT\n" );
+	else if ( t == STREAM_COMMA ) printf( "STREAM_COMMA\n" );
+	else if ( t == STREAM_CARRAY ) printf( "STREAM_CARRAY\n" );
+	else if ( t == STREAM_JCLASS ) printf( "STREAM_JCLASS\n" );
 #ifdef BPGSQL_H
-	else if ( t == STREAM_PGSQL )
-		printf( "STREAM_PGSQL\n" );
+	else if ( t == STREAM_PGSQL ) printf( "STREAM_PGSQL\n" );
 #endif
 #ifdef BMYSQL_H
-	else if ( t == STREAM_MYSQL ) {
-		printf( "STREAM_MYSQL\n" );
-	}	
+	else if ( t == STREAM_MYSQL ) printf( "STREAM_MYSQL\n" );
 #endif
+	else if ( t == STREAM_CUSTOM ) {
+		printf( "STREAM_CUSTOM\n" );
+	}
 }
 #endif
 
@@ -1787,7 +1768,6 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 	}
 
 
-#if 1
 #ifdef BMYSQL_H
 	// MySQL: create db & table (use an if not exists?, etc)
 	else if ( oconn->type == DB_MYSQL ) {
@@ -1840,7 +1820,6 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 		// Close the MS connection
 		mysql_close( myconn );
 	}
-#endif
 #endif
 
 
@@ -1947,6 +1926,14 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 	// Handle opening the database first
 	if ( conn->type == DB_NONE ) {
 		DPRINTF( "Opening file at %s\n", conn->connstr );
+
+		// Do an access or stat here?
+		if ( access( conn->connstr, F_OK | R_OK ) == -1 ) {
+			// Optionally, check the format and die with the right message
+			snprintf( err, errlen, "%s", strerror( errno ) );
+			return 0;
+		}
+			
 
 		// TODO: Allocating everything like this is fast, but not efficient on memory
 		if ( !( conn->conn = read_file( conn->connstr, &conn->clen, err, errlen ) ) ) {
@@ -2142,21 +2129,13 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 				st->type = T_INTEGER;
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
 				st->type = T_DOUBLE;
-			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) || CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
-				snprintf( err, errlen, "%s", "SQLite3 not done yet" );
-				return 0;	
-			#if 0
-				// Unfortunately, I don't support blobs yet.
-				// There are so many cool ways to handle this, but we're not there yet...	
-				//fprintf( stderr, "UNFORTUNATELY, BLOBS ARE NOT YET SUPPORTED!\n" );
-				if ( rows ) {
-					free_records( rows ); 
-				}
-				mysql_free_result( res );
-				mysql_close( conn );
-				free( headers );
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) ) {
+				snprintf( err, errlen, "%s", "BLOB support not built yet..." );
 				return 0;
-			#endif
+			}
+			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
+				snprintf( err, errlen, "%s", "DATE support not built yet..." );
+				return 0;
 			}
 
 			// Write the column name
@@ -2781,7 +2760,6 @@ int transform_from_dsn(
 
 		// Define
 		int ci = 0;
-		header_t **headers = iconn->headers;
 
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
@@ -2842,8 +2820,9 @@ int transform_from_dsn(
 		#ifdef BMYSQL_H
 			else if ( t == STREAM_MYSQL ) {
 			#ifdef DEBUG_H
-				fprintf( stderr, "Binding value %p, %d of length %d\n", 
-					(*col)->v, (headers[ci])->ntype,(*col)->len );
+				// We definitely do use this...
+				header_t **headers = iconn->headers;
+				fprintf( stderr, "Binding value %p, %d of length %d\n", (*col)->v, (headers[ci])->ntype,(*col)->len );
 			#endif
 
 			#if 1
@@ -3111,8 +3090,8 @@ int help () {
 		{ "-t", "typesafe",    "Enforce and/or enable typesafety" },
 	#endif
 		{ "-f", "format <arg>","Specify a format to convert to" },
-		{ "-j", "json",        "Convert into JSON (short for --format 'json')" },
-		{ "-x", "xml",         "Convert into XML (short for --format 'xml')" },
+		{ "-j", "json",        "Convert into JSON (short for --convert --format \"json\")" },
+		{ "-x", "xml",         "Convert into XML (short for --convert --format \"xml\")" },
 		{ "-q", "sql",         "Convert into general SQL INSERT statement." },
 		{ "-p", "prefix <arg>","Specify a prefix" },
 		{ "-s", "suffix <arg>","Specify a suffix" },
@@ -3137,9 +3116,7 @@ int help () {
 		{ "-L", "limit <arg>",   "Limit the result count to <arg>"  },
 		{ "",   "buffer-size <arg>",  "Process only this many rows at a time when reading source data"  },
 #endif
-#ifdef DEBUG_H
 		{ "-X", "dumpdsn",       "Dump the DSN only. (DEBUG)" },
-#endif
 		{ "-h", "help",        "Show help." },
 	};
 
@@ -3230,16 +3207,22 @@ int main ( int argc, char *argv[] ) {
 
 			if ( !strcasecmp( *argv, "sqlite3" ) )
 				dbengine = SQL_SQLITE3;
+		#ifdef BPGSQL_H
 			else if ( !strcasecmp( *argv, "postgres" ) )
 				dbengine = SQL_POSTGRES;
+		#endif
+		#ifdef BMYSQL_H
 			else if ( !strcasecmp( *argv, "mysql" ) )
 				dbengine = SQL_MYSQL;
+		#endif
+		#if 0
 			else if ( !strcasecmp( *argv, "mssql" ) )
 				dbengine = SQL_MSSQLSRV;
 			else if ( !strcasecmp( *argv, "oracle" ) ) {
 				dbengine = SQL_ORACLE;
 				return PERR( "Oracle SQL dialect is currently unsupported, sorry...\n" );
 			}
+		#endif
 			else {
 				return PERR( "Argument specified '%s' for flag --for is an invalid option.", *argv );
 			}
@@ -3369,21 +3352,26 @@ int main ( int argc, char *argv[] ) {
 		argv++;
 	}
 
-#ifdef DEBUG_H
+	// Dump the DSN(s)
 	if ( dump_parsed_dsn ) {
-		if ( !parse_dsn_info( &input, err, sizeof( err  ) ) ) {
-			return PERR( "Input file was invalid: %s\n", err );
-		}
-
-		if ( output.connstr && !parse_dsn_info( &output, err, sizeof( err ) ) ) {
-			return PERR( "Output file was invalid: %s\n", err );
+		if ( !parse_dsn_info( &input, err, sizeof( err ) ) ) {
+			PERR( "Input file was invalid: %s\n", err );
+			return 1;
 		}
 
 		print_dsn( &input );
-		print_dsn( &output );
+#if 0
+		if ( output.connstr ) {
+			if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
+				PERR( "Output file was invalid: %s\n", err );
+				return 1;
+			}
+
+			print_dsn( &output );
+		}
+#endif
 		return 0;
 	}
-#endif
 
 	// Start the timer here
 	if ( show_stats )

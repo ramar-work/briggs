@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0.1
+VERSION = 1.0.1b
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
@@ -20,22 +20,26 @@ POSTGRES_IFLAGS=-Iinclude
 POSTGRES_LDFLAGS=-Llib
 POSTGRES_LIBFLAGS=-lpq
 
-
+# Static libraries
 PGLIBS=lib/libpq.a lib/libpgcommon.a lib/libpgport.a
 MYLIBS=lib/libmariadbclient.a
+#MYLIBS=
 
 # Include flags (to handle outside dependencies)
 #IFLAGS=$(MYSQL_IFLAGS) $(POSTGRES_IFLAGS)
 IFLAGS=-Iinclude
 
+# Control Postgres and other database engine support from here for now
+FFLAGS=-DBPGSQL_H -DBMYSQL_H
+#FFLAGS=-DBPGSQL_H
 
 # Lib support flags
 LDFLAGS=-Llib $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
 
 
 # -Wno-unused
-CLANGFLAGS = -g -Wall -Werror -std=c99
-GCCFLAGS = $(CLANGFLAGS) -Wno-unused -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
+CLANGFLAGS = -Wall -Werror -std=c99
+GCCFLAGS = $(CLANGFLAGS) -Wno-unused -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors
 CFLAGS = $(GCCFLAGS)
 
 #CFLAGS = $(CLANGFLAGS)
@@ -53,6 +57,27 @@ main:
 	@printf '' >/dev/null
 
 
+#
+debug: CFLAGS+=-DDEBUG_H
+debug: build
+debug:
+	@printf '' >/dev/null
+
+
+# main - Default build, suitable for most people
+local: build-local
+local: 
+	@printf '' >/dev/null
+
+
+#
+local-debug: CFLAGS+=-DDEBUG_H
+local-debug: build-local
+local-debug:
+	@printf '' >/dev/null
+
+
+
 # clang - Default build using clang, suitable for most people
 clang: CFLAGS=$(CLANGFLAGS)
 clang: CC=clang 
@@ -60,11 +85,6 @@ clang: build
 clang: 
 	@printf '' >/dev/null
 
-
-debug: CFLAGS+="-DDEBUG_H"
-debug: build
-debug:
-	@printf '' >/dev/null
 
 
 # dev - Development target, using clang and asan for bulletproof-ness
@@ -78,7 +98,11 @@ dev:
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
-	$(CC) $(CFLAGS) -DBMYSQL_H -DBPGSQL_H main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm
+	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -lpq -ldl -lgnutls
+
+
+build-local: $(OBJECTS)
+	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -ldl -lgnutls
 
 
 %.o: %.c 
@@ -154,14 +178,14 @@ $(DISTDIR): clean
 	cp $(FILES) $(DISTDIR)/
 	cp -Lr example/* $(DISTDIR)/example/
 	cp -Lr include/* $(DISTDIR)/include/
-	cp -Lr lib/* $(DISTDIR)/lib/
+	cp lib/* $(DISTDIR)/lib/
 	cp vendor/zwalker.* $(DISTDIR)/vendor/
 	cp vendor/util.* $(DISTDIR)/vendor/
 
 # Check that packaging worked (super useful for other distributions...) 
 distcheck:
 	gzip -cd $(DISTDIR).tar.gz | tar xvf -
-	cd $(DISTDIR) && $(MAKE)
+	cd $(DISTDIR) && $(MAKE) local
 	cd $(DISTDIR) && $(MAKE) clean
 	rm -rf $(DISTDIR)
 	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
