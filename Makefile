@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0
+VERSION = 1.0.1
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
@@ -34,7 +34,7 @@ LDFLAGS=-Llib $(MYSQL_LIBFLAGS) $(POSTGRES_LIBFLAGS)
 
 
 # -Wno-unused
-CLANGFLAGS = -g -Wall -Werror -std=c99 -DBMYSQL_H -DPGSQL_H
+CLANGFLAGS = -g -Wall -Werror -std=c99
 GCCFLAGS = $(CLANGFLAGS) -Wno-unused -Wno-deprecated-declarations -O3 -Wno-pointer-arith -Wstrict-overflow -pedantic-errors -DDEBUG_H
 CFLAGS = $(GCCFLAGS)
 
@@ -78,9 +78,8 @@ dev:
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
-	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm
+	$(CC) $(CFLAGS) -DBMYSQL_H -DBPGSQL_H main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm
 
-#	$(CC) $(CFLAGS) main.c -o $(NAME) $(OBJECTS) lib/libmariadbclient.a $(MYSQL_IFLAGS) -lssl -lcrypto -lz
 
 %.o: %.c 
 	$(CC) -c -o $@ $< $(CFLAGS)
@@ -144,7 +143,7 @@ $(DISTDIR).tar.gz: $(DISTDIR)
 	rm -rf $(DISTDIR)
 
 # Create a package directory
-$(DISTDIR):
+$(DISTDIR): clean
 	rm -f $(DISTDIR).tar.gz
 	rm -rf $(DISTDIR)
 	mkdir -p \
@@ -153,11 +152,11 @@ $(DISTDIR):
 		$(DISTDIR)/lib \
 		$(DISTDIR)/vendor
 	cp $(FILES) $(DISTDIR)/
-	cp -r example/* $(DISTDIR)/example/
-	cp -r include/* $(DISTDIR)/include/
-	cp -r lib/* $(DISTDIR)/lib/
-	cp -r vendor/zwalker.c vendor/zwalker.h $(DISTDIR)/vendor/
-	cp -r vendor/util.c vendor/util.h $(DISTDIR)/vendor/
+	cp -Lr example/* $(DISTDIR)/example/
+	cp -Lr include/* $(DISTDIR)/include/
+	cp -Lr lib/* $(DISTDIR)/lib/
+	cp vendor/zwalker.* $(DISTDIR)/vendor/
+	cp vendor/util.* $(DISTDIR)/vendor/
 
 # Check that packaging worked (super useful for other distributions...) 
 distcheck:

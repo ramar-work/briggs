@@ -3504,12 +3504,14 @@ int main ( int argc, char *argv[] ) {
 				// If this is a database, choose the stream type
 				if ( 0 ) ;
 			#ifdef BSQLITE_H
-				else if ( output.type == DB_SQLITE )
+				else if ( output.type == DB_SQLITE ) {
 					stream_fmt = STREAM_SQLITE;
+				}
 			#endif
 			#ifdef BMYSQL_H
-				else if ( output.type == DB_MYSQL )
+				else if ( output.type == DB_MYSQL ) {
 					stream_fmt = STREAM_MYSQL;
+				}
 			#endif
 			#ifdef BPGSQL_H
 				else if ( output.type == DB_POSTGRESQL ) {
