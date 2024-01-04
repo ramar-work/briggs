@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0.1b
+VERSION = 1.0.1c
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
@@ -102,7 +102,10 @@ build: $(OBJECTS)
 
 
 build-local: $(OBJECTS)
-	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -ldl -lgnutls
+	$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(MYLIBS) $(PGLIBS) $(IFLAGS) -lz -lm -lpthread -ldl -lgnutls
+
+
+#$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -ldl -lgnutls
 
 
 %.o: %.c 
@@ -178,7 +181,7 @@ $(DISTDIR): clean
 	cp $(FILES) $(DISTDIR)/
 	cp -Lr example/* $(DISTDIR)/example/
 	cp -Lr include/* $(DISTDIR)/include/
-	cp lib/* $(DISTDIR)/lib/
+	-cp lib/* $(DISTDIR)/lib/
 	cp vendor/zwalker.* $(DISTDIR)/vendor/
 	cp vendor/util.* $(DISTDIR)/vendor/
 
