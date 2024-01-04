@@ -16,8 +16,16 @@ postgres:
 	-test ! -d $(PGVER) && tar xzf $(PGVER).tar.gz
 	cd $(PGVER) && \
 		export MAKELEVEL=0 && \
+		./configure --disable-rpath --without-readline --without-zlib --without-icu CFLAGS=-fPIE
+
+
+# postgres-full - Builds and installs (a rather hindered, but nonetheless complete, install of) PostgreSQL
+postgres-full:
+	-test ! -d $(PGVER) && tar xzf $(PGVER).tar.gz
+	cd $(PGVER) && \
+		export MAKELEVEL=0 && \
 		./configure --prefix=$(DIR) && \
-		make -j2 && \
+		make -j8 && \
 		make install
 
 
