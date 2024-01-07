@@ -44,8 +44,8 @@
 #include <strings.h>
 #include <errno.h>
 #include <time.h>
-#include "vendor/zwalker.h"
-#include "vendor/util.h"
+#include "../vendor/zwalker.h"
+#include "../vendor/util.h"
 
 /* Can compile this to be bigger if need be */
 #define MAX_STMT_SIZE 2048
@@ -184,6 +184,37 @@ static const unsigned int _pgsql_bits[] = {
 #define CHECK_MYSQL_TYPE( type, type_array ) \
 	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
 
+static const char * _mysql_string_map[] = {
+	[0] = NULL,
+	[MYSQL_TYPE_VAR_STRING] = "MYSQL_TYPE_VAR_STRING",
+	[MYSQL_TYPE_STRING] = "MYSQL_TYPE_STRING",
+	[MYSQL_TYPE_VARCHAR] = "MYSQL_TYPE_VARCHAR",
+	[MYSQL_TYPE_FLOAT ] = "MYSQL_TYPE_FLOAT ",
+	[MYSQL_TYPE_DOUBLE] = "MYSQL_TYPE_DOUBLE",
+	[MYSQL_TYPE_DECIMAL ] = "MYSQL_TYPE_DECIMAL ",
+	[MYSQL_TYPE_TINY] = "MYSQL_TYPE_TINY",
+	[MYSQL_TYPE_SHORT  ] = "MYSQL_TYPE_SHORT  ",
+	[MYSQL_TYPE_LONG] = "MYSQL_TYPE_LONG",
+	[MYSQL_TYPE_FLOAT  ] = "MYSQL_TYPE_FLOAT  ",
+	[MYSQL_TYPE_DOUBLE] = "MYSQL_TYPE_DOUBLE",
+	[MYSQL_TYPE_NULL   ] = "MYSQL_TYPE_NULL   ",
+	[MYSQL_TYPE_TIMESTAMP] = "MYSQL_TYPE_TIMESTAMP",
+	[MYSQL_TYPE_LONGLONG] = "MYSQL_TYPE_LONGLONG",
+	[MYSQL_TYPE_INT24] = "MYSQL_TYPE_INT24",
+	[MYSQL_TYPE_NEWDECIMAL] = "MYSQL_TYPE_NEWDECIMAL",
+	[MYSQL_TYPE_DATE   ] = "MYSQL_TYPE_DATE   ",
+	[MYSQL_TYPE_TIME] = "MYSQL_TYPE_TIME",
+	[MYSQL_TYPE_DATETIME ] = "MYSQL_TYPE_DATETIME ",
+	[MYSQL_TYPE_YEAR] = "MYSQL_TYPE_YEAR",
+	[MYSQL_TYPE_NEWDATE ] = "MYSQL_TYPE_NEWDATE ",
+	[MYSQL_TYPE_VARCHAR] = "MYSQL_TYPE_VARCHAR",
+	[MYSQL_TYPE_TINY_BLOB] = "MYSQL_TYPE_TINY_BLOB",
+	[MYSQL_TYPE_MEDIUM_BLOB] = "MYSQL_TYPE_MEDIUM_BLOB",
+	[MYSQL_TYPE_LONG_BLOB] = "MYSQL_TYPE_LONG_BLOB",
+	[MYSQL_TYPE_BLOB] = "MYSQL_TYPE_BLOB",
+};
+
+/* yamcha */
 static const unsigned char _mysql_strings[] = {
 	MYSQL_TYPE_VAR_STRING,
 	MYSQL_TYPE_STRING,
@@ -227,6 +258,11 @@ static const unsigned char _mysql_blobs[] = {
 	MYSQL_TYPE_LONG_BLOB,
 	MYSQL_TYPE_BLOB,
 };
+
+static const char * get_mysql_type ( int type ) {
+	return ( _mysql_string_map[ type ] != NULL ) ? _mysql_string_map[ type ] : NULL;
+}
+
 #endif	
 
 
@@ -2129,12 +2165,17 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 				st->type = T_INTEGER;
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_doubles ) )
 				st->type = T_DOUBLE;
+			#if 0
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_blobs ) ) {
-				snprintf( err, errlen, "BLOB support not built yet at column '%s'...", f->name );
-				return 0;
 			}
 			else if ( CHECK_MYSQL_TYPE( f->type, _mysql_dates ) ) {
-				snprintf( err, errlen, "DATE support not built yet at column '%s'...", f->name );
+			}
+			#endif
+			else {
+				// Handle unsupported or unknown types here
+				// TODO: In the future, you'll have an option to skip these and warn 
+				// or just stop completely
+				snprintf( err, errlen, "%s support not built yet at column '%s'...", get_mysql_type( f->type ), f->name );
 				return 0;
 			}
 

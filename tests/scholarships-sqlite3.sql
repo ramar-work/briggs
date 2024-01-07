@@ -1,5 +1,4 @@
--- Test tables for whatever database I'm testing against.
-DROP TABLE IF EXISTS scholarships;
+/* Test tables for whatever database I'm testing against. */
 CREATE TABLE scholarships( 
 	id INTEGER PRIMARY KEY,
 	date_posted VARCHAR,
@@ -78,4 +77,3 @@ INSERT INTO scholarships VALUES (
 	'Must be a junior and senior majoring in television and film at accredited  4-year, degree-granting U.S. colleges and universities - Two page personal statement - 3 letters of recommendation  - Official college transcript',
 	1	
 );
-

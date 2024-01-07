@@ -1,0 +1,458 @@
+Name|Functional Definition|Classification|Definition Source|Synonyms|Functional Areas|Tags|Designated Requester|Technical definition 1|Data System 1|Time context 1|Technical definition 2|Data System 2|Time context 2
+Academic Rank Modifier|" 
+An indicator if an instructor's academic rank has some extra attribute or consideration.  In some cases, the modifier will change an instructor's classification from rank to no rank for purposes of external reporting.
+
+
+
+ 
+
+
+
+VALUE
+NAME
+DESCRIPTION
+STATUS
+A
+Adjunct
+Adjunct
+A
+C
+Clinical
+Clinical
+A
+D
+Distinguished
+Distinguished
+A
+E
+Emeritus
+Emeritus
+A
+G
+(reserved for future use)
+(reserved for future use)
+A
+P
+Of the Practice
+Of the Practice
+A
+Q
+Extension
+Extension
+A
+S
+Senior
+Senior
+A
+T
+Teaching
+Teaching
+A
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Academic Standing|"This is based on a student’s overall grade point average (GPA) and it means that the student is on track to graduate.
+It usually includes the cumulative grade point average up to the recent term.
+It is often required for Financial Aid.
+ 
+Examples include:
+	Good Standing (GS):  Students earning a minimum 2.0 cumulative GPA and 67% of attempted plus transferred credit hours.
+	Academic Warning (AW): Students failing to earn 67% of attempted plus transferred credit hours.
+	Academic Probation (PR):  Students failing to earn a minimum 2.0 semester GPA.
+	Academic Suspension (SU) : Students on academic probation who fail to earn a minimum 2.0 semester GPA and 67% of attempted plus transfer credit hours.
+	Academic Dismissal: Students failing to earn a semester 2.0 GPA and 67% of attempted hours after returning from serving the one-semester suspension or having successfully appealed their academic suspension.
+
+ 
+ "|Controlled|Banner||Institutional Research|CGPA GPA|Ekua Ofosu||||||
+Account|Account is the first A in FOAPAL. FOAPAL is the elements that defines an account string in Banner. It is used to identify assets, liabilities, and fund balances as well as revenue, expense and transfer activities.|Public|Banner|budget code,line item|Business & Finance||||||||
+Account Description|The descriptive name that defines the Account|Public|Banner||Business & Finance|Account,budget code,line item|||||||
+Active Status|It identifies whether the fund is active or inactive||||Business & Finance|status indicator|||||||
+Adjunct Faculty/Part-Time Instructors (E-Class)|Adjunct Faculty/Part-Time Instructors are hired on a contractual, part-time basis. They often teach introductory courses semester-by-semester throughout the academic year. They are not required to do research Adjunct Faculty are instructors hired by the University in a different capacity other than Teaching ||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Adjustments|The changes that are made to the origional entry to the account. Generally, the amount increase or decrease in the account|Public|Banner|Amendment|Business & Finance|Revisions,adjustments|||||||
+Admit Term|The term student was first admitted to institution|Controlled|Banner||University Registrars Office|Semester Admitted|Ekua Ofosu||||||
+Admit Term Code|"This is the code associated with [[Admit Term]]. Some examples are :
+
+ 
+
+Fall 2021 = 202210
+
+Spring 2021 =202120
+
+Summer II 2021 = 202140
+
+Summer I 2021 = 202130"|Controlled|Banner||University Registrars Office|Semester Admitted|Sesan Akintade||||||
+Advisor Name|The student's advisor's full given name, including first name, middle initial and last name as displayed in Banner.|Public|Banner||Institutional Research|Advisor|Sesan Akintade||||||
+Advisor PIDM|"[[PIDM]] assigned to the Advisor in NC A&T ERP system, Banner.
+ 
+ "|Confidential|Banner||Institutional Research|Advisor|Sesan Akintade||||||
+Affiliate Non-Paid (E-CLASS)|An employee who is not paid by NC A&T but has an ongoing, longer-term relationship or both with the University||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Anticipated Date of Graduation|The month and year a student is scheduled to complete their degree which is  determined by the program the student is enrolled in|Controlled|Banner||Institutional Research|Student graduation|Sesan Akintade||||||
+Appointment Type|" 
+The type of appointment the employee has been granted.
+SHRA/CSS(clinical support staff): Permanent, Time-limited.
+EHRA: Continuing, Fixed-term.
+COS: Permanent, Time-limited.
+NPE: Graduate or Teaching Assistant (GTA), Post-doctoral, Temporary/Visiting Faculty, Student Worker, Other
+ "|||Appointment Type, Appointment|Human Resources,University Registrars Office|Appointment Type,Appointment|Ekua Ofosu||||||
+Athlectic Indicator|A list and record of active signage and participation of students in qualifying activities|Public|Banner||Institutional Research||Ekua Ofosu||||||
+Auditor Only (Origional Enrollment Status)|A student only taking classes for audit. ||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Awards Received|The awards bestowed on a student by North Carolina A&T State University and/or previously conferred by other universities prior to attendance at North Carolina A&T University.|Controlled|Banner||Institutional Research|Student Awards|Sesan Akintade||||||
+Band Indicator|A list and record of active signage and participation of students in qualifying activities|Public|Banner||Institutional Research||Sesan Akintade||||||
+Banner ID|"A unique 9-digit ID automatically assigned by the Banner system upon application or employment. 
+ 
+The ID always begins with 950. "||||North Carolina A&T State University||ncat IData Admin||||||
+Canpus Degree Description|This field identifies the degree within the primary curriculum for the effective term.|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Career|"This is a term that describes the overall level of a student with students working toward an undergraduate degree are assigned undergraduate career credit and students working toward a graduate degree are assigned graduate career credit. 
+ 
+Academic Career of Continuing Education is assigned to students who are taking professional development classes or self-improvement classes.
+ 
+Freshman  is tagged to 0 – 29 credits hours
+Sophomore: 30 – 59
+Juniors: 60 – 89
+Seniors: 90 and above"||||Institutional Research,OSPIE|Student,Graduate,Undergraduate|Ekua Ofosu||||||
+Career Level|The level of degree offered by an [[academic program]].|Public||Degree Level|Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Citizenship|The official classification of the student's citizenship status with the United States government. ||||Institutional Research,The Graduate School||Ekua Ofosu||||||
+Class|A class is the particular time and day that a lesson takes place as part of a course.||||Center for Academic Excellence: Advisors||Cemoon||||||
+Class Code|"The classification of the student within the [[career]]. This generally corresponds to the number of cumulative credit hours earned.
+ 
+Freshman  is tagged to 0 – 29 credits hours
+Sophomore: 30 – 59
+Juniors: 60 – 89
+Seniors: 90 and above"|Confidential|Banner||Institutional Research|Class Code,Classification,Class level|Sesan Akintade||||||
+Class Description|"This field describes the class associated with the class code.
+ 
+Examples: 
+NF: New Freshman
+FR: Freshman
+SO: Sophomore
+ "|Controlled|Banner||OSPIE||Sesan Akintade||||||
+Classification|The class level of the student within the career as listed in Banner. This generally corresponds to the number of cumulative credit hours earned. Each level (freshman, sophomore, junior, etc.) will be tagged to a range of range of credit applicable to that level; ie. freshman is tagged to 0 – 30 credits hours||Banner||OSPIE|Student,Class|Sesan Akintade||||||
+College (Course's College)|The official name for the college which contains the department that has managerial responsibility for or ownership of the course. Based on the associated Course's College CIP code.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Completed Term|Completed Term is the term in which the degree-seeking student finished the course-work required by the institution to graduate according to their major.||||North Carolina A&T State University||Cemoon||||||
+Concentration|A subfield of the [[major]] a student studies for their chosen [[degree]]. It usually consists of related courses in a specialized area of study.|Public|Banner|Area of Study|Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Confidentiality|"This field identifies if a person record is confidential Valid values are
+Y - confidential.
+N = No confidential"|Confidential|Banner||Institutional Research||Sesan Akintade||||||
+Continuing (Appointment Type)|Continuing Appointment type is an end date. This position is exempted from State Human Resource Act (SHRA).||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Continuing Student (Origional Enrollment)|A student enrolled at the same institution and in the same program level in the previous regular session.||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+County|This field maintains the county associated with the address of person.||Banner||Institutional Research|Rural Indicator|Sesan Akintade||||||
+Course|A course is a series of classes. These classes are all in one area of study. Courses are assigned credits. Colleges dictate how many credits you need to take to graduate. Courses are the offered subject, for example Algebra I.||||Center for Academic Excellence: Advisors||Cemoon||||||
+Course Work Completion Term|The [[Term]] in which the students completed the course work.|Public|Banner||University Registrars Office||Sesan Akintade||||||
+Cumulative GPA|"The cumulative grade point average earned in the institution as of the applicable term. A CGPA is a reflection of a student's academic performance from 0.00 - 4.0. It is the overall average of a student's [[GPA]]
+Overall means inclusive of institutional and transfer work if transfer work is included in the [[GPA]].
+GPA is derived from letter grades. Courses that is graded on satisfactory (S) and unsatisfactory are not included in the calculation Subject 1 : Subject units = 3.0 (generally means 3 instruction hours per week) Letter grade = A  (equals 4.0 grade points) Subject 2: Subject units = 3.0 Letter grade = B- (equals 2.7 grade points)
+
+ "|Confidential|Banner||Institutional Research|CGPA,GPA,Grades|Sesan Akintade||||||
+Cumulative Hours Attended|The cumulative credit hours attempted at the institution in the career as of the applicable term|Confidential|Banner||Institutional Research||Sesan Akintade||||||
+Data Steward|A data steward is an individual is in charge of managing permissions to the data mart that they represent. There is a data steward for each data mart; Student Data Mart, Human Resources Data Mart, and Finance Data Mart.||||Data Governance & Business Intelligence,Institutional Research||Cemoon||||||
+Date of Birth|This is usually the date that the student was born which is indicated on his/her birth certificate. The student's date of birth is used to verify his/her identity. It usually consists of the month, the day and the year in the format mm/dd/yyyy.|Restricted|Banner||Institutional Research||Sesan Akintade||||||
+Date of Graduation|"It is the date when all the requirements of a diploma are met and the diploma is awarded to the student.
+
+ 
+ 
+ "|Controlled|Banner||Institutional Research|Student Attendance,Graduation Date|Sesan Akintade||||||
+Date of Matriculation|The term code of [[matriculation]] in North Carolina A&T University.|Controlled|Banner||Institutional Research|Matriculation Date|Sesan Akintade||||||
+Degrees Received|The degrees conferred by North Carolina A&T State University at the end of a student’s academic study. May also include degrees previously conferred by other universities prior to attendance at North Carolina A&T University. (for further refinement)|Confidential|Banner||Institutional Research|Degree|Sesan Akintade||||||
+Department|"The descriptive name that identifies the department in Banner. Generally, a department is an institution's second second-highest academic organization and child to the academic organization of college.
+
+ 
+Note: Due to the University’s reorganization in 2017, some department names will appear differently for terms after that time"|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Doctoral Degree|Doctor’s degree-other: A doctor’s degree that does not meet the definition of a doctor’s degree - research/scholarship or a doctor’s degree - professional practice.||||North Carolina A&T State University||Cemoon||||||
+DOE Budget Category|The grouping of account types for a group of funds for Department of Education(DOE) reporting. (Add Title)|Public|Generated Report||Business & Finance|Budget Category|||||||
+EHRA Academic Rank|"The academic rank of Faculty that exempt them from the Human Resources Act
+
+
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+EHRA Non-Faculty (E-Class)|Permanent positions Exempt from the State Human Resources Act. They deliver the core-mission activities of NC A&T. They are designated as Instructional, Research, and Information Technology.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+EHRA Tenure Status|"Tenure is a category of academic appointment which is a means of defending the principle of academic freedom. EHRA Tenure Status is granted to Faculty after a trial period that exempts them from the Human Resource Act. However, a tenured post can only be terminated for cause under extraordinary circumstances.
+T – Permanent Tenure
+N – Not Tenured but on Tenure Track
+Z – not on a Tenure Track
+ 
+P – Phased Retirement"||||University Registrars Office||Ekua Ofosu||||||
+EHRA Tier I (E-Class)|Permanent positions Exempt from the State Human Resources Acts— Senior Academic and Administrative Officer-Tier 1. They include the Chancellor, Vice-Chancellor, Provosts, Deans, and Directors of major administrative, educational, research, and public services activities designated by the Board of Governors.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+EHRA Tier II (E-Class)|Permanent positions Exempt from the State Human Resources Act (SHRA). They are Senior Academic and Administrative Officer-Tier II, which includes administrative functions designated and approved by the President.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Email|The electronic mail address provisioned to the student by NC A&T State University.|Controlled|Banner||Institutional Research|Email,School Email|Sesan Akintade||||||
+Employee (Full-time and Part-time, HR)|"The instructor's status within HR department records classified as Full Time or Part Time, in accordance with HR definitions.
+
+
+ 
+If a person is teaching 0.98 FTE (approximately 12 credit hours), then they are Full-time. If not, they are Part-time."||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Employee Class (E-Class)|E-class identifies a group of positions driven by the position type and exempt.||||Human Resources,University Registrars Office|Position Type,E-Class Code,Employee Class,Type of Employee|Ekua Ofosu||||||
+Employee Status|The current status of the employee for the specified period. A terminated employee should only be reported as 'Terminated' during the period for which the status changed and should remain in the data submission until Separation Date has passed. Once the Separation Date has passed, this person should be omitted from future data submissions.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Employee Type|"Whether or not the employee is classified as SPA (Subject to State Human Resources Act), EPA (Exempt from State Human Resources Act), and NPE (Non-Permanente Employees).
+ 
+Employee type and corresponding employment classe (E-Class):
+SPA  = SE, SN, LE
+EPA NON-FACULTY = E1, E2, EN
+EPA FACULTY = F1, F2
+NON-PERMANENT EMPLOYEE (NPE) = FA, GR, SH, TS
+
+ 
+
+
+ 
+
+
+ "|||SPA Appointment, EPA Appointment|Human Resources,University Registrars Office||Ekua Ofosu||||||
+Enrolled Indicator|"This indicates whether the person is enrolled for the given term.
+The values are:
+Y - Yes
+N- No"|Controlled|Banner||Institutional Research|Enroll|Sesan Akintade||||||
+Enrollment Time Status|An indicator of the amount of coursework, measured in credit hours, that a student is enrolled in per [[term]].|Controlled|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Ethnicity Description|The code for the student's race or ethnicity as derived for IPEDS criteria.|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Expeenditure End Date|The date the fund/grant is officially closed for posting expenditures.|Public|User Provided|deadline,expiration|Business & Finance|End Date,deadline|||||||
+Extra Compensation (E-Class)|EHRA employees who are instructors in addition to their primary job role. The extra compensation is paid monthly.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Faculty 11/12 Month (E-Class)|Faculty on 11-12 month contract paid are paid all year round||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Faculty 9/10 Month (E-Class)|Faculty on 9-10 month contract paid over nine months and not paid for the three months of summer. ||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+First Name|This is the first name in the [[Student Name]]. The first name is also referred to as given name.|Confidential|Banner||Institutional Research|Name,Student Name|Sesan Akintade||||||
+Fixed Term (Appointment Type)|Fixed Term EHRA [[Appointment type]] is an employment status for a specified term where the employment contract specifies the start and end dates of employment.  A fixed term employee can be offered further work when there is [unding security||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Fund|"A fund is a self-balancing set of accounts segregated for specific purposes in accordance with laws and regulations or special restrictions and limitations - current accounting standards.
+ 
+F  in the FOAPAL elements stands for Fund. Fund identifies the source of revenue received or the funding source. Funding sources describe where the money to run the program or department originated. Funds can be associated with multiple Organizations.
+The numerical figures associated with the Fund is Fund Code. They are always six(6) numerical digits. 
+ 
+ "|Public|Banner|Endowment Title|Business & Finance|Endowment,gifts,fund,grants|||||||
+Fund Begin Date|The date the fund/grant officially enforces.|Public|User Provided|Start Date|Business & Finance|Start Date,Begin Date,Effective Date|||||||
+Fund Code|The number associated with the Fund/Grant|Public|Banner||Business & Finance|Grant,Fund|||||||
+Fund Type|Funds are organized in Banner by Fund Type. Fund Types allow various processes to either include or exclude significant funds groups. Fund Types are used to generate accounting entries appropriately.|Public|Banner||Business & Finance|Grant,Fund|||||||
+Gender|This field maintains the sex (male or female) of a person.|Controlled|Banner||Institutional Research|Sex,Male,Female|Sesan Akintade||||||
+General Education Course|A General Education Course is a course that is listed under the general education curriculum. The Courses are added to this list after approval by the General Education Council, the Faculty Senate, and the Provost.||||North Carolina A&T State University||Cemoon||||||
+General Education Course Completions|General education course completions is defined as the percentage of students that passed General Education courses taken in an academic year.||||North Carolina A&T State University||Cemoon||||||
+General Education Curriculum|"The general education curriculum at NC A&T State University (beginning fall, 2016) includes eight student learning outcomes:
+Written Communication
+Mathematical, Logical, and Analytical Reasoning
+Scientific Reasoning
+Social and Behavioral Sciences
+Humanities and Fine Arts
+Knowledge of African-American Culture and History
+Global Awareness
+Student Success.
+ The Courses are added to this list after approval by the General Education Council, the Faculty Senate, and the Provost"||||North Carolina A&T State University||Cemoon||||||
+Good Standing|A value for [[Academic Standing]] reflecting that a student has earned a minimum 2.0 [[cumulative GPA]] and 67% of attempted plus transferred credit hours.||||Enrollment Mgmnt and Admissions ACTUAL||ncat IData Admin||||||
+GPA|The grade point average for the level. This is the GPA in [[Cumulative GPA]]|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Graduate Assistant (E-Class)|Salaried student employment opportunities for graduate students. GAs work a set number of hours per week. They typically assist professors with instructional responsibilities as teaching or academic research assistants.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Graduate Enrollment|Graduate enrollment is the number of students that enroll in any graduate program at N. C. A&T (master’s, doctoral, post-master’s certificate, or non-degree programs.)||||North Carolina A&T State University||Cemoon||||||
+Graduate or Teaching Assistant (GTA) (Appointment Type)|Graduate or Teaching assistant [[appointment type]] is a Non-Permanent Employee appointment that is given to Graduates students who are employed by NC A&T to either teach a class or support research relevant to their area of studies. This position is usually funded by the research grant.||Student Data Mart||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Graduating College|The college in which the student graduates.|Public|Banner||University Registrars Office|Cellege,School|Sesan Akintade||||||
+Graduating Degree|The degree with which the student graduates.|Public|Banner||University Registrars Office|Degree|Sesan Akintade||||||
+Graduating Major|The [[Major]] with which the student graduates. |Public|Banner||University Registrars Office|Major|Sesan Akintade||||||
+Graduating Term|The [[Term]] in which the student graduates.|Public|Banner||University Registrars Office|Graduating Semester|Sesan Akintade||||||
+Graduation Rate/Completion Rate (Graduate School)|" 
+Graduation Rate for All Graduate Students or Completion Rate for Graduate Students measures how many graduate students who began in the same cohort and will graduate from their program of study within a specified period; six years for Masters and 10 years for Ph.D. GR-All is reflective of all first-time, Full-time and First-Time, Part-time graduate degree seeking students who started in the same cohorts.
+ "||||The Graduate School||Ekua Ofosu||||||
+Headcount (Student)|The number of enrolled students, as of benchmark, regardless of their individual credit load||||North Carolina A&T State University||Cemoon||||||
+Home College|The home organization (college) that is associated with a person's employment record. The college is the parent of the academic department.|||Home organization|Human Resources,University Registrars Office|Faculty's Primary Department,Primary Department,Department,School|Ekua Ofosu||||||
+Home Department (Faculty's Department)|"Home organization (department) associated with a person's employee record.
+The academic department that is the primary department in which the
+instructor teaches, and owns or manages the majority of courses taught
+by the instructor. "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Honors Indicator|An indicator whether a student is a participant in the Honors Program at NC A&T State University.|Public|Banner||Institutional Research||Sesan Akintade||||||
+HOURS ATTEMPTED|This is the hours attempted for the level.|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+HOURS EARNED|This is the number of hours earned for the level|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+HR Total FTE|"The Full Time Equivalent of the employee’s effort.  This FTE calculation is based on HRDM calculation: ECLS = FA (Part-Time Instructor) FTE;
+.25 FTE = 3 credits; .50 FTE = 6 credits; .75 FTE = 9 credits; 1.00 FTE = 12 credits
+
+
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Incomplete|An interim grade assigned when term work is deferred for legitimate reasons. When a student doesn’t finish a course but will finish at a later time. In detail, an incomplete is given when a student has not completed all the work for a class and it is determined by the student and the course instructor that the student will be unable to complete the work prior to the date that semester course grades are due to be submitted.||||Center for Academic Excellence: Advisors||Cemoon||||||
+Initial Hire Date|The date that marks when the Faculty started employment at NC A&T SU.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Insight Platform|Insight is a platform that the institution uses to house dashboards related to the institutions data. These dashboards include dashboards in the Internal Factbook, Aggie Analytics Folder, and Student Success Folder. This site is also where the UNC System Office houses their dashboards for A&T as well as comparison data between A&T and other UNC System Institutions.||||North Carolina A&T State University||Cemoon||||||
+Insight User Account|" 
+An insight user account is a user profile that allows an individual access to the insight platform. A user must request access for this account. This account type allows the user to explore data such as the Internal Factbook and other dashboards that are housed on the platform. Access to dashboards and data is dependent upon the users job and access group.
+ "||||North Carolina A&T State University||Cemoon||||||
+Instructor|A person assigned responsibility for the delivery of the course content but is not always the individual teaching the course.  For example, a lab session may be taught by a [[graduate assistant]]. Or, an artist-in-residence may teach the course but not be the instructor or the [[instructor of record]].|Public|||Institutional Research,University Registrars Office|Faculty's Name,Faculty,Instructor|||||||
+Instructor CID|Instructor CID is the unique identifier for the instructor in Banner.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Instructor of Record|An [[instructor]] who .||||Institutional Research,University Registrars Office||||||||
+LAST NAME|This the last name in the [[Student Name]]. The last name is also referred to as surname or family name|Controlled|Banner||Institutional Research|Name,Student Name|Sesan Akintade||||||
+Level|"The classification of the student within the career. The School (Level) in which the student is enrolled
+ 
+Some example include:
+ 
+Class Level
+Description
+Unclassified Undergraduate
+Non degree seeking degree undergraduate
+Undergraduate
+undergraduate Bachelor's degree
+Unclassified
+Non degree seeking
+Graduate
+Masters and Doctoral"|Controlled|Banner||University Registrars Office|Class,Class standing,Classification|Sesan Akintade||||||
+Level Description|This field specifies the student level (e.g. undergraduate, graduate, and professional) associated with the student level code.|Controlled|Banner||Institutional Research|Graduate,Grad,Undergraduate,undergrad,Professional|Sesan Akintade||||||
+Major|"The area of study a student concentrates on in pursuit of a degree; may include multiple entries for [[double major]]s. 
+A student may major in more than one subject by completing the requirement for each major.  A student is required to declare a major at or before completing 45 semester hours. Students will not be allowed to register for the next semester if a major is not declared. Students who desire to obtain a [[double major]] must file a [[double major]] form in the Office of the Registrar. Students who have [[double major]] which involves two [[department]]s or two [[college]]s must satisfy the major requirements for each [[department]] or [[college]]. To graduate with a double major, students must complete the requirements for both majors during the same semester or summer they plan on graduating. However, a student who has completed the requirements for a  [[double major]] will receive one degree according to the student's [[primary major]]. "|Public|NC A&T Website||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Major Code|"This is the code that references the [[Major]] of a student.
+Example include:
+ENGL
+PHIL
+ECON
+HIST
+POLI"|Public|Banner||Institutional Research|Department,Major|Sesan Akintade||||||
+Major Degree Level Code|" 
+A code indicating the level of study provided in the approved program inventory (API). This is the degree level code associated with Major 1. 
+ "||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Masters Degree|Master's degree: An award that requires the successful completion of a program of study of generally one or two full-time equivalent academic years of work beyond the bachelor's degree. Some of these degrees, such as those in Theology (M.Div., M.H.L./Rav) that were formerly classified as 'first-professional', may require more than two full-time equivalent academic years of work.||||North Carolina A&T State University||Cemoon||||||
+MIDDLE INITIAL|This field identifies the middle name in the [[Student Name]].|Controlled|Banner||Institutional Research|Name,Student Name|Sesan Akintade||||||
+Monthly Activity-Expenditures (Banner)|The amount of expenditures and commitments in a month|Public|Banner/Calculated|Spending,disbursement,expense|Business & Finance|monthlly expenditures,monthly expenses,expenditures,expenses|||||||
+Most Recent Previous Educational Institutions Attended|The College or University most recently attended by the student prior to acceptance and attendance at North Carolina A&T University. May include multiple universities from the past 10 years.|Confidential|Banner||Institutional Research|Institution,University|Sesan Akintade||||||
+New Student (Origional Enrollment)|Terminal Occupational, First-Time Freshmen, Special and Unclassified, and/or Graduate students who have no college credits at this program level prior to the immediately previous summer sessions. ||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+New Transfer Student (Origional Enrollment Status)|A student new at a given level for this term who has recognized college credits from other institution(s) and is admitted as a transfer student. Such students given graduate credit for course work taken elsewhere should be considered as new graduate transfer students. Students who transfer in during the immediately previous summer sessions are to be classified as new transfer students. ||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Nonresident Alien|A person who is not a citizen or national of the United States and who is in this country on a visa or temporary basis and does not have the right to remain indefinitely. ||||Institutional Research,The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Original (Approved) Budget/Award|The amount  of the primary Budget/Award|Public|Banner/Calculated|Actual,Primary|Business & Finance|Original,Actual|||||||
+Original Enrollment|The enrollment status corresponds to the student's initial term in the career. ||||Institutional Research,The Graduate School|Enrollment Status|Ekua Ofosu||||||
+Other (Appontment Type)|Temporary positions which are non-faculty and non-academic appointments.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Participation in Official Recognized Activities|A list and record of active signage and participation in selected University student activities, including sport organizations, student clubs, and department clubs by students.|Public|Banner||Institutional Research|Campus Activities|Sesan Akintade||||||
+Pending Expenditures (AggieMart)|Amount of expenditures and commitments not yet processed into Banner|Public|AggieMart||Business & Finance|Pending expenditure,pending expenses,expenses,expenditures|||||||
+Permanent (Appointment Type)|Permanent [[Appointment Type]] is an employment status with no stated end date and provides full access to employment benefits under [[SHRA]]. Depending on the position, NCA&T employees under this category may become eligible after holding the position for a specified time, from 1 year to 7 years.||||Human Resources,University Registrars Office|Appointment Type,Appointment|Ekua Ofosu||||||
+Persistence rate (Graduate Success Metric)|Persistence rate is the percentage of First-Time, Full-Time Graduate Cohort who continue at that school the next semester. It measures how many students will return for their next semester.||||The Graduate School||Ekua Ofosu||||||
+PHONE NUMBER|This is the numerical digits that comprise the necessary information that  identifies the intended endpoint for a telephone call. This is also the [[Telephone Number]] with the area code. |Controlled|Banner||Institutional Research||Sesan Akintade||||||
+PIDM|Personal Identification Number. This is an internal identification number assigned to any person that uniquely identifies them in NC A&T ERP  system, Banner.||Banner|Unique Identification|Unassigned||Sesan Akintade||||||
+Position Appointment Type|" 
+The categorization of an employee's job position based on its anticipated duration.
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Position Type|"A derived field for reporting purposes that distinguishes EPA faculty from non-faculty, in addition to SHRA, EHRA, and NPE.
+SHRA: Subject to State Human Resources Act
+NPE: Non-Permanent Employee
+EHRA: Exempt From State Human Resources Act
+ 
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Post-Doctoral Employee (Appointment Type)|Individuals who have completed a doctorate program and hold positions under mentorship and, are primarily research-centered; may be funded by stipend or directly by the university. May exclude Fellows||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+PREFERRED NAME|The name a student chooses to use aside his/her legal name. This may not be contained in the [[Student Name]] for example a student with the first name of the [[Student Name]]  William may prefer to be called Bill.|Controlled|Banner||Institutional Research|Name,Student Name|Sesan Akintade||||||
+Primary College|"This field identifies the college associated with the primary curriculum for   the effective Term. It is a descriptive name that identifies the college in Banner. Generally, college is the institution's highest level of academic organization and parent to the academic organization of the department. Note: Due to the University's reorganization in 2017, some college names will appear differently for terms after that time.
+Some examples are:
+ 
+College of Education
+College of Science & Technology
+College of Arts & Sciences
+College of Arts, Human & Soc Sci
+UNC Exchange
+School of Education
+School of Nanoscience & Engin
+College of Ag & Envir Science
+School of Nursing
+ "|Controlled|Banner||University Registrars Office|School,College|Sesan Akintade||||||
+Primary Concentration|The subfield of the primary major a student studies for their chosen degree.|Public|Banner||Institutional Research|Area of Study|Sesan Akintade||||||
+Primary Degree|"This field identifies the degree within the primary curriculum for the   effective Term.
+Some of the examples are:
+
+ 
+Mechanical Engineering
+Elementary Education
+Applied Mathematics
+EES EE Sciences & Economics
+Sec Ed (History Education)
+Nano-engineering
+Teaching (Elem Education)
+Political Science
+Professional Theatre
+Marketing"|Public|Banner||University Registrars Office|Discipline|Sesan Akintade||||||
+Primary Department|"This field identifies the college associated with the primary curriculum for   the effective Term. It is the descriptive name that identifies the department in Banner. Generally, department is an institution's second highest level of academic organization and child to the academic organization of college. Note: Due to the University's reorganization in 2017, some department names will appear differently for terms after that time.
+Some examples are:
+ 
+Counseling
+Leadership Studies
+Electr & Computer Engineering
+Energy & Environmental Systems
+The Center for Academic Excellence
+Chemistry
+Educator Preparation
+Applied Engineering Technology
+Accounting and Finance
+Civil, Arch & Agri Engineering
+Construction Management
+ "|Public|Banner||University Registrars Office||Sesan Akintade||||||
+Primary Instructor|An [[instructor]] who .||||Institutional Research,University Registrars Office||||||||
+Primary Major|"This is the area of study a student concentrates on in pursuit of a degree; may include multiple entries for double majors.
+Some examples are: 
+ 
+Mechanical Engineering
+Elementary Education
+Applied Mathematics
+EES EE Sciences & Economics
+Sec Ed (History Education)
+Nano-engineering
+Teaching (Elem Education)
+Political Science
+Professional Theatre
+Marketing"|Public|Banner||University Registrars Office|Degree,Discipline|Sesan Akintade||||||
+Primary Program|This is defined as any combination of courses and/or requirements leading to a degree|Public|Banner||University Registrars Office|Program|Sesan Akintade||||||
+Principal Investigator|" 
+The holder of an independent grant/fund and/or the lead researcher for the grant/fund project. "||||Business & Finance||Alwilliams10||||||
+Race/Ethnicity|Race/ethnicity: Category used to describe groups to which individuals belong, identify with, or belong in the eyes of the community. The categories do not denote scientific definitions of anthropological origins. A person may be counted in only one group.||||North Carolina A&T State University||Cemoon||||||
+Redshift User Account|A redshift user account allows a user access to actual data tables in the SDM, HRDM, and or the FDM. This user account requires the completion of a permission form. The permission form also requires the approval and signatures of the users supervisor and data stewards.||||North Carolina A&T State University||Cemoon||||||
+Registered Indicator|This indicates whether the student has completed his [[Registration]]|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Registration|"A student is registered when
+1. you have cleared any holds on your records. You can view holds in your Aggie Access Online records
+2. Paid at least the minimum amount due listed on your account detail in Aggie Access Online"|Controlled|NC A&T Website||Institutional Research|Register,Registration,Enrollment,Sign up|Sesan Akintade||||||
+Rentention Rate (Graduate Success Metric)|Rentention Rate  is the percentage of First-Time, Full-Time Graduate Cohort who continue at that school the next academic year. It measures how many students will return for their next semester.||||The Graduate School||Ekua Ofosu||||||
+Residency Description|This field specifies the residency status associated with the residency code.|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+Resident Alien|A person who is not a citizen or national of the United States but who has been admitted as a legal immigrant for the purpose of obtaining permanent resident alien status (and who holds either an alien registration card (Form I-551 or I-151), a Temporary Resident Card (Form I-688), or an Arrival-Departure Record (Form I-94) with a notation that conveys legal immigrant status such as Section 207 Refugee, Section 208 Asylee, Conditional Entrant Parolee or Cuban-Haitian). |Controlled|||Institutional Research,The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Returning Student (Origional Enrollment Status)|A student readmitted to the same program level of instruction after an absence of one or more regular sessions. A former student transferring back to his original institution after attendance at another institution is classified as a returning student, provided he is in the same program level. Otherwise, he would be classified as a new transfer. ||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+RIF Employees (E-Class)|Reduction in Force||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+RURAL INDICATOR|An indicator if the student County of Residence is designated as rural. Rural designation is based on the 2016 classifications of Tier 1 or Tier 2 by the NC Department of Commerce.|Controlled|Banner||Institutional Research||Sesan Akintade||||||
+School/College|The descriptive name that identifies the college in Banner. Generally, college is the institution's highest level of academic organization and parent to the academic organization of the department.||||Institutional Research,OSPIE||Ekua Ofosu||||||
+Secondary College|"This field identifies the college other than the [[Primary College]] if more than two colleges are present. 
+ "|Public|Banner||University Registrars Office|College,School|Sesan Akintade||||||
+Secondary Concentration|This is the subfield of the [[Secondary Major]] a student studies for their chosen degree|Public|Banner||University Registrars Office|Secondary Area of Concentration|Sesan Akintade||||||
+Secondary Degree|This field identifies the degree within the secondary curriculum for the   effective Term. It is the degree other than the [[Primary Degree]] when more than two degrees are present. |Public|Banner||University Registrars Office|Degree|Sesan Akintade||||||
+Secondary Major|"This is the area of study a student concentrates on in pursuit of a degree; may include multiple entries for double majors.
+It is the other major aside [[Primary Major]] when two majors are present."|Public|Banner||University Registrars Office|Discipline,Degree|Sesan Akintade||||||
+Section|A Section is the specific group of students taking that subject at a particular time. For example, the 8am Algebra I class and the 10am Algebra 1 Class are different sections||||Center for Academic Excellence: Advisors||Cemoon||||||
+Semester Award|An award bestowed on a student by NCAT per semester based on student's academic performance.|Controlled|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+SHRA Non-Exempt (E-Class)|Employees are non-exempt from the overtime compensation provisions for the Fair Labor Standards Acts (FLSA). They are compensated at a time and one-half for all hours worked more than 40 hours during a workweek. This compensation could be overtime pay or compensatory time off.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+SHRA Temporary Hourly (E-Class)|Employees subject to the State Human Resources Act are hired without expectation or commitment of continued employment. Temporary SHRA may work for up to 11 consecutive months. They are paid biweekly and do not receive state benefits. ||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+SHRA – Exempt (E-Class)|Employees are exempt from overtime compensation provisions of the Fair Labor Standards Acts (FLSA) not from the State Human Resources Act||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Snapshot Term|A copy of data available in a data system is extracted and frozen to preserve its state at a specific point in time.|Public|||Institutional Research,University Registrars Office||||||||
+Snapshot Term Type|It is the descriptive value of the term type.  ||||Institutional Research,The Graduate School||Ekua Ofosu||||||
+Student Athlete|A student who represents NCAT in athletic compentitions within NCAA.|Public|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Athlete Height|The height of a [[student athlete]].|Public|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Athlete Weight|The weight of a [[student athlete]].|Public|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Campus Address|The residential address for a student living on campus during a [[term]].  The address uses this formula: ONEID @NCAT 1601 E. Market Street Creensboro NC 27411May be same as [[sttudent permanent address]].|Controlled|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student CID|Campus Identification Number. The unique number assigned to students in the institution's ERP, Banner.|Confidential|Student Data Mart|Banner ID|University Registrars Office|Banner ID|Ekua Ofosu||||||
+Student Email Address|The email address provisioned by NC A&T State for use by students during enrollment.  The email is assigned automatically upon active enrollment.  The email uses the formula: blah blah|Controlled|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Employees (Appointment Type)|Any NC A&T student (undergraduate and graduate) holding a position with NC A&T, including research, academic, work-study, or other. It can be [[SHRA]] and [[EHRA]].||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Student ID|"A [[Banner ID]] associated with an enrolled student. Prior to enrollment, Student ID can be associated with applicants. 
+ 
+The student ID is governed by Admissions during the application process. Upon enrollment, the student ID is governed by the Registrar. 
+ 
+If a student leaves (withdraws) and returns, the original Student ID is retained.
+ 
+If a student is employed by NCAT at any time (prior to enrollment, during enrollment, or after graduation), the [[Employee ID]] is the same as the Student ID.
+ 
+The student ID source of record is Banner. 
+ "||Banner||Unassigned||Sesan Akintade||||||
+Student Mailing Address|The address the student gives for their mail to be forwarded or delivered to. If the student lives off campus, this address may be their residential address.|Controlled|Banner||Institutional Research|Address|Sesan Akintade||||||
+Student Name|"The legal name of an enrolled student. Typically includes first and last name; occasionally includes the middle initial or middle name.
+ 
+Note: NCAT uses the legal name in all external reporting."|Public||Name,Legal Name,Given Name|Enrollment Mgmnt and Admissions ACTUAL|Given Name,Legal Name|||||||
+Student Permanent Address|The address where a student legally resides.  May be same as [[student campus address]].|Controlled|||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Preferred Name|The preferred name of an enrolled student.  If a preferred name is not provided, use the legal name.  NCAT uses preferred name in all internal reporting.||||Enrollment Mgmnt and Admissions ACTUAL|Idata|||||||
+Student Type Description|"This field identifies the student type for the effective term.
+Examples of this include:
+Continuing
+New Transfer
+Re-Admit
+New Graduate
+New Doctoral"|Public|Banner||Institutional Research||Sesan Akintade||||||
+Summer Faculty (E-Class)|Faculty on nine-month contract who performs research or teaches a class during summer. They are compensated for the work done outside the base salary period of their academic year appointment||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Telephone Number|Telephone number area code.|Controlled|Banner||Institutional Research|Phone|Sesan Akintade||||||
+Temporary (Appointment Type)|Temporary Appointment Type is an employment status of a limited duration, usually not exceeding 11 consecutive months.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Temporary Salaried (E-Class)|Temporary Employees paid monthly. They are subject to the State Human Resources Acts.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Temporary/Visiting Faculty (Appointment)|Temporary/ Visiting Faculty is an employment status granted to an individual with Faculty appointment at another academic institution who will execute provisional faculty duties at NC A&T. Generally, Visiting Faculty appointment may not exceed one year at time in duration||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Term|The term in which the student’s data applies to.||||Institutional Research,OSPIE|Term,Semester|Ekua Ofosu||||||
+Term Description Last Attended|This is the term code description for the term the student last attended.||||Institutional Research||Sesan Akintade||||||
+Termination Date|Ternination date is when the fund/grant ends where it can no longer be used in banner.||||Business & Finance|termination date,term date|||||||
+Time To Degree (Graduate Success Metric)|" 
+Time to degree is defined as the number of years between the month of matriculation and month of completions. For example, Spring 2016 matriculation and Fall 2019 completion would equal the months between 1/16 and 12/19, or 47 months or 3.92 calendar years
+ "||||The Graduate School||Ekua Ofosu||||||
+Time-Limited (Appointment Type)|A special type of academic position for faculty where appointments are restricted to a certain number of semesters, without a promise of reappointment. Usually funded by a temporary or limited funding source, such as a private grant.||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Transfer Hours Earned|The cumulative credit hours earned from another institution, in the career as of the applicable term|Confidential|Banner||Institutional Research|Transfer Hours|Sesan Akintade||||||
+UNCDM User Account|An UNCDM User Account is a an account that is granted access to the UNC Data mart site. This site allows access to any of the data marts; student, HR, and finance. The error reports, permissions for insight, and access granting is all done through the UNCDM.||||North Carolina A&T State University||Cemoon||||||
+Unclassified (Origional Enrollment Status)|A student not meeting any other classification. ||||The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Undergrad Flat (E-Class)|Salaried student employment opportunity for undergraduate students. They are required to work a certain number of hours per week. They receive a monthly stipend. ||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+US Citizen|A person who is a citizen or national of the United States. ||||Institutional Research,The Graduate School,University Registrars Office||Ekua Ofosu||||||
+Withdrawal|When a student drops a course after add-drop but before finals. In detail when a student drops a class after the “drop/add” period, a student may still have the option to withdraw. Withdrawal means the course remains on the transcript with a “W” as a grade. It does not affect the student’s GPA.||||Center for Academic Excellence: Advisors||Cemoon||||||
+Work-Study Student (E-Class)|An employment opportunity for both graduates and undergraduates students to work part-time on and off campus. They paid bi-weekly. Eligible students must be enrolled at least part-time and qualified to receive federal aid, and have demonstrated financial need as determined by the FAFSA application ||||Human Resources,University Registrars Office||Ekua Ofosu||||||
+Working Title|"The working title of an employee's primary active job.
+
+
+ "||||Human Resources,University Registrars Office||Ekua Ofosu||||||

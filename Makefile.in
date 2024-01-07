@@ -1,20 +1,22 @@
 #!/usr/bin/make
+# @configure_input@
 NAME = briggs
-VERSION = 1.0.1c
-PREFIX=/usr/local
+PACKAGE="@PACKAGE_NAME@"
+VERSION="@PACKAGE_VERSION@"
+TARNAME="@PACKAGE_TARNAME@"
+DISTDIR="$(TARNAME)-$(VERSION)"
+PREFIX="@prefix@"
+EXEC_PREFIX="@exec_prefix@"
+BINDIR="@bindir@"
+SRCDIR="@srcdir@"
+VPATH="@srcdir@"
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
-TOPFILES = \
-	configure \
-	install-sh \
+FILES = \
 	Makefile \
-	Makefile.in \
-	README.md \
+	briggs.1 \
+	main.c \
 	tests.mk
-SRCFILES = \
-	src/main.c
-MANFILES = \
-	man/man1/briggs.1
 
 # Add MySQL
 MYSQL_IFLAGS=-Iinclude
@@ -51,10 +53,6 @@ CFLAGS = $(GCCFLAGS)
 #CFLAGS = $(CLANGFLAGS)
 CC = gcc
 OBJECTS = vendor/zwalker.o vendor/util.o
-
-
-#Phony targets 
-.PHONY: main clean debug leak run other
 
 
 # main - Default build, suitable for most people
@@ -177,18 +175,14 @@ $(DISTDIR).tar.gz: $(DISTDIR)
 
 # Create a package directory
 $(DISTDIR): clean
-	-rm -f $(DISTDIR).tar.gz
-	-rm -rf $(DISTDIR)
+	rm -f $(DISTDIR).tar.gz
+	rm -rf $(DISTDIR)
 	mkdir -p \
 		$(DISTDIR)/example \
 		$(DISTDIR)/include \
 		$(DISTDIR)/lib \
-		$(DISTDIR)/man \
-		$(DISTDIR)/src \
 		$(DISTDIR)/vendor
-	cp $(TOPFILES) $(DISTDIR)/
-	cp -Lr src/* $(DISTDIR)/src/
-	cp -Lr man/* $(DISTDIR)/man/
+	cp $(FILES) $(DISTDIR)/
 	cp -Lr example/* $(DISTDIR)/example/
 	cp -Lr include/* $(DISTDIR)/include/
 	-cp lib/* $(DISTDIR)/lib/
@@ -204,5 +198,37 @@ distcheck:
 	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
 
 
+Makefile: Makefile.in config.status
+	./config.status $@
+
+config.status: configure
+	./config.status --recheck
+
+dist: $(DISTDIR).tar.gz
+
+$(DISTDIR).tar.gz: $(DISTDIR)
+	tar chof - $(DISTDIR) | gzip -9 -c > $@	
+	rm -rf $(DISTDIR)
+
+$(DISTDIR): clean
+	rm -f $(DISTDIR).tar.gz
+	rm -rf $(DISTDIR)
+	mkdir -p $(DISTDIR)/example $(DISTDIR)/include $(DISTDIR)/lib $(DISTDIR)/vendor
+	cp $(FILES) $(DISTDIR)/
+	cp -Lr example/* $(DISTDIR)/example/
+	cp -Lr include/* $(DISTDIR)/include/
+	cp lib/* $(DISTDIR)/lib/
+	cp vendor/zwalker.* $(DISTDIR)/vendor/
+	cp vendor/util.* $(DISTDIR)/vendor/
+
+distcheck:
+	gzip -cd $(DISTDIR).tar.gz | tar xvf -
+	cd $(DISTDIR) && $(MAKE) local
+	cd $(DISTDIR) && $(MAKE) clean
+	rm -rf $(DISTDIR)
+	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
+
 # Include some test cases
 include tests.mk
+
+.PHONY: main clean debug dist distcheck install uninstall 
