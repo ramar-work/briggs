@@ -56,6 +56,8 @@ OBJECTS = vendor/zwalker.o vendor/util.o
 #Phony targets 
 .PHONY: main clean debug leak run other
 
+tmp: dev
+	$(MAKE) schema
 
 # main - Default build, suitable for most people
 main: build
@@ -64,7 +66,7 @@ main:
 
 
 #
-debug: CFLAGS+=-DDEBUG_H
+debug: CFLAGS+=-DDEBUG_H -g
 debug: build
 debug:
 	@printf '' >/dev/null
@@ -94,7 +96,7 @@ clang:
 
 
 # dev - Development target, using clang and asan for bulletproof-ness
-dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
+dev: CFLAGS=$(CLANGFLAGS) -g -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H -Wno-unused
 dev: CC=clang 
 dev: build
 dev: 

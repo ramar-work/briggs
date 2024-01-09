@@ -10,6 +10,31 @@ DESTUSER="root"
 DESTPASS=
 
 
+# Some targets for command line testing
+headers:
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --headers  # Test a regular file
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --headers # Test a Postgres Connection
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --headers # Test a MySQL connection
+
+schema:
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --schema
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for postgres --schema
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for postgres --coerce blobv=bytea --schema
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for mysql --coerce blobv=BLOB --schema
+
+
+xx:
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for mysql --schema
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --schema
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema
+
+non:
+	psql -U postgres < tests/washburn_postgres.sql
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "mysql://root@localhost/$(DBNAME).washburn" --convert
+	
+
+
 # Test longer hostnames
 ncat_test0:
 	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@hell.to.the.naw.com/washdb.washburn" -X
@@ -217,3 +242,4 @@ db2_mongodb:
 db2_db2:
 	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
 
+.PHONY: headers schema

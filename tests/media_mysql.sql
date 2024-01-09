@@ -34,45 +34,20 @@ YEAR	0000
 CREATE DATABASE mysql_briggs_media_tests;
 
 CREATE TABLE mysql_fancy_media (
-
-/* All integer values */
-integerv INTEGER,
-smallintv SMALLINT,
-tinyintv TINYINT,
-mediumintv MEDIUMINT,
-bigintv BIGINT,
-decimalv DECIMAL,
-numericv NUMERIC,
-floatv FLOAT,
-doublev DOUBLE,
-/*bitv BIT,*/
-
-/* Date time values - Use GMT format of date as unix timestamp for simple conversion */
-datev DATE,
-timev TIME,
-datetimev DATETIME,
-timestampv TIMESTAMP,
-yearv YEAR,
-
-/* String and character and blob data types */
-charv CHAR,
-varcharv VARCHAR,
-
-/* TEXT maps to any of these: TINYTEXT, TEXT, MEDIUMTEXT, LONGTEXT */
-tinytextv TINYTEXT,
-textv TEXT,
-mediumtextv MEDIUMTEXT,
-longtextv LONGTEXT,
-
-binaryv BINARY,
-varbinaryv VARBINARY,
-/* BLOBs map to any of these: TINYBLOB, BLOB, MEDIUMBLOB, LONGBLOB */
-tinyblobv TINYBLOB,
-blobv BLOB,
-mediumblobv MEDIUMBLOB,
-longblobv LONGBLOB,
-/* Supporting these is difficult and probably not a good use of time */
-/* ENUM */
-/* SET */
-
+	smallintv SMALLINT,
+	integerv INT,
+	bigintv BIGINT,
+	floatv FLOAT,
+	doublev DOUBLE,
+	charv CHAR,
+	textv TEXT,
+	blobv BLOB
+	/* Date time values - Use GMT format of date as unix timestamp for simple conversion */
+	/*
+	datev DATE,
+	timev TIME,
+	datetimev DATETIME,
+	timestampv TIMESTAMP,
+	yearv YEAR,
+	*/
 );

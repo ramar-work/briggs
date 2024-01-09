@@ -44,7 +44,7 @@ CREATE TABLE washburn (
 	fax VARCHAR(64),
 	email VARCHAR(64),
 	web_address VARCHAR(256),
-	requirements VARCHAR(1024),
+	requirements BLOB,
 	can_graduate_students_apply INTEGER,
 	PRIMARY KEY (id)
 );

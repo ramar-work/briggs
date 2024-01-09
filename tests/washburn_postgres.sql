@@ -36,7 +36,7 @@ CREATE TABLE washburn (
 	fax VARCHAR,
 	email VARCHAR,
 	web_address VARCHAR,
-	requirements VARCHAR,
+	requirements bytea,
 	can_graduate_students_apply INTEGER
 );
 
