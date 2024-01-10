@@ -106,6 +106,12 @@
 #define MEMLCMP(H,S,L) \
 	( L >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
 
+#define FDPRINTF(fd, X) \
+	write( fd, X, strlen( X ) )
+
+#define FDNPRINTF(fd, X, L) \
+	write( fd, X, L )
+
 /**
  * stream_t
  *
@@ -337,11 +343,25 @@ typedef struct file_t {
 	void *map;  // makes reading and writing much easier
 	const void *start;  // free this at the end
 	unsigned long size; // the file's size
-// int offset;
+	unsigned int offset;
 // int limit;
 } file_t;
 
 
+
+typedef struct mysql_t {
+	MYSQL_STMT *mysql_stmt; 
+	MYSQL_BIND *mysql_bind_array; 
+	MYSQL_RES *res; 
+	MYSQL *conn; 
+} mysql_t;
+
+
+
+typedef struct pgsql_t {
+	PGconn *conn;
+	PGresult *res;
+} pgsql_t;
 
 
 /**
@@ -1145,7 +1165,7 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 #endif
 
 	// Check for either REAL, BINARY or STRING
-	for ( unsigned char *vv = v; *vv; vv++ ) {
+	for ( unsigned char *vv = v; *vv && len; vv++, len-- ) {
 		if ( *vv == '.' && ( t == T_INTEGER ) )
 			t = T_DOUBLE;
 
@@ -2185,7 +2205,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		// Handle stdout (since there will be no size, and it doesn't make tons of sense to mmap() it)	
 		if ( STRLCMP( conn->connstr, "/dev/stdout" ) ) {
 			file->fd = 1;
-			file->map = NULL;
+			file->start = file->map = NULL;
 			conn->conn = file;
 			return 1;
 		}
@@ -2205,13 +2225,15 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		}
 
 		// Do stuff
-		file->map = mmap( 0, file->size = sb.st_size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
+		file->size = sb.st_size;
+		file->map = mmap( 0, file->size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
 		if ( file->map == MAP_FAILED ) {
 			snprintf( err, errlen, "mmap() %s\n", strerror( errno ) );
 			free( file );
 			return 0;
 		} 
 
+		file->start = file->map;
 		conn->conn = file;	
 #endif
 #if 0
@@ -2579,9 +2601,17 @@ int struct_from_dsn( dsn_t * conn ) {
  * 
  */
 int prepare_dsn ( dsn_t *conn, char *err, int errlen ) {
+	// Move up the buffer so that we start from the right offset	
+	//while ( *(buffer++) != '\n' );
+	
 	if ( conn->type == DB_FILE ) {
-		//while ( *((char *)conn->conn++) != '\n' );
+		file_t *file = (file_t *)conn->conn;
+		int len = file->size;
+		// Prevent from reading past the end...
+		while ( len-- && *((unsigned char *)file->map++) != '\n' );
+		file->offset = file->size - len;	
 	}
+
 	return 1;
 }
 
@@ -2592,6 +2622,10 @@ int prepare_dsn ( dsn_t *conn, char *err, int errlen ) {
  * ===========================
  *
  * Extract records from a data source.
+ *
+ * conn = The source we're reading records from
+ * count = Number of "rows" to read at a time
+ * offset = Where to start from next
  * 
  */
 int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen ) {
@@ -2601,20 +2635,23 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		memset( p, 0, sizeof( zw_t ) );
 		column_t **cols = NULL;
 		row_t *row = NULL;
+		file_t *file = NULL;
 
-		//TODO: this will have to be rewritten to handle buffering
-		char *buffer = conn->conn;
+		const unsigned int dlen = strlen( delset );  
+		unsigned int ci = 0;
+		unsigned int line = 0;
+		unsigned char *dset = (unsigned char *)delset;
+		int clen = 0;
 
-		// Move up the buffer so that we start from the right offset	
-		while ( *(buffer++) != '\n' );
-	
-		//
-		for ( int line = 0, ci = 0, clen = 0; strwalk( p, buffer, delset ); line++ ) {
-			//snprintf( err, errlen, "%d, %d\n", p.chr, *p.ptr );
+		// Cast 	
+		if ( !( file = (file_t *)conn->conn ) ) {
+			const char fmt[] = "mmap() lost reference";
+			snprintf( err, errlen, fmt );
+			return 0;
+		}
 
-			// Allocate, prepare and set column values
-			column_t *col = NULL;
-
+		// Cycle through the set of entries that we want
+		for ( column_t *col = NULL; memwalk( p, file->map, dset, file->size - file->offset, dlen ) && line < count; ) {
 			// Increase the line count
 			if ( p->chr == '\r' ) {	
 				line++;
@@ -2623,7 +2660,6 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 			// Exit if the column count indicates that this is not uniform data
 			if ( ci > conn->hlen ) {
-				//( !rows ) ? free_inner_records( columns ) : free_records( rows );
 				const char fmt[] = "Column count (%d) does not match header count (%d) at line %d in file '%s'";
 				snprintf( err, errlen, fmt, ci, conn->hlen, line, conn->connstr );
 				return 0;
@@ -2636,44 +2672,38 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				return 0;
 			}
 
-	#if 1
-			// Set any remaining column values
-			if ( !( col->v = malloc( p->size + 1 ) ) || !memset( col->v, 0, p->size + 1 ) ) {
-				const char fmt[] = "Out of memory when allocating space for value at line %d, column %d: %s";
-				snprintf( err, errlen, fmt, line, ci, strerror( errno ) );
-				return 0;
-			}
-
-			// Set the header ref and actual column value
-			extract_value_from_column( &( (char *)buffer)[ p->pos ], (char **)&col->v, p->size - 1 );
-	#else
-			col->v = getvalue( &( (unsigned char *)conn->conn )[ p->pos ], p->size + 1 );  
-	#endif
-			col->len = p->size;
+			// Most of the database engines support reading from a pointer
+			// TODO: Keep in mind, that database access usually occurs over the net, so the connection could be cut at any time
+			col->v = &( (unsigned char *)file->map)[ p->pos ];
+			col->len = p->size - 1;
 			col->k = conn->headers[ ci ]->label;
+			col->exptype = conn->headers[ ci ]->type;
+			col->type = get_type( col->v, col->exptype, col->len );
 
-		#if 1
-			// Check the type of value
-			if ( typesafe ) {
-				// The expected type SHOULD be in the headers
-				col->exptype = conn->headers[ ci ]->type;
-				
-				// Get the real type
-				col->type = get_type( col->v, col->exptype, col->len );
+			// ...
+			if ( col->exptype != col->type ) {
+				// Integers can pass as floats
+				if ( col->type == T_INTEGER && col->exptype == T_DOUBLE ) {
+					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_DOUBLE got T_INTEGER";
+					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
+				}
 
-				//
-				if ( typesafe && col->exptype != col->type ) {
-					const char fmt[] = "Type check for value at column '%s', line %d failed.\n";
-					snprintf( err, errlen, fmt, col->k, line );
+				// Chars can pass as strings
+				else if ( col->type == T_CHAR && col->exptype == T_STRING ) {
+					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_STRING got T_CHAR";
+					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
+				}	
+			
+				// Anything else is a failure for now	
+				else {
+					const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (%s != %s)\n";
+					snprintf( err, errlen, fmt, line + 1, col->k, ci + 1, itypes[ col->type ], itypes[ col->exptype ] );
 					return 0;
 				}
 			}
-		#endif
 
-			// Add columns
+			// Add columns and increase column count
 			add_item( &cols, col, column_t *, &clen );
-
-			// Increase the column index
 			ci++;
 
 			// Increment line
@@ -2687,21 +2717,11 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 				// Add an item to said row
 				row->columns = cols;
-
-				// And add this row to rows
 				add_item( &conn->rows, row, row_t *, &conn->rlen );	
-
-				// Reset everything
 				cols = NULL, clen = 0, ci = 0, line++;
 			}
-		
 		}
-
 		free( p );
-
-	//This ensures that the final row is added to list...
-	//TODO: It'd be nice to have this within the abrowse loop.
-	//add_item( &rows, columns, record_t **, &ol );	
 	}
 #ifdef BSQLITE_H
 	else if ( conn->type == DB_SQLITE ) {
@@ -2805,8 +2825,12 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				col->k = conn->headers[ ci ]->label;
 				col->len = PQgetlength( conn->res, i, ci );
 				col->type = conn->headers[ ci ]->type; 
+			#if 1
 				col->v = (unsigned char *)PQgetvalue( conn->res, i, ci );
+			#else 
+				// If the network connection cuts out, it's very possible that this data will be gone
 				//col->v = (unsigned char *)strdup( PQgetvalue( conn->res, i, ci ) );
+			#endif
 
 				// Add it
 				add_item( &cols, col, column_t *, &clen );	
@@ -2829,6 +2853,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 			cols = NULL;
 		}
 	}
+
 #endif
 
 	return 1;
@@ -2864,13 +2889,13 @@ int transform_from_dsn(
 #ifdef BMYSQL_H
 	MYSQL_STMT *mysql_stmt = NULL;
 	MYSQL_BIND *mysql_bind_array = NULL;
-	MYSQL_BIND ms_binds[ iconn->hlen ];
 #endif
 #ifdef BPGSQL_H
 	char **pgsql_bind_array = NULL;
 	int *pgsql_lengths_array = 0;
 #endif
 
+	// All of this now belongs in prepare DSN
 	// Make the thing
 	if ( 0 );
 #ifdef BMYSQL_H
@@ -2880,7 +2905,6 @@ int transform_from_dsn(
 		mysql_bind_array = malloc( sizeof( MYSQL_BIND ) * iconn->hlen );
 		memset( mysql_bind_array, 0, sizeof( MYSQL_BIND ) * iconn->hlen );
 #endif
-		memset( &ms_binds, 0, iconn->hlen );
 	}
 #endif
 #ifdef BPGSQL_H
@@ -2896,31 +2920,41 @@ int transform_from_dsn(
 	}
 #endif
 
+
+
+
 	// Loop through all rows
 	for ( row_t **row = iconn->rows; row && *row; row++, ri++ ) {
-
 		// A buffer for strings
 		char ffmt[ MAX_STMT_SIZE ];
 		memset( ffmt, 0, MAX_STMT_SIZE );
 
-		//Prefix
-		if ( prefix ) {
-			fprintf( oconn->output, "%s", prefix );
-		}
+	// Most likely this will be needed here
+	file_t *file = NULL; 
+	int first = *row == *iconn->rows;
 
-		if ( t == STREAM_PRINTF )
-			;//p_default( 0, ib->k, ib->v );
-		else if ( t == STREAM_XML )
-			( prefix && newline ) ? fprintf( oconn->output, "%c", '\n' ) : 0;
-		else if ( t == STREAM_COMMA )
+		//Prefix
+	if ( oconn->type == DB_FILE ) {
+	
+		file = (file_t *)oconn->conn;
+
+		( prefix ) ? write( file->fd, prefix, strlen( prefix ) ) : 0;
+		
+//fprintf( oconn->output, "%s", prefix );
+//fprintf( oconn->output, "%s{", odv ? "," : " "  );
+		if ( t == STREAM_PRINTF || t == STREAM_COMMA )
 			;//fprintf( oconn->output, "" );
+		else if ( t == STREAM_XML )
+			( prefix && newline ) ? write( file->fd, "\n", 1 ) : 0;
 		else if ( t == STREAM_CSTRUCT )
-			fprintf( oconn->output, "%s{", odv ? "," : " "  );
+			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" ); 
 		else if ( t == STREAM_CARRAY )
-			fprintf( oconn->output, "%s{ ", odv ? "," : " "  ); 
+			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" ); 
 		else if ( t == STREAM_JSON ) {
 		#if 1
-			fprintf( oconn->output, "%c{%s", odv ? ',' : ' ', newline ? "\n" : "" );
+			FDPRINTF( file->fd, ( odv ) ? "," : " " );
+			FDPRINTF( file->fd, "{" );
+			( newline ) ? FDPRINTF( file->fd, "\n" ) : 0; 
 		#else
 			if ( prefix && newline )
 				fprintf( oconn->output, "%c{\n", odv ? ',' : ' ' );
@@ -2933,24 +2967,36 @@ int transform_from_dsn(
 		}
 		else if ( t == STREAM_SQL ) {
 			// Output the table name
-			fprintf( oconn->output, "INSERT INTO %s ( ", iconn->tablename );
+			//fprintf( oconn->output, "INSERT INTO %s ( ", iconn->tablename );
+			FDPRINTF( file->fd, "INSERT INTO " );
+			FDPRINTF( file->fd, oconn->tablename ); 
+			FDPRINTF( file->fd, " (" );
 
 			for ( header_t **x = iconn->headers; x && *x; x++ ) {	
 				// TODO: use the pointer to detect whether or not we're at the beginning
-				fprintf( oconn->output, &",%s"[ ( *iconn->headers == *x ) ], (*x)->label );
+				//fprintf( oconn->output, &",%s"[ ( *iconn->headers == *x ) ], (*x)->label );
+				( *iconn->headers != *x ) ? FDPRINTF( file->fd, "," ) : 0;
+				//write( file->fd, (*x)->label, strlen( (*x)->label ) );
+				FDPRINTF( file->fd, (*x)->label );
 			}
 	
 			//The VAST majority of engines will be handle specifying the column names 
-			fprintf( oconn->output, " ) VALUES ( " );
+			//fprintf( oconn->output, " ) VALUES ( " );
+			//write( file->fd, ") VALUES (", sizeof( ") VALUES (" ) - 1 );
+			FDPRINTF( file->fd, ") VALUES (" );
 		}
+	}
+	
+	else {	
 		//else if ( t == STREAM_PGSQL || t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
 	#ifdef BPGSQL_H
-		else if ( t == STREAM_PGSQL ) {
+		if ( t == STREAM_PGSQL ) {
 			// First (and preferably only once) generate the header keys
 			char argfmt[ 256 ];
 			char *ins = insfmt;
 			int ilen = sizeof( insfmt );
 			char *s = argfmt;
+			const char fmt[] = "INSERT INTO %s ( %s ) VALUES ( %s )";
 
 			// Initialize
 			memset( insfmt, 0, sizeof( insfmt ) );
@@ -2974,8 +3020,8 @@ int transform_from_dsn(
 			}
 
 			// Finally, we create the final bind stmt
-			snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", iconn->tablename, insfmt, argfmt );
-			fprintf( stdout, "%s\n", ffmt );
+			snprintf( ffmt, sizeof( ffmt ), fmt, iconn->tablename, insfmt, argfmt );
+			//fprintf( stdout, "%s\n", ffmt );
 		}
 	#endif
 	#ifdef BMYSQL_H
@@ -3013,49 +3059,113 @@ int transform_from_dsn(
 			fprintf( stdout, "%s\n", ffmt );
 		}
 	#endif
+	}
 
-
-//fprintf( stdout, "%s\n", ffmt );
-//continue;
-
-
-		// Define
 		int ci = 0;
-
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
-			//Sadly, you'll have to use a buffer...
-			//Or, use hlen, since that should contain a count of columns...
 			int first = *col == *((*row)->columns); 
-			if ( t == STREAM_PRINTF )
-				fprintf( oconn->output, "%s => %s%s%s\n", (*col)->k, ld, (*col)->v, rd );
-			else if ( t == STREAM_XML )
-				fprintf( oconn->output, "%s<%s>%s</%s>\n", &TAB[9-1], (*col)->k, (*col)->v, (*col)->k );
-			else if ( t == STREAM_CARRAY )
-				fprintf( oconn->output, &", \"%s\""[ first ], (*col)->v );
-			else if ( t == STREAM_COMMA )
-				fprintf( oconn->output, &",\"%s\""[ first ], (*col)->v );
+			if ( t == STREAM_PRINTF ) {
+				//fprintf( oconn->output, "%s => %s%s%s\n", (*col)->k, ld, (*col)->v, rd );
+//write( file->fd, (*col)->k, strlen( (*col)->k ) );
+				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, ld );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				FDPRINTF( file->fd, rd);
+			}
+			else if ( t == STREAM_XML ) {
+				//fprintf( oconn->output, "%s<%s>%s</%s>\n", &TAB[9-1], (*col)->k, (*col)->v, (*col)->k );
+//FDPRINTF( file->fd, &TAB[9-1] ); // Control tabbing...
+				FDPRINTF( file->fd, "<" );
+				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, ">" );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				FDPRINTF( file->fd, "</" );
+				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, ">\n" );
+			}
+			else if ( t == STREAM_CARRAY ) {
+				//fprintf( oconn->output, &", \"%s\""[ first ], (*col)->v );
+				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, ld );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				FDPRINTF( file->fd, rd);
+			}
+			else if ( t == STREAM_COMMA ) {
+				//fprintf( oconn->output, &",\"%s\""[ first ], (*col)->v );
+				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, ld );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				FDPRINTF( file->fd, rd);
+			}
 			else if ( t == STREAM_JSON ) {
-				fprintf( oconn->output, "\t%c\"%s\": ", first ? ' ' : ',', (*col)->k ); 
+				//fprintf( oconn->output, "\t%c\"%s\": ", first ? ' ' : ',', (*col)->k ); 
+				FDPRINTF( file->fd, ( first ) ? " " : "," );
+				FDPRINTF( file->fd, (*col)->k );
+
 				if ( (*col)->type == T_STRING || (*col)->type == T_CHAR )
-					fprintf( oconn->output, "\"%s\"\n", (*col)->v );
+					//fprintf( oconn->output, "\"%s\"\n", (*col)->v );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len ), FDPRINTF( file->fd, "\n" );
 				else if ( (*col)->type == T_NULL ) 
-					fprintf( oconn->output, "null\n" );
+					//fprintf( oconn->output, "null\n" );
+				FDPRINTF( file->fd, "null\n" );
 				#if 0
-				else if ( (*col)->type == T_BOOLEAN ) {
-					fprintf( oconn->output, "%s\n", ( *col->v ) ? "true" : "false" );
-				}
+				else if ( (*col)->type == T_BOOLEAN )
+					//fprintf( oconn->output, "%s\n", ( *col->v ) ? "true" : "false" );
+				FDPRINTF( file->fd, "null\n" );
 				#endif	
 				else {
-					fprintf( oconn->output, "%s\n", (*col)->v );
+					//fprintf( oconn->output, "%s\n", (*col)->v );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				}
 			}
 			else if ( t == STREAM_CSTRUCT ) {
 				//p_cstruct( 1, *col );
 				//check that it's a number
-				char *vv = (char *)(*col)->v;
-
+				//char *vv = (char *)(*col)->v;
 				//Handle blank values
+				FDPRINTF( file->fd, &TAB[9-1] );
+
+			#if 1
+				if ( !(*col)->len ) {
+					FDPRINTF( file->fd, &", ."[ first ] ),
+					FDPRINTF( file->fd, (*col)->k ),
+					FDPRINTF( file->fd, " = \"\"" );
+				}
+				else {
+					FDPRINTF( file->fd, &", ."[ first ] ),
+					FDPRINTF( file->fd, (*col)->k );
+					FDPRINTF( file->fd, " = " );
+
+					if ( (*col)->type == T_INTEGER || (*col)->type == T_DOUBLE )
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					else if ( (*col)->type == T_NULL )
+						FDPRINTF( file->fd, "NULL" );
+					else if ( (*col)->type == T_STRING ) {
+						FDPRINTF( file->fd, "\"" ),
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+						FDPRINTF( file->fd, "\"" );
+					}
+					else if ( (*col)->type == T_CHAR ) {
+						FDPRINTF( file->fd, "'" ),
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+						FDPRINTF( file->fd, "'" );
+					}
+					else if ( (*col)->type == T_BINARY ) {
+						// TODO: Write a hex stream
+						FDPRINTF( file->fd, "\"" ),
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+						FDPRINTF( file->fd, "\"" );
+					}
+					else {
+						// Assume a string
+						FDPRINTF( file->fd, " = \"" );
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+						FDPRINTF( file->fd, "\"" );
+					}
+				}
+				FDPRINTF( file->fd, "\n" );
+			#else
 				if ( !strlen( vv ) ) {
 					fprintf( oconn->output, "%s", &TAB[9-1] );
 					fprintf( oconn->output, &", .%s = \"\"\n"[ first ], (*col)->k );
@@ -3064,10 +3174,25 @@ int transform_from_dsn(
 					fprintf( oconn->output, "%s", &TAB[9-1] );
 					fprintf( oconn->output, &", .%s = \"%s\"\n"[ first ], (*col)->k, (*col)->v );
 				}
+			#endif
 			}
 			else if ( t == STREAM_SQL ) {
+				( first ) ? 0 : FDPRINTF( file->fd, "," ); 
+
+				if ( (*col)->type != T_STRING && (*col)->type != T_CHAR )
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				else {
+					FDPRINTF( file->fd, ld );
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					FDPRINTF( file->fd, rd );
+				}
+#if 0
 				if ( !typesafe ) {
-					fprintf( oconn->output, &",%s%s%s"[ first ], ld, (*col)->v, rd );
+//fprintf( oconn->output, &",%s%s%s"[ first ], ld, (*col)->v, rd );
+					( first ) ? FDPRINTF( file->fd, "," ) : 0;
+					FDPRINTF( file->fd, ld );
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					FDPRINTF( file->fd, rd );
 				}
 				else {
 					// Should check that they match too
@@ -3077,6 +3202,7 @@ int transform_from_dsn(
 						fprintf( oconn->output, &",%s%s%s"[ first ], ld, (*col)->v, rd );
 					}
 				}
+#endif
 			}
 		#ifdef BMYSQL_H
 			else if ( t == STREAM_MYSQL ) {
@@ -3155,11 +3281,7 @@ int transform_from_dsn(
 		#endif
 		} // end for
 
-		// Third, generate a full string
-		// We'll have to actually commit the row here
-		// Or use a transaction to save some time...
-
-		//Built-in suffix...
+		// End the string
 		if ( t == STREAM_PRINTF )
 			;//p_default( 0, ib->k, ib->v );
 		else if ( t == STREAM_XML )
@@ -3167,15 +3289,15 @@ int transform_from_dsn(
 		else if ( t == STREAM_COMMA )
 			;//fprintf( oconn->output, " },\n" );
 		else if ( t == STREAM_CSTRUCT )
-			fprintf( oconn->output, "}" );
+			FDPRINTF( file->fd, "}" );
 		else if ( t == STREAM_CARRAY )
-			fprintf( oconn->output, " }" );
+			FDPRINTF( file->fd, " }" );
 		else if ( t == STREAM_SQL )
-			fprintf( oconn->output, " );" );
+			FDPRINTF( file->fd, " );" );
 		else if ( t == STREAM_JSON ) {
 			//wipe the last ','
-			fprintf( oconn->output, "}" );
-			//fprintf( oconn->output, "," );
+			FDNPRINTF( file->fd, "}", 1 );
+			//FDPRINTF( file->fd, "," );
 		}
 
 	#ifdef BMYSQL_H
@@ -3254,23 +3376,18 @@ int transform_from_dsn(
 		}
 	#endif
 
-//fprintf( stdout, "Completed row: %d", ri ), fflush( stdout ), getchar();
+		//DPRINTF( "Completed row: %d", ri ), fsync( 2 ), getchar();
 
 		//Suffix
-		if ( suffix ) {
-			fprintf( oconn->output, "%s", suffix );
+		if ( oconn->type == DB_FILE ) {
+			( suffix ) ? FDPRINTF( file->fd, suffix ) : 0;
+			( newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		}
 
-		if ( newline ) {
-			//fprintf( oconn->output, "%s", NEWLINE );
-		}
-
-		// If the stream is a file, flush it 
-		if ( t != STREAM_MYSQL && t != STREAM_PGSQL ) {
-			fflush( oconn->output );
-		}	
 	}
 
+
+	// All of this crap should now be moved to teardown or unprepare_dsn()
 	if ( 0 ) ;
 #ifdef BMYSQL_H
 	else if ( oconn->type == DB_MYSQL ) {
@@ -3285,6 +3402,12 @@ int transform_from_dsn(
 	}
 #endif
 
+#if 0 
+	// If the stream is a file, flush it 
+	if ( t != STREAM_MYSQL && t != STREAM_PGSQL ) {
+		fsync( file->fd );
+	}	
+	#endif
 
 	return 1;
 }
@@ -3307,7 +3430,7 @@ void close_dsn( dsn_t *conn ) {
 		file_t *file = (file_t *)conn->conn;
 
 		// Free this
-		if ( file->map && munmap( file->map, file->size ) == -1 ) {
+		if ( file->start && munmap( (void *)file->start, file->size ) == -1 ) {
 			fprintf( stderr, "munmap() %s\n", strerror( errno ) );
 		}
 
@@ -3339,11 +3462,6 @@ void close_dsn( dsn_t *conn ) {
 	conn->conn = NULL;
 }
 
-
-// Determine DSN backend
-int dsn_engine_stuff( dsn_t *iconn, dsn_t *oconn ) {
-	return 0;
-}
 
 
 // Determine the relationship between in & out srcs
@@ -3395,7 +3513,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	// Evaluate the coercion string if one is available
 	// The type that is saved will be the coerced one
 	if ( ov ) {
-		// Multiple ovs
+		// Multiple coerced types 
 		if ( memchr( ov, ',', strlen( ov ) ) ) {
 			zw_t p = { 0 };
 			for ( ; strwalk( &p, ov, "," ); ) {
@@ -3414,7 +3532,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 		}
 
-		// Something weird...
+		// User called this wrong
 		else {
 			snprintf( err, errlen, "Argument supplied to --coerce is invalid.\n" );	
 			return 0;
@@ -3428,7 +3546,6 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		unsigned int rowlen = 0;
 		unsigned int dlen = strlen( delset );
 		file_t *file = NULL;
-		unsigned char *row = NULL;
 
 		// Catch any silly errors that may have been made on the way back here 
 		if ( !( file = (file_t *)iconn->conn ) ) {
@@ -3437,18 +3554,15 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			return 0;	
 		}
 
-		// Get the SECOND row only and estimate types that way
-		if ( !( row = extract_row( file->map, file->size, &rowlen ) ) ) {
-			const char fmt[] = "Failed to extract first row from file '%s'";
-			snprintf( err, errlen, fmt, iconn->connstr ); 
-			return 0;	
-		}
+		// Find the end of the first row
+		for ( unsigned char *s = file->map; ( *s != '\n' && *s != '\r' ); s++ ) {
+			rowlen++; 
+		} 
 
 		// Check that col count - 1 == occurrence of delimiters in file
-		if ( ( iconn->hlen - 1 ) != ( count = memstrocc( row, &delset[2], rowlen ) ) ) {
+		if ( ( iconn->hlen - 1 ) != ( count = memstrocc( file->map, &delset[2], rowlen ) ) ) {
 			const char fmt[] = "Header count and column count differ in file: %s (%d != %d)"; 
 			snprintf( err, errlen, fmt, iconn->connstr, iconn->hlen, count ); 
-			free( row );
 			return 0;	
 		}
 
@@ -3456,20 +3570,18 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		memset( &p, 0, sizeof( zw_t ) );
 
 		// Move through the rest of the entries in the row and approximate types 
-		for ( int i = 0; memwalk( &p, row, (unsigned char *)delset, rowlen, dlen ); i++ ) {
+		for ( int i = 0; memwalk( &p, file->map, (unsigned char *)delset, rowlen, dlen ); i++ ) {
 			header_t *st = iconn->headers[ i ];
 			char *t = NULL;
 			const char *ctype = NULL;
-			const char *name = st->label;
 			int len = 0;
 
 			// Check if any of these are looking for a coerced type 
-			if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
+			if ( ov && ( ctype = find_ctype( ctypes, st->label ) ) ) {
 				if ( !( st->ctype = get_typemap_by_native_name( oconn->typemap, ctype ) ) ) {
 					const char fmt[] = "Failed to find desired type '%s' at column '%s' for "
 						"supported %s types";
-					snprintf( err, errlen, fmt, ctype, name, get_conn_type( oconn->type ) );
-					free( row );
+					snprintf( err, errlen, fmt, ctype, st->label, get_conn_type( oconn->type ) );
 					return 0;	
 				}
 			}
@@ -3481,10 +3593,9 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 
 			// Try to copy again
-			if ( !( t = copy( (char *)&row[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
+			if ( !( t = copy( (char *)&file->map[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
 				// TODO: This isn't very clear, but it is unlikely we'll ever run into it...
 				snprintf( err, errlen, "Out of memory error occurred." );
-				free( row );
 				return 0;
 			}
 
@@ -3497,8 +3608,6 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			st->type = get_type( (unsigned char *)t, T_STRING, len ); 
 			free( t );
 		}
-
-		free( row );
 	}
 #ifdef BSQLITE_H
 	else if ( iconn->type == DB_SQLITE ) {
@@ -3595,14 +3704,9 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	}
 #endif
 
-
-	for ( coerce_t **x = ctypes; x && *x; x++ ) {
-		free( *x );
-	}
-
+	for ( coerce_t **x = ctypes; x && *x; x++ ) free( *x );
 	free( ctypes );
 	return 1;
-return 0;
 }
 
 
@@ -4058,6 +4162,7 @@ int main ( int argc, char *argv[] ) {
 #endif
 
 	else if ( convert ) {
+		// Do any preparation on the input dsn first
 		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
@@ -4067,7 +4172,7 @@ int main ( int argc, char *argv[] ) {
 
 		// Then open a new DSN for the output (there must be an --output flag)
 		if ( !output.connstr ) {
-			output.connstr = strdup( "file:///dev/stdout" ); 
+			output.connstr = strdup( "/dev/stdout" ); 
 		}
 
 		// Parse the output source
@@ -4103,12 +4208,25 @@ int main ( int argc, char *argv[] ) {
 			return 1;
 		}
 
-print_dsn( &input ), print_dsn( &output ), exit(0);
+		// Figure out any relevant mappings
+		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
+			PERR( "Rel build failed: %s\n", err );
+			return 0;
+		}
+
+		// Get the types of each thing in the column
+		if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
+			PERR( "typeget failed: %s\n", err );
+			return 0;
+		}
+
+//print_dsn( &input ), print_dsn( &output ), exit(0);
+
 		// Control the streaming / buffering from here
 		for ( int i = 0; i < 1; i++ ) {
 
 			// Stream to records
-			if ( !records_from_dsn( &input, 0, 0, err, sizeof( err ) ) ) {
+			if ( !records_from_dsn( &input, 100, 0, err, sizeof( err ) ) ) {
 				destroy_dsn_headers( &input );
 				close_dsn( &input );
 				return PERR( "Failed to generate records from data source: %s.\n", err );
@@ -4122,10 +4240,15 @@ print_dsn( &input ), print_dsn( &output ), exit(0);
 				return 1;
 			}
 
+			// Destroy the rows
+			destroy_dsn_rows( &input );
 		} // end for
+
+		// once we get to the end, "dismount" whatever preparations we made 
+		//freesupp_dsn( &input );	
 	
 		// close our open data source		
-		close_dsn( &output ); 
+		close_dsn( &output );
 	}
 
 	// Show the stats if we did that
@@ -4138,9 +4261,6 @@ print_dsn( &input ), print_dsn( &output ), exit(0);
 		);
 	}
 
-	// Destroy the rows
-	destroy_dsn_rows( &input );
-	
 	// Destroy the headers
 	destroy_dsn_headers( &input );
 
