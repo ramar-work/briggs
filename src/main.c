@@ -45,6 +45,7 @@
 #include <errno.h>
 #include <time.h>
 #include <limits.h>
+#include <sys/mman.h>
 #include "../vendor/zwalker.h"
 #include "../vendor/util.h"
 
@@ -102,6 +103,8 @@
 #define STRLCMP(H,S) \
 	( strlen( H ) >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
 	
+#define MEMLCMP(H,S,L) \
+	( L >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
 
 /**
  * stream_t
@@ -172,6 +175,8 @@ streamtype_t streams[] = {
 , { NULL, 0 }
 };
 
+
+
 /**
  * case_t 
  *
@@ -179,7 +184,7 @@ streamtype_t streams[] = {
  *
  */
 typedef enum case_t {
-	NONE = 0,
+	CASE_NONE = 0,
 	CASE_SNAKE,
 	CASE_CAMEL
 } case_t;
@@ -302,6 +307,8 @@ typedef enum {
 #endif
 } dbtype_t;
 
+
+
 /**
  * typemap_t 
  *
@@ -315,6 +322,25 @@ typedef struct typemap_t {
 	type_t basetype;	
 	char preferred;	
 } typemap_t;
+
+
+
+
+/**
+ * file_t 
+ *
+ * In lieu of simply using fread/fwrite, this should allow me to read VERY large files easily
+ *
+ */
+typedef struct file_t {
+	int fd;  // a file handle
+	void *map;  // makes reading and writing much easier
+	const void *start;  // free this at the end
+	unsigned long size; // the file's size
+// int offset;
+// int limit;
+} file_t;
+
 
 
 
@@ -428,6 +454,8 @@ typedef struct dsn_t {
 	FILE *output;
 	const typemap_t *typemap;	
 	const typemap_t *convmap;	
+	int offset;
+	int size;
 } dsn_t;
 
 
@@ -1033,21 +1061,26 @@ static char *dupval ( char *val, char **setval ) {
 
 
 // Trim and copy a string, optionally using snake_case
-static char * copy( char *src, int size, case_t t ) {
+// TODO: Strictly, this isn't acting on anything that would be dependent on a char *definition, butthis should really be rewritten to return an unsigned char *
+static char * copy( char *src, int size, int *ns, case_t t ) {
+	char *a = NULL; 
 	char *b = NULL; 
 	int nsize = 0;
-	char *a = NULL; 
+
 	if ( !( a = malloc( size + 1 ) ) || !memset( a, 0, size + 1 ) ) {
 		return NULL;
 	}
+
 	b = (char *)trim( (unsigned char *)src, " ", size, &nsize );
 	memcpy( a, b, nsize );
-	if ( t == CASE_SNAKE ) {	
+
+	if ( t == CASE_SNAKE )
 		snakecase( &a );
-	}
 	else if ( t == CASE_CAMEL ) {	
 		camelcase( &a );
 	}
+
+	*ns = nsize;
 	return a;
 }
 
@@ -1055,36 +1088,73 @@ static char * copy( char *src, int size, case_t t ) {
 
 
 // Check the type of a value in a field
-static type_t get_type ( char *v, type_t deftype ) {
+static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	type_t t = T_INTEGER;
 
 	// If the value is blank, then we need some help...
 	// Use deftype in this case...
-	if ( strlen( v ) == 0 ) {
-//fprintf( stderr, "Value is blank or empty.\n" );
+	//if ( strlen( v ) == 0 ) {
+	if ( !len )
 		return deftype;	
-	}
 
 	// If it's just one character, should check if it's a number or char
-	if ( strlen( v ) == 1 ) {
+	if ( len == 1 ) {
+		// TODO: Code should be 0-127
 		if ( !memchr( "0123456789", *v, 10 ) ) {
 			t = T_CHAR;
 		}
 		return t;
 	}
 
+#if 0
 	// Check for booleans	
-	if ( ( *v == 't' && !strcmp( "true", v ) ) || ( *v == 't' && !strcmp( "false", v ) ) ) {
+	if ( ( *v == 't' && MEMLCMP( v, "true", len ) ) || ( *v == 't' && MEMLCMP( v, "false", len ) ) ) {
 		t = T_BOOLEAN;
 		return t;
 	}
+#else
+	// Boolean true (regardless of spelling)
+	if ( len >= 4 && ( *v == 't' || *v == 'T' ) ) {
+		unsigned char *vv = v;
+		// We can do this the slowest possible way b/c it's a pain in the butt
+		if ( *vv == 'r' || *vv == 'R' ) 	
+			vv++;
+		if ( *vv == 'u' || *vv == 'U' ) 	
+			vv++;
+		if ( *vv == 'e' || *vv == 'E' ) {
+			t = T_BOOLEAN;
+			return t;
+		}	
+	}
 
+	// Boolean false (regardless of spelling)
+	if ( len >= 5 && ( *v == 'f' || *v == 'F' ) ) {
+		unsigned char *vv = v;
+		// We can do this the slowest possible way b/c it's a pain in the butt
+		if ( *vv == 'a' || *vv == 'A' ) 	
+			vv++;
+		if ( *vv == 'l' || *vv == 'L' ) 	
+			vv++;
+		if ( *vv == 's' || *vv == 'S' )
+			vv++;
+		if ( *vv == 'e' || *vv == 'E' ) {
+			t = T_BOOLEAN;
+			return t;
+		}	
+	}
+#endif
 
-	// Check for other stuff 
-	for ( char *vv = v; *vv; vv++ ) {
-		if ( *vv == '.' && ( t == T_INTEGER ) ) {
+	// Check for either REAL, BINARY or STRING
+	for ( unsigned char *vv = v; *vv; vv++ ) {
+		if ( *vv == '.' && ( t == T_INTEGER ) )
 			t = T_DOUBLE;
+
+		// Allow for horizontal tabs and spaces
+		if ( *v != 9 && ( *vv < 32 || *vv > 126 ) ) {
+			t = T_BINARY;
+			return t;
 		}
+
 		if ( !memchr( "0123456789.-", *vv, 12 ) ) {
 			t = T_STRING;
 			return t;
@@ -1202,42 +1272,6 @@ void p_cstruct ( int ind, column_t *r ) {
 
 
 
-
-// Extract the headers from a CSV
-char ** generate_headers( char *buf, char *del ) {
-	char **headers = NULL;	
-	zw_t p = { 0 };
-
-	for ( int hlen = 0; strwalk( &p, buf, del ); ) {
-		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, case_type );
-		add_item( &headers, t, char *, &hlen );
-		if ( p.chr == '\n' || p.chr == '\r' ) break;
-	}
-
-	return headers;
-}
-
-
-
-// Extract the headers from a CSV
-header_t ** generate_headers_from_text( char *buf, char *del ) {
-	header_t **hxlist = NULL;	
-	zw_t p = { 0 };
-
-	for ( int hlen = 0; strwalk( &p, buf, del ); ) {
-		char *t = ( !p.size ) ? no_header : copy( &buf[ p.pos ], p.size - 1, case_type );
-		header_t *hx = malloc( sizeof( header_t ) );
-		memset( hx, 0, sizeof( header_t ) );
-		snprintf( hx->label, sizeof( hx->label ), "%s", t );
-		add_item( &hxlist, hx, header_t *, &hlen );
-		if ( p.chr == '\n' || p.chr == '\r' ) break;
-	}
-
-	return hxlist;
-}
-
-
-
 // Free headers allocated previously
 void free_headers ( char **headers ) {
 	char **h = headers;
@@ -1316,66 +1350,28 @@ int check_for_valid_stream ( char *st ) {
 
 
 // Extract one row only
-static char * extract_row( char *buf, int buflen ) {
+static unsigned char * extract_row( void *buf, int buflen, unsigned int *newlen ) {
 	// Extract just the first row of real values
-	char *start = memchr( buf, '\n', buflen );  
+	unsigned char *str = NULL;
+	unsigned char *start = NULL;
 	int slen = 0;
-	for ( char *s = ++start; ( *s != '\n' && *s != '\r' ); s++, slen++ );
 
-	// 
-	slen++;
-	char *str = malloc( slen + 1 );
-	memset( str, 0, slen + 1 );
-	memcpy( str, start, slen );
-	return str;
-}
-
-
-
-// Return all the types
-static type_t ** get_types ( char *str, const char *delim ) {
-	//... 
-	type_t **ts = NULL;
-	int tlen = 0;
-	zw_t p = { 0 };
-
-	while ( strwalk( &p, str, delim ) ) {
-		char *t = NULL;
-		int len = 0;
-
-		if ( !p.size ) {
-			type_t *p = malloc( sizeof( type_t ) );
-			memset( p, 0, sizeof( type_t ) );
-			*p = T_STRING;
-			add_item( &ts, p, type_t *, &tlen );
-			//fprintf( stderr, "%s -> %s ( %d )\n", *j, "", (int)*p); j++;
-			continue;
-		}
-
-		t = copy( &str[ p.pos ], p.size - 1, 0 );
-		//fprintf( stderr, "%d\n", ( len = strlen( t ) ) );
-		if ( ( len = strlen( t ) ) == 0 ) {
-			// ?
-			type_t *p = malloc( sizeof( type_t ) );
-			memset( p, 0, sizeof( type_t ) );
-			*p = T_STRING;
-			add_item( &ts, p, type_t *, &tlen );
-			free( t );
-			//fprintf( stderr, "%s -> %s ( %d )\n", *j, "", (int)*p); j++;
-			continue;
-		}
-
-		type_t type = get_type( t, T_STRING ); 
-		type_t *x = malloc( sizeof( type_t ) );
-		memset( x, 0, sizeof( type_t ) );
-		*x = type;
-
-		//fprintf( stderr, "%s -> %s ( %d )\n", *j, t, (int)type ); j++;
-		add_item( &ts, x, type_t *, &tlen );
-		free( t );
+	// Intended for use with
+	if ( !( start = memchr( buf, '\n', buflen ) ) ) {
+		return NULL;
 	}
 
-	return ts;
+	// Increment until I find the next row (assuming that the file is line based)
+	for ( unsigned char *s = ++start; ( *s != '\n' && *s != '\r' ); s++, slen++ );
+
+	// Allocate for the portion we want 
+	if ( !( str = malloc( ++slen + 1 ) ) || !memset( str, 0, slen + 1 ) ) {
+		return NULL;
+	}
+
+	memcpy( str, start, slen );
+	*newlen = slen;
+	return str;
 }
 
 
@@ -1848,16 +1844,10 @@ void destroy_dsn_rows ( dsn_t *t ) {
  */
 int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err, int errlen ) {
 
-	// Create the table for whatever the source may be 
-	// fprintf( stdout, "DROP TABLE IF EXISTS %s;\n", conn->tablename );
-	//fprintf( stdout, "CREATE TABLE IF NOT EXISTS %s (\n", conn->tablename );
-
 	// Depends on output chosen
 	int len = iconn->hlen;
 	int written = 0;
 	char *fmt = fm;
-	//const typemap_t *cdefs = NULL;
-	//const typemap_t *matchdefs = NULL;
 	const char stmtfmt[] = "CREATE TABLE IF NOT EXISTS %s (\n"; 
 
 	// Schema creation won't work if no table name is specified.  Stop here if that's so.
@@ -1867,23 +1857,10 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 	}
 
 	// Write the first line 
-	written = snprintf( fmt, fmtlen, stmtfmt, iconn->tablename );
+	written = snprintf( fmt, fmtlen, stmtfmt, oconn->tablename );
 	fmtlen -= written, fmt += written;
 
 #if 0
-	// Choose an engine according to type
-	if ( oconn->type == DB_MYSQL )
-		cdefs = mysql_map;
-	else if ( oconn->type == DB_POSTGRESQL )
-		cdefs = pgsql_map;
-	else if ( oconn->type == DB_SQLITE )
-		cdefs = mysql_map;
-	else {
-		snprintf( err, errlen, "Invalid SQL engine selected." );	
-		return 0;
-	}
-#endif
-
 	// Add an ID if we specify it? (unsure how to do this)
 	if ( want_id ) {
 		sqldef_t *col = &coldefs[ dbengine ];
@@ -1898,7 +1875,7 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 		fprintf( stdout, ",%s_updated INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP\n", datestamp_name );
 		adv = 0;
 	}
-
+#endif
 
 	// SQL schema creation will
 	// Generate a line for each row
@@ -1945,6 +1922,47 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 
 
 
+
+/**
+ * test_dsn( dsn_t * )
+ * ===================
+ *
+ * Test a data source for existence. 
+ * 
+ */
+int test_dsn (dsn_t *conn, char *err, int errlen) {
+	if ( conn->type == DB_FILE ) {
+		struct stat sb;
+		memset( &sb, 0, sizeof( struct stat ) );
+
+		// Anything other than file not found is a problem
+		if ( access( conn->connstr, F_OK | R_OK ) == -1 ) {
+			snprintf( err, errlen, "%s", strerror( errno ) );
+			return 0;
+		}
+
+		if ( stat( conn->connstr, &sb ) == -1 ) {
+			snprintf( err, errlen, "%s", strerror( errno ) );
+			return 0;
+		}
+
+		return 1;
+	}
+	else if ( conn->type == DB_SQLITE ) {
+		// Same here.  Access could technically be used with the database name or path specified
+	}
+	else if ( conn->type == DB_MYSQL ) {
+		// You'll need to be able to connect and test for existence of db and table
+
+	}
+	else if ( conn->type == DB_POSTGRESQL ) {
+		// You'll need to be able to connect and test for existence of db and/or table
+
+	}
+	return 1;
+}
+
+
 /**
  * create_dsn( dsn_t * )
  * ===================
@@ -1953,7 +1971,7 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
  * a table if a super heavy weight database.)
  * 
  */
-int create_dsn ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) {
+int create_dsn ( dsn_t *iconn, dsn_t *oconn, char *err, int errlen ) {
 	// This might be a little harder, unless there is a way to either create a new connection
 	char schema_fmt[ MAX_STMT_SIZE ];
 	memset( schema_fmt, 0, MAX_STMT_SIZE );
@@ -1961,27 +1979,28 @@ int create_dsn ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) {
 	const char create_database_stmt[] = "CREATE DATABASE IF NOT EXISTS %s";
 #endif
 
-	// File? (just open a new file?)
+	// Simply create the file.  Do not open it
 	if ( oconn->type == DB_FILE ) {
-
+		const int flags =	O_RDWR | O_CREAT | O_TRUNC;
+		const mode_t perms = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH; 
+		if ( open( oconn->connstr, flags, perms ) == -1 ) {
+			snprintf( err, errlen, "%s", strerror( errno ) );
+			return 0;
+		}
+		return 1;
 	}
-
 
 	// Every other engine will need a schema
 	if ( !schema_from_dsn( iconn, oconn, schema_fmt, sizeof( schema_fmt ), err, errlen ) ) {
 		return 0;
 	}
 
-
 fprintf( stdout, "SCHEMA %s\n", schema_fmt );
-
 
 	// SQLite: create table (db ought to be created when you open it)
 	if ( oconn->type == DB_SQLITE ) {
 		
 	}
-
-
 #ifdef BMYSQL_H
 	// MySQL: create db & table (use an if not exists?, etc)
 	else if ( oconn->type == DB_MYSQL ) {
@@ -2125,6 +2144,10 @@ return 1;
 }
 
 
+int wsize = 0;
+
+
+
 
 /**
  * open_dsn( dsn_t * )
@@ -2139,34 +2162,60 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 	// Handle opening the database first
 	if ( conn->type == DB_FILE ) {
-		DPRINTF( "Opening file at %s\n", conn->connstr );
+		DPRINTF( "Attempting to open file at '%s'\n", conn->connstr );
 
-		// Do an access or stat here?
-		if ( access( conn->connstr, F_OK | R_OK ) == -1 ) {
-			// Optionally, check the format and die with the right message
-			snprintf( err, errlen, "%s", strerror( errno ) );
-			return 0;
-		}
-			
+#if 0	
 		// TODO: Allocating everything like this is fast, but not efficient on memory
 		if ( !( conn->conn = read_file( conn->connstr, &conn->clen, err, errlen ) ) ) {
 			//snprintf( stderr, "%s\n", err ); // This won't happen twice...
 			return 0;
 		}
+#else
+		// An mmap() implementation for speedy reading and less refactoring
+		int fd;
+		struct stat sb;
+		file_t *file = NULL;
 
-#if 0
-		int *fd = malloc( sizeof( int ) );
-
-		if ( ( *fd = open( conn->connstr, O_RDONLY ) ) ) {
-			snprintf( err, errlen, "%s\n", strerror( errno ) );
+		// Create a file structure
+		if ( !( file = malloc( sizeof( file_t ) ) ) || !memset( file, 0, sizeof( file_t ) ) ) {
+			snprintf( err, errlen, "malloc() %s\n", strerror( errno ) );
 			return 0;
 		}
 
-		conn->conn = fd;
-#endif
+		// Handle stdout (since there will be no size, and it doesn't make tons of sense to mmap() it)	
+		if ( STRLCMP( conn->connstr, "/dev/stdout" ) ) {
+			file->fd = 1;
+			file->map = NULL;
+			conn->conn = file;
+			return 1;
+		}
 
+		// Initialize the stat buffer and check for the file
+		if ( memset( &sb, 0, sizeof( struct stat ) ) && stat( conn->connstr, &sb ) == -1 ) {
+			snprintf( err, errlen, "stat() %s\n", strerror( errno ) );
+			free( file );
+			return 0;
+		}
+
+		// Open the file
+		if ( ( file->fd = open( conn->connstr, O_RDONLY ) ) == -1 ) {
+			snprintf( err, errlen, "open() %s\n", strerror( errno ) );
+			free( file );
+			return 0;
+		}
+
+		// Do stuff
+		file->map = mmap( 0, file->size = sb.st_size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
+		if ( file->map == MAP_FAILED ) {
+			snprintf( err, errlen, "mmap() %s\n", strerror( errno ) );
+			free( file );
+			return 0;
+		} 
+
+		conn->conn = file;	
+#endif
 #if 0
-		// Use fopen instead
+		// fopen would probably be the most portable if we're being honest 
 		if ( !( conn->conn = fopen( conn->connstr, "r" ) ) ) {
 			snprintf( err, errlen, "%s", strerror( errno ) );
 			return 0;
@@ -2174,7 +2223,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 #endif
 		return 1;
 	}
-
 
 	// Stop if no table name was specified
 	if ( !table && ( !( *conn->tablename ) || strlen( conn->tablename ) < 1 ) ) {
@@ -2361,6 +2409,7 @@ fprintf( stderr, "\n" );
 }
 
 
+
 /**
  * headers_from_dsn( dsn_t * )
  * ===========================
@@ -2406,28 +2455,6 @@ int headers_from_dsn ( dsn_t *iconn, char *err, int errlen ) {
 
 			// Get the actual type from the database engine
 			st->ntype = f->type;
-
-#if 0
-			// Get the type of the column from our list and make sure we can support it
-			if ( !( type = get_typemap( mysql_map, st->ntype ) ) ) {
-				// TODO: Get the string representation of this name so the user knows
-				snprintf( err, errlen, "Invalid MySQL type received: %d", st->ntype );
-				return 0;	
-			}
-
-			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctype = find_ctype( ctypes, f->name ) ) ) {
-				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_native_name( cdefs, ctype ) ) ) {
-					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
-					snprintf( err, errlen, fmt, ctype, f->name, ename );
-					return 0;	
-				}
-			}
-
-			// Set the base type and write the column name
-			st->type = type->basetype;
-#endif
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
@@ -2456,29 +2483,6 @@ int headers_from_dsn ( dsn_t *iconn, char *err, int errlen ) {
 
 			// Get the actual type from the database engine
 			st->ntype = PQftype( iconn->res, i );
-
-#if 0 
-			// Get the type of the column
-			if ( !( type = get_typemap( pgsql_map, st->ntype ) ) ) {
-				// TODO: Get the string representation of this name so the user knows
-				snprintf( err, errlen, "Invalid PostgreSQL type received: %d", st->ntype );
-				return 0;	
-			}
-
-			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
-				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_native_name( cdefs, ctype ) ) ) {
-					// LEt uesr know chosen engine, and real type name
-					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
-					snprintf( err, errlen, fmt, ctype, name, ename );
-					return 0;	
-				}
-			}
-
-			// Set the base type and write the column name
-			st->type = type->basetype;
-#endif
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
@@ -2494,6 +2498,7 @@ int headers_from_dsn ( dsn_t *iconn, char *err, int errlen ) {
 	else { 
 		// TODO: Reimplement this to read line-by-line
 		zw_t p;
+		file_t *file = NULL;
 
 		// Prepare this structure
 		memset( &p, 0, sizeof( zw_t ) );
@@ -2501,17 +2506,23 @@ int headers_from_dsn ( dsn_t *iconn, char *err, int errlen ) {
 		// Copy the delimiter to whatever this is
 		memcpy( &delset[ strlen( delset ) ], DELIM, strlen( DELIM ) );
 
+		// Check anyway in case something wonky happened
+		if ( !( file = (file_t *)iconn->conn ) ) {
+			const char fmt[] = "mmap() src was lost.";
+			snprintf( err, errlen, fmt );
+			return 0;	
+		}
+
 		// Walk through and find each column first
-		for ( ; strwalk( &p, iconn->conn, delset ); ) {
+		for ( int len = 0; strwalk( &p, file->map, delset ); ) {
 
 			// Define
-			char *t = ( !p.size ) ? no_header : copy( &((char *)iconn->conn)[ p.pos ], p.size - 1, case_type );
+			char *t = ( !p.size ) ? no_header : copy( &((char *)file->map)[ p.pos ], p.size - 1, &len, case_type );
 			header_t *st = malloc( sizeof( header_t ) );
 
 			// ...	
 			if ( !st || !memset( st, 0, sizeof( header_t ) ) ) {
-				const char fmt[] = 
-					"Memory constraints encountered while fetching headers from file '%s'"; 
+				const char fmt[] = "Memory constraints encountered while fetching headers from file '%s'"; 
 				snprintf( err, errlen, fmt, iconn->connstr );
 				return 0;	
 			}
@@ -2521,75 +2532,6 @@ int headers_from_dsn ( dsn_t *iconn, char *err, int errlen ) {
 			free( t );
 			if ( p.chr == '\n' || p.chr == '\r' ) break;
 		}
-
-#if 0
-		// If we need to maintain some kind of type safety, run this
-		if ( typesafe ) {
-			if ( !( str = extract_row( iconn->conn, iconn->clen ) ) ) {
-				snprintf( err, errlen, "Failed to extract first row from file '%s'", 
-					iconn->connstr ); 
-				return 0;	
-			}
-
-			// You should do a count really quick on the second rows, or possibly even all rows to make sure that the rows match
-			int count = memstrocc( str, &delset[2], strlen( str ) ); 
-
-			// If these don't match, we have a problem
-			// Increase by one, since the column count should match the occurrence of delimiters + 1
-			if ( iconn->hlen != ++count ) {
-				//const char fmt[] = "";
-				snprintf( err, errlen, 
-					"Header count and column count differ in file: %s (%d != %d)", 
-					iconn->connstr,
-					iconn->hlen,
-					count
-				); 
-				return 0;	
-			}
-
-			// -
-			memset( &p, 0, sizeof( zw_t ) );
-
-			// -
-			for ( int i = 0, len = 0; strwalk( &p, str, delset ); i++ ) {
-				char *t = NULL;
-				//typemap_t *type = NULL;
-				const char *ctype = NULL;
-				const char *name = (iconn->headers[i])->label;
-				header_t *st = iconn->headers[ i ];
-
-				// Check if any of these are looking for a coerced type 
-				if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
-					if ( !( st->ctype = get_typemap_by_native_name( cdefs, ctype ) ) ) {
-						const char fmt[] = "Failed to find desired type '%s' at column '%s' for supported %s types";
-						snprintf( err, errlen, fmt, ctype, name, ename );
-						return 0;	
-					}
-				}
-
-				// Handle NULL or empty strings
-				if ( !p.size ) {
-					st->type = T_STRING;
-					continue;
-				}
-
-				// Handle NULL or empty strings
-				t = copy( &str[ p.pos ], p.size - 1, 0 );
-				if ( ( len = strlen( t ) ) == 0 ) {
-					st->type = T_STRING;
-					continue;
-				}
-
-				st->type = get_type( t, T_STRING ); 
-
-				// TODO: This should be a static buffer
-				free( t );
-			}
-
-			// TODO: This should be a static buffer
-			free( str );
-		}
-#endif
 	}
 
 	return 1;
@@ -2717,7 +2659,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				col->exptype = conn->headers[ ci ]->type;
 				
 				// Get the real type
-				col->type = get_type( ( char * )col->v, col->exptype );
+				col->type = get_type( col->v, col->exptype, col->len );
 
 				//
 				if ( typesafe && col->exptype != col->type ) {
@@ -3360,8 +3302,22 @@ void close_dsn( dsn_t *conn ) {
 
 	DPRINTF( "Attempting to close connection at %p\n", (void *)conn->conn );
 
-	if ( conn->type == DB_FILE )
-		free( conn->conn );
+	if ( conn->type == DB_FILE ) {
+		// Cast
+		file_t *file = (file_t *)conn->conn;
+
+		// Free this
+		if ( file->map && munmap( file->map, file->size ) == -1 ) {
+			fprintf( stderr, "munmap() %s\n", strerror( errno ) );
+		}
+
+		// Close if the file is not stdout or in
+		if ( file->fd > 2 && close( file->fd ) == -1 ) {
+			fprintf( stderr, "close() %s\n", strerror( errno ) );
+		}
+
+		free( file );
+	}
 #ifdef BSQLITE_H
 	else if ( conn->type == DB_SQLITE )
 		fprintf( stderr, "SQLite3 not done yet.\n" );
@@ -3431,13 +3387,11 @@ int rels_between_dsn( dsn_t *iconn, dsn_t *oconn, const char *err, int errlen ) 
 int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen ) {
 	// Define 
 	int fcount = 0;
-	char *str = NULL;
 	char *ename = NULL;
 	coerce_t **ctypes = NULL;	
 	int ctypeslen = 0;
 	const typemap_t *cdefs = NULL;
 
-#if 1
 	// Evaluate the coercion string if one is available
 	// The type that is saved will be the coerced one
 	if ( ov ) {
@@ -3466,45 +3420,56 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			return 0;
 		}
 	}
-#endif
-
-
 
 	// 
 	if ( iconn->type == DB_FILE ) { 
 		zw_t p;
 		int count = 0;
+		unsigned int rowlen = 0;
+		unsigned int dlen = strlen( delset );
+		file_t *file = NULL;
+		unsigned char *row = NULL;
+
+		// Catch any silly errors that may have been made on the way back here 
+		if ( !( file = (file_t *)iconn->conn ) ) {
+			const char fmt[] = "mmap() lost reference";
+			snprintf( err, errlen, fmt );
+			return 0;	
+		}
 
 		// Get the SECOND row only and estimate types that way
-		if ( !( str = extract_row( iconn->conn, iconn->clen ) ) ) {
+		if ( !( row = extract_row( file->map, file->size, &rowlen ) ) ) {
 			const char fmt[] = "Failed to extract first row from file '%s'";
 			snprintf( err, errlen, fmt, iconn->connstr ); 
 			return 0;	
 		}
 
 		// Check that col count - 1 == occurrence of delimiters in file
-		if ( iconn->hlen - 1 != ( count = memstrocc( str, &delset[2], strlen( str ) ) ) ) {
+		if ( ( iconn->hlen - 1 ) != ( count = memstrocc( row, &delset[2], rowlen ) ) ) {
 			const char fmt[] = "Header count and column count differ in file: %s (%d != %d)"; 
 			snprintf( err, errlen, fmt, iconn->connstr, iconn->hlen, count ); 
-			free( str );
+			free( row );
 			return 0;	
 		}
 
+		// Initialize buffer
 		memset( &p, 0, sizeof( zw_t ) );
 
 		// Move through the rest of the entries in the row and approximate types 
-		for ( int i = 0, len = 0; strwalk( &p, str, delset ); i++ ) {
+		for ( int i = 0; memwalk( &p, row, (unsigned char *)delset, rowlen, dlen ); i++ ) {
 			header_t *st = iconn->headers[ i ];
 			char *t = NULL;
 			const char *ctype = NULL;
 			const char *name = st->label;
+			int len = 0;
 
 			// Check if any of these are looking for a coerced type 
 			if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
 				if ( !( st->ctype = get_typemap_by_native_name( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = "Failed to find desired type '%s' at column '%s' for supported %s types";
+					const char fmt[] = "Failed to find desired type '%s' at column '%s' for "
+						"supported %s types";
 					snprintf( err, errlen, fmt, ctype, name, get_conn_type( oconn->type ) );
-					free( str );
+					free( row );
 					return 0;	
 				}
 			}
@@ -3516,26 +3481,24 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 
 			// Try to copy again
-			if ( !( t = copy( &str[ p.pos ], p.size - 1, 0 ) ) ) {
+			if ( !( t = copy( (char *)&row[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
 				// TODO: This isn't very clear, but it is unlikely we'll ever run into it...
 				snprintf( err, errlen, "Out of memory error occurred." );
-				free( str );
+				free( row );
 				return 0;
 			}
 
 			// Handle NULL or empty strings
-			if ( ( len = strlen( t ) ) == 0 ) {
+			if ( !len ) {
 				st->type = T_STRING;
 				continue;
 			}
 
-			st->type = get_type( t, T_STRING ); 
-
-			// TODO: This should be a static buffer
+			st->type = get_type( (unsigned char *)t, T_STRING, len ); 
 			free( t );
 		}
 
-		free( str );
+		free( row );
 	}
 #ifdef BSQLITE_H
 	else if ( iconn->type == DB_SQLITE ) {
@@ -3989,16 +3952,22 @@ int main ( int argc, char *argv[] ) {
 		return 0;
 	}
 
-	// Processor stuff
+	// Create the headers only 
 	if ( headers_only ) {
 		for ( header_t **s = input.headers; s && *s; s++ ) {
 			printf( "%s\n", (*s)->label );
 		}
+
+		// Free everything
+		destroy_dsn_headers( &input );
+		close_dsn( &input ); 
+		return 0;
 	}
 
-	else if ( schema ) {
-		char *schbuf = NULL;	
-#if 1
+
+	// Create a schema
+	if ( schema ) {
+	#if 1
 		// If a connection string was specified, try parsing for info
 		if ( output.connstr ) {
 			if ( !parse_dsn_info( &output, err, sizeof( err  ) ) ) {
@@ -4037,7 +4006,7 @@ int main ( int argc, char *argv[] ) {
 				PERR( "Table name is invalid or unspecified for --schema command.\n" );
 				return 0;
 			}
-	
+
 			snprintf( output.tablename, sizeof( output.tablename ), "%s", input.tablename ); 
 		}
 
@@ -4046,8 +4015,7 @@ int main ( int argc, char *argv[] ) {
 			output.type = DB_SQLITE;
 		}
 
-fprintf( stdout, "OUTPUT CONNSTR: %s\n", output.connstr );
-//print_dsn( &input );print_dsn( &output );
+	//fprintf( stdout, "OUTPUT CONNSTR: %s\n", output.connstr ), print_dsn( &input );print_dsn( &output );
 
 		// Figure out any relevant mappings
 		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
@@ -4061,13 +4029,13 @@ fprintf( stdout, "OUTPUT CONNSTR: %s\n", output.connstr );
 			return 0;
 		}
 
-#if 1
-for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ ) 
-printf( "typename: %s (%s)\n", t->typename, t->libtypename );
-#endif
+	#if 0
+	for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ ) 
+	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
+	#endif
 
-#endif
-		//	
+	#endif
+
 		if ( !schema_from_dsn( &input, &output, schema_fmt, MAX_STMT_SIZE, err, sizeof( err ) ) ) {
 			free( output.connstr );
 			destroy_dsn_headers( &input );
@@ -4080,9 +4048,6 @@ printf( "typename: %s (%s)\n", t->typename, t->libtypename );
 
 		// Destroy the output string
 		free( output.connstr );
-
-		schbuf = NULL;
-exit(0);
 	}
 
 #if 0
@@ -4093,67 +4058,52 @@ exit(0);
 #endif
 
 	else if ( convert ) {
-		DPRINTF( "convert was called...\n" );
 		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			return PERR( "Failed to prepare DSN: %s.\n", err );
+			PERR( "Failed to prepare DSN: %s.\n", err );
+			return 1;
 		}
-
-		// Use this to figure out whether or not the output DSN is prepared the right way
-		// ...
 
 		// Then open a new DSN for the output (there must be an --output flag)
 		if ( !output.connstr ) {
-			output.output = stdout; 
+			output.connstr = strdup( "file:///dev/stdout" ); 
 		}
-		else {
-			// Output
-			//memset( &output, 0, sizeof( dsn_t ) );
 
-			// Parse the output source
-			if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
-				return PERR( "Output DSN is invalid: %s\n", err );
-			}
+		// Parse the output source
+		if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
+			destroy_dsn_headers( &input );
+			close_dsn( &input );
+			PERR( "Output DSN is invalid: %s\n", err );
+			return 1;
+		}
 
-		#if 0
-			// Test dsn? (to see if the source already exists)
-			if ( !test_dsn( &output, err, sizeof( err ) ) ) {
+	#if 1
+		// Test and try to create if it does not exist
+		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
+			destroy_dsn_headers( &input );
+			close_dsn( &input );
+			PERR( "Output DSN '%s' is inaccessible or could not be created: %s\n", output.connstr, err );
+			close_dsn( &output );
+			return 1;
+		}
+	#else
+		// Create the output DSN if it does not exist
+		if ( !create_dsn( &output, &input, err, sizeof( err ) ) ) {
+			fprintf( stderr, "Creating output DSN failed: %s\n", err );
+			return 1;
+		}
+	#endif
 
-			}
-		#endif
+		// Open the output dsn
+		if ( !open_dsn( &output, query, err, sizeof( err ) ) ) {
+			destroy_dsn_headers( &input );
+			close_dsn( &input );
+			PERR( "DSN open failed: %s\n", err );
+			return 1;
+		}
 
-			// Create an output dsn (unless it already exists)
-			if ( !create_dsn( &output, &input, err, sizeof( err ) ) ) {
-				fprintf( stderr, "Creating output DSN failed: %s\n", err );
-				return 1;
-			}
-
-			// Open the output dsn
-			if ( !open_dsn( &output, query, err, sizeof( err ) ) ) {
-				PERR( "DSN open failed: %s\n", err );
-				return 1;
-			}
-
-			// If this is a database, choose the stream type
-			if ( 0 ) ;
-		#ifdef BSQLITE_H
-			else if ( output.type == DB_SQLITE )
-				stream_fmt = STREAM_SQLITE;
-		#endif
-		#ifdef BMYSQL_H
-			else if ( output.type == DB_MYSQL )
-				stream_fmt = STREAM_MYSQL;
-		#endif
-		#ifdef BPGSQL_H
-			else if ( output.type == DB_POSTGRESQL )
-				stream_fmt = STREAM_PGSQL;
-		#endif
-			else {
-			}
-		} /* end else */
-
-
+print_dsn( &input ), print_dsn( &output ), exit(0);
 		// Control the streaming / buffering from here
 		for ( int i = 0; i < 1; i++ ) {
 
