@@ -141,6 +141,19 @@ typedef enum {
 } stream_t;
 
 
+typedef struct format_t {
+	int pretty;
+	int newline;
+	int spaced;
+	int ccase;
+	char *prefix;
+	char *suffix;
+	char *leftdelim;
+	char *rightdelim;
+} format_t;
+
+static format_t format = { 1, 1, 0, 0, NULL, NULL, "'", "'" };
+
 
 /**
  * streamtype_t
@@ -929,6 +942,7 @@ char *coercion = NULL;
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT"; 
 
 
+#if 0
 //Different languages need their own definitions
 char * struct_coldefs[] = {
 	"NULL",
@@ -994,7 +1008,7 @@ char * oracle_coldefs[] = {
 	"INTEGER",
 	NULL,		
 };
-
+#endif
 
 
 // Convert word to snake_case
@@ -1119,8 +1133,13 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 
 	// If it's just one character, should check if it's a number or char
 	if ( len == 1 ) {
+		// TODO: Can do boolean evaluation here too
+		if ( memchr( "TtFf", *v, 4 ) ) {
+			t = T_BOOLEAN;
+		}
+
 		// TODO: Code should be 0-127
-		if ( !memchr( "0123456789", *v, 10 ) ) {
+		else if ( !memchr( "0123456789", *v, 10 ) ) {
 			t = T_CHAR;
 		}
 		return t;
@@ -2266,9 +2285,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		MYSQL *t = NULL; 
 		MYSQL_RES *myres = NULL; 
 
-		//
-		conn->defs = mysql_coldefs;
-
 		// Initialize the connection
 		if ( !( conn->conn = myconn = mysql_init( 0 ) ) ) {
 			const char fmt[] = "Couldn't initialize MySQL connection: %s";
@@ -2324,9 +2340,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		PGconn *pgconn = NULL;
 		PGresult *pgres = NULL;
 		char *connstr = conn->connstr;
-
-		// ...
-		conn->defs = postgres_coldefs;
 
 	#if 0
 		char *start = NULL, *tstart = NULL, *qstart = NULL;
@@ -2574,11 +2587,9 @@ int struct_from_dsn( dsn_t * conn ) {
 
 	char **defs = NULL;
 	if ( classdata ) {
-		defs = class_coldefs; 
 		fprintf( stdout, "class %s {\n", root );
 	}
 	else {
-		defs = struct_coldefs; 
 		fprintf( stdout, "struct %s {\n", root );
 	}
 
@@ -2938,14 +2949,12 @@ int transform_from_dsn(
 	
 		file = (file_t *)oconn->conn;
 
-		( prefix ) ? write( file->fd, prefix, strlen( prefix ) ) : 0;
+		( format.prefix ) ? FDPRINTF( file->fd, format.prefix ) : 0;
 		
-//fprintf( oconn->output, "%s", prefix );
-//fprintf( oconn->output, "%s{", odv ? "," : " "  );
 		if ( t == STREAM_PRINTF || t == STREAM_COMMA )
-			;//fprintf( oconn->output, "" );
+			;
 		else if ( t == STREAM_XML )
-			( prefix && newline ) ? write( file->fd, "\n", 1 ) : 0;
+			( format.prefix && format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		else if ( t == STREAM_CSTRUCT )
 			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" ); 
 		else if ( t == STREAM_CARRAY )
@@ -2953,8 +2962,7 @@ int transform_from_dsn(
 		else if ( t == STREAM_JSON ) {
 		#if 1
 			FDPRINTF( file->fd, ( odv ) ? "," : " " );
-			FDPRINTF( file->fd, "{" );
-			( newline ) ? FDPRINTF( file->fd, "\n" ) : 0; 
+			FDNPRINTF( file->fd, "{\n", ( format.newline ) ? 2 : 1 );
 		#else
 			if ( prefix && newline )
 				fprintf( oconn->output, "%c{\n", odv ? ',' : ' ' );
@@ -3050,7 +3058,6 @@ int transform_from_dsn(
 				// TODO: You're going to need a way to track how big len is
 				//int bw = snprintf( s, l, &",:%d"[ (int)(i == 0) ] , i );
 				bw = snprintf( s, l, &",%s"[ (int)(i == 1) ], "?" );
-				
 				l -= bw, s += bw;
 			}
 
@@ -3069,9 +3076,11 @@ int transform_from_dsn(
 				//fprintf( oconn->output, "%s => %s%s%s\n", (*col)->k, ld, (*col)->v, rd );
 //write( file->fd, (*col)->k, strlen( (*col)->k ) );
 				FDPRINTF( file->fd, (*col)->k );
-				FDPRINTF( file->fd, ld );
+				FDPRINTF( file->fd, " => " );
+				FDPRINTF( file->fd, format.leftdelim );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-				FDPRINTF( file->fd, rd);
+				FDPRINTF( file->fd, format.rightdelim );
+				FDPRINTF( file->fd, "\n" );
 			}
 			else if ( t == STREAM_XML ) {
 				//fprintf( oconn->output, "%s<%s>%s</%s>\n", &TAB[9-1], (*col)->k, (*col)->v, (*col)->k );
@@ -3082,42 +3091,42 @@ int transform_from_dsn(
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, (*col)->k );
-				FDPRINTF( file->fd, ">\n" );
+				FDNPRINTF( file->fd, ">\n", ( format.newline ) ? 2 : 1 );
 			}
 			else if ( t == STREAM_CARRAY ) {
 				//fprintf( oconn->output, &", \"%s\""[ first ], (*col)->v );
-				FDPRINTF( file->fd, (*col)->k );
-				FDPRINTF( file->fd, ld );
+				FDPRINTF( file->fd, &", \""[ first ] );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-				FDPRINTF( file->fd, rd);
+				FDPRINTF( file->fd, "\"" );
 			}
 			else if ( t == STREAM_COMMA ) {
 				//fprintf( oconn->output, &",\"%s\""[ first ], (*col)->v );
-				FDPRINTF( file->fd, (*col)->k );
-				FDPRINTF( file->fd, ld );
+				FDPRINTF( file->fd, &",\""[ first ] );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-				FDPRINTF( file->fd, rd);
+				FDPRINTF( file->fd, "\"" );
 			}
 			else if ( t == STREAM_JSON ) {
 				//fprintf( oconn->output, "\t%c\"%s\": ", first ? ' ' : ',', (*col)->k ); 
-				FDPRINTF( file->fd, ( first ) ? " " : "," );
+				//FDPRINTF( file->fd, ( first ) ? " " : "," );
+				FDPRINTF( file->fd, &",\""[ first ] );
 				FDPRINTF( file->fd, (*col)->k );
+				FDPRINTF( file->fd, "\": " );
 
-				if ( (*col)->type == T_STRING || (*col)->type == T_CHAR )
-					//fprintf( oconn->output, "\"%s\"\n", (*col)->v );
-				FDNPRINTF( file->fd, (*col)->v, (*col)->len ), FDPRINTF( file->fd, "\n" );
-				else if ( (*col)->type == T_NULL ) 
-					//fprintf( oconn->output, "null\n" );
-				FDPRINTF( file->fd, "null\n" );
-				#if 0
-				else if ( (*col)->type == T_BOOLEAN )
-					//fprintf( oconn->output, "%s\n", ( *col->v ) ? "true" : "false" );
-				FDPRINTF( file->fd, "null\n" );
-				#endif	
-				else {
-					//fprintf( oconn->output, "%s\n", (*col)->v );
-				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				if ( (*col)->type == T_NULL ) 
+					FDPRINTF( file->fd, "null" );
+				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Tt", *(*col)->v, 2 ) )
+					FDPRINTF( file->fd, "true" );
+				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Ff", *(*col)->v, 2 ) )
+					FDPRINTF( file->fd, "false" );
+				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR ) {
+					FDPRINTF( file->fd, "\"" );
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len ); 
+					FDPRINTF( file->fd, "\"" );
 				}
+				else {
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				}
+				( format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( t == STREAM_CSTRUCT ) {
 				//p_cstruct( 1, *col );
@@ -3182,9 +3191,9 @@ int transform_from_dsn(
 				if ( (*col)->type != T_STRING && (*col)->type != T_CHAR )
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				else {
-					FDPRINTF( file->fd, ld );
+					FDPRINTF( file->fd, format.leftdelim );
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-					FDPRINTF( file->fd, rd );
+					FDPRINTF( file->fd, format.rightdelim );
 				}
 #if 0
 				if ( !typesafe ) {
@@ -3380,8 +3389,8 @@ int transform_from_dsn(
 
 		//Suffix
 		if ( oconn->type == DB_FILE ) {
-			( suffix ) ? FDPRINTF( file->fd, suffix ) : 0;
-			( newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+			( format.suffix ) ? FDPRINTF( file->fd, format.suffix ) : 0;
+			( format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		}
 
 	}
