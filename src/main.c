@@ -31,7 +31,7 @@
  * 	- Paragraphs
  * 	- URLs
  * 	- Images (probably from a directory is the most useful)
- * 	
+ *
  * ------------------------------------------------------- */
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
@@ -101,7 +101,7 @@
 
 #define STRLCMP(H,S) \
 	( strlen( H ) >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
-	
+
 #define MEMLCMP(H,S,L) \
 	( L >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
 
@@ -252,7 +252,7 @@ static const char * itypes[] = {
 #if 0
 
 static char *cstr_type ( type_t type ) {
-	return c_family_typenames[ (int)type ];	
+	return c_family_typenames[ (int)type ];
 }
 
 static char *x_typenames[] = {
@@ -346,8 +346,8 @@ typedef struct typemap_t {
 	int ntype; /* best I can do ... */
 	const char *libtypename;
 	const char *typename;
-	type_t basetype;	
-	char preferred;	
+	type_t basetype;
+	char preferred;
 } typemap_t;
 
 
@@ -491,7 +491,7 @@ typedef struct dsn_t {
 	char connoptions[ 1028 ];
 	dbtype_t type;
 	int port;
-	int options;	
+	int options;
 	//char socketpath[ 2048 ];
 	char *connstr;
 	//FILE *file;
@@ -502,10 +502,10 @@ typedef struct dsn_t {
 	int hlen;
 	int rlen;
 	int clen;
-	char **defs;	
+	char **defs;
 	FILE *output;
-	const typemap_t *typemap;	
-	const typemap_t *convmap;	
+	const typemap_t *typemap;
+	const typemap_t *convmap;
 	int offset;
 	int size;
 	stream_t stream;
@@ -618,7 +618,7 @@ typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 #define PG_BITOID 1560
 #define PG_VARBITOID 1562
 
-// TODO: This is the preferred way to layout this structure, 
+// TODO: This is the preferred way to layout this structure,
 static const char * _pgsql_string_map[] = {
 	[0] = NULL,
 #if 0
@@ -765,9 +765,9 @@ static const unsigned char _mysql_doubles[] = {
 static const unsigned char _mysql_integers[] = {
 	MYSQL_TYPE_DECIMAL,
 	MYSQL_TYPE_TINY,
-	MYSQL_TYPE_SHORT, 
+	MYSQL_TYPE_SHORT,
 	MYSQL_TYPE_LONG,
-	MYSQL_TYPE_NULL,  
+	MYSQL_TYPE_NULL,
 	MYSQL_TYPE_TIMESTAMP,
 	MYSQL_TYPE_LONGLONG,
 	MYSQL_TYPE_INT24,
@@ -775,7 +775,7 @@ static const unsigned char _mysql_integers[] = {
 };
 
 static const unsigned char _mysql_dates[] = {
-	MYSQL_TYPE_DATE,  
+	MYSQL_TYPE_DATE,
 	MYSQL_TYPE_TIME,
 	MYSQL_TYPE_DATETIME,
 	MYSQL_TYPE_YEAR,
@@ -829,7 +829,7 @@ static const char * _mysql_named_types[] = {
 	[MYSQL_TYPE_DOUBLE] = "DOUBLE",
 	[MYSQL_TYPE_STRING] = "CHAR",
 	[MYSQL_TYPE_VAR_STRING] = "VARCHAR",
-	/* Where is text? */	
+	/* Where is text? */
 	[MYSQL_TYPE_BLOB] = "BLOB",
 	[MYSQL_TYPE_TIMESTAMP] = "TIMESTAMP",
 	[MYSQL_TYPE_DATE] = "DATE",
@@ -881,7 +881,7 @@ MYSQL_TYPE_NULL	NULL-type
 	#endif
 	};
  #endif
-#endif	
+#endif
 
 
 // Forward declarations for different output formats
@@ -972,7 +972,7 @@ char * struct_coldefs[] = {
 	"int",
 	"double",
 	"int",
-	NULL,		
+	NULL,
 };
 
 
@@ -983,7 +983,7 @@ char * class_coldefs[] = {
 	"int",
 	"double",
 	"bool",
-	NULL,		
+	NULL,
 };
 
 
@@ -994,7 +994,7 @@ char * sqlite_coldefs[] = {
 	"INTEGER",
 	"REAL",
 	"INTEGER",
-	NULL,		
+	NULL,
 };
 
 
@@ -1005,7 +1005,7 @@ char * postgres_coldefs[] = {
 	"INTEGER",
 	"DOUBLE",
 	"BOOLEAN",
-	NULL,		
+	NULL,
 };
 
 
@@ -1016,7 +1016,7 @@ char * mysql_coldefs[] = {
 	"INTEGER",
 	"INTEGER",
 	"INTEGER",
-	NULL,		
+	NULL,
 };
 
 
@@ -1027,7 +1027,7 @@ char * oracle_coldefs[] = {
 	"INTEGER",
 	"INTEGER",
 	"INTEGER",
-	NULL,		
+	NULL,
 };
 #endif
 
@@ -1067,7 +1067,7 @@ static void camelcase ( char **k ) {
 			//
 			while ( *l ) {
 				if ( *nk == *l ) {
-					*nk = *u;	
+					*nk = *u;
 					break;
 				}
 				u++, l++;
@@ -1105,10 +1105,10 @@ static char *dupval ( char *val, char **setval ) {
 	else {
 		*setval = strdup( val );
 		if ( !( *setval ) || !strlen( *setval ) )
-			return NULL;	
+			return NULL;
 		else if ( **setval == '-' ) {
-			return NULL;	
-		}	
+			return NULL;
+		}
 	}
 	return *setval;
 }
@@ -1131,7 +1131,7 @@ static char * copy( char *src, int size, int *ns, case_t t ) {
 
 	if ( t == CASE_SNAKE )
 		snakecase( &a );
-	else if ( t == CASE_CAMEL ) {	
+	else if ( t == CASE_CAMEL ) {
 		camelcase( &a );
 	}
 
@@ -1150,7 +1150,7 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	// Use deftype in this case...
 	//if ( strlen( v ) == 0 ) {
 	if ( !len )
-		return deftype;	
+		return deftype;
 
 	// If it's just one character, should check if it's a number or char
 	if ( len == 1 ) {
@@ -1167,7 +1167,7 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	}
 
 #if 0
-	// Check for booleans	
+	// Check for booleans
 	if ( ( *v == 't' && MEMLCMP( v, "true", len ) ) || ( *v == 't' && MEMLCMP( v, "false", len ) ) ) {
 		t = T_BOOLEAN;
 		return t;
@@ -1177,30 +1177,30 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	if ( len >= 4 && ( *v == 't' || *v == 'T' ) ) {
 		unsigned char *vv = v;
 		// We can do this the slowest possible way b/c it's a pain in the butt
-		if ( *vv == 'r' || *vv == 'R' ) 	
+		if ( *vv == 'r' || *vv == 'R' )
 			vv++;
-		if ( *vv == 'u' || *vv == 'U' ) 	
+		if ( *vv == 'u' || *vv == 'U' )
 			vv++;
 		if ( *vv == 'e' || *vv == 'E' ) {
 			t = T_BOOLEAN;
 			return t;
-		}	
+		}
 	}
 
 	// Boolean false (regardless of spelling)
 	if ( len >= 5 && ( *v == 'f' || *v == 'F' ) ) {
 		unsigned char *vv = v;
 		// We can do this the slowest possible way b/c it's a pain in the butt
-		if ( *vv == 'a' || *vv == 'A' ) 	
+		if ( *vv == 'a' || *vv == 'A' )
 			vv++;
-		if ( *vv == 'l' || *vv == 'L' ) 	
+		if ( *vv == 'l' || *vv == 'L' )
 			vv++;
 		if ( *vv == 's' || *vv == 'S' )
 			vv++;
 		if ( *vv == 'e' || *vv == 'E' ) {
 			t = T_BOOLEAN;
 			return t;
-		}	
+		}
 	}
 #endif
 
@@ -1234,7 +1234,7 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 // Simple key-value
 void p_default( int ind, column_t *r ) {
 	fprintf( stdout, "%s => %s%s%s\n", r->k, ld, r->v, rd );
-} 
+}
 
 
 
@@ -1243,7 +1243,7 @@ void p_json( int ind, column_t *r ) {
 	//Check if v is a number, null or some other value that should NOT be escaped
 	fprintf( stdout,
 		"%s%c\"%s\": \"%s\"\n", &TAB[9-ind], adv ? ' ' : ',', r->k, r->v );
-} 
+}
 
 
 
@@ -1277,7 +1277,7 @@ void p_sql( int ind, column_t *r ) {
 		}
 #endif
 	}
-} 
+}
 
 
 
@@ -1310,7 +1310,7 @@ void p_cstruct ( int ind, column_t *r ) {
 		fprintf( stdout, "%s.%s = 1,\n", &TAB[9-ind], k );
 		return;
 	}
-		
+
 	if ( !strcmp( vv, "false" ) || !strcmp( vv, "FALSE" ) ) {
 		fprintf( stdout, "%s.%s = 0,\n", &TAB[9-ind], k );
 		return;
@@ -1322,13 +1322,13 @@ void p_cstruct ( int ind, column_t *r ) {
 		fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
 		return;
 	}
-	
+
 	//Handle typesafety
 	while ( *vv ) {
 		if ( !memchr( "0123456789", *vv, 10 ) ) {
 			fprintf( stdout, "%s", &TAB[9-ind] );
 			fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
-			return;	
+			return;
 		}
 		vv++;
 	}
@@ -1381,7 +1381,7 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 				struct rep **r = reps;
 				while ( (*r)->o ) {
 					if ( pp[ i ] == (*r)->o ) {
-						j = 1;		
+						j = 1;
 						if ( (*r)->r != 0 ) {
 							*dest[ l ] = (*r)->r;
 							l++;
@@ -1524,7 +1524,7 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 	// Finally, copy the string into whatever destination
 	// TODO: This can fail, so consider that
 	memcpy( dest, src, len );
-	copied = strlen( dest );	
+	copied = strlen( dest );
 	return copied;
 }
 
@@ -1548,8 +1548,8 @@ int safecpynumeric( char *numtext ) {
  *
  */
 int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
-	
-	// Define	
+
+	// Define
 	//dbtype_t type = DB_NONE;
 	int lp = -1;
 	char port[ 6 ] = {0};
@@ -1563,7 +1563,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		return 0;
 	}
 
-	
+
 	// Get the database type
 	if ( 0 ) 0;
 #ifdef BMYSQL_H
@@ -1604,7 +1604,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 	// Handle the different string types as best you can
 	// A) localhost, localhost:port doesn't make much sense...
 	if ( !memchr( dsn, ':', dsnlen ) && !memchr( dsn, '@', dsnlen ) && !memchr( dsn, '/', dsnlen ) ) {
-		//lp = safecpypos( dsn, conn->hostname, NULL, sizeof( conn->hostname ) ); 	
+		//lp = safecpypos( dsn, conn->hostname, NULL, sizeof( conn->hostname ) );
 		snprintf( conn->hostname, sizeof( conn->hostname ), "%s", dsn );
 	}
 
@@ -1639,7 +1639,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 	// E) [ user:secret ] @localhost/db[ .table ]
 	else if ( memchr( dsn, '@', dsnlen ) ) {
 
-		int p = 0;	
+		int p = 0;
 		char a[ 2048 ], b[ 2048 ], *aa = NULL, *bb = NULL, *opts = NULL, *end = NULL;
 		memset( a, 0, sizeof( a ) );
 		memset( b, 0, sizeof( b ) );
@@ -1694,7 +1694,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		// Moved this to the beginning to keep repetition to a minimum.
 		opts = memchr( bb, '?', strlen( bb ) );
 		end = opts ? "?" : NULL;
-	
+
 		// If no database was specified, just process the hostname, port and options
 		if ( !memchr( bb, '/', strlen( bb ) ) ) {
 			if ( !memchr( bb, ':', strlen( bb ) ) ) {
@@ -1718,7 +1718,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 			// Get hostname and all of the other stuff if it's there
 			// hostname, port, and / (and maybe something else)
 			if ( memchr( bb, ':', strlen( bb ) ) ) {
-				
+
 				// copy hostname first
 				p = safecpypos( bb, conn->hostname, ":", sizeof( conn->hostname ) ), bb += p + 1;
 
@@ -1765,7 +1765,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 				}
 
 				bb += p + 1;
-			
+
 				// Extract just the database name
 				if ( !memchr( bb, '.', strlen( bb ) ) ) {
 					if ( !( p = safecpypos( bb, conn->dbname, NULL, sizeof( conn->dbname ) ) ) ) {
@@ -1789,16 +1789,16 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 			if ( opts ) {
 				snprintf( conn->connoptions, sizeof( conn->connoptions ), "%s", ++opts );
 			}
-	
+
 		#ifdef BPGSQL_H
 			// If it's a PG string, we can fix it here...
 			if ( conn->type == DB_POSTGRESQL ) {
 				// Fix the connection string if it hasn't been done yet...
 				char *start = NULL, *tstart = NULL, *qstart = NULL;
 				if ( ( start = memchr( conn->connstr, '@', strlen( conn->connstr ) ) ) ) {
-			
-				// Find this first	
-				if ( ( start = memchr( start, '/', strlen( start ) ) ) ) {	
+
+				// Find this first
+				if ( ( start = memchr( start, '/', strlen( start ) ) ) ) {
 					// If the table has been specified, get rid of everything before the '?'
 					if ( ( tstart = memchr( start, '.', strlen( start ) ) ) ) {
 						// Terminate the string and disregard the rest of the string for initializing PG
@@ -1819,7 +1819,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		#endif
 		}
 	}
-		
+
 	return 1;
 }
 
@@ -1833,7 +1833,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
-	fprintf( stdout, "dsn->connstr:    '%s'\n", conninfo->connstr );	
+	fprintf( stdout, "dsn->connstr:    '%s'\n", conninfo->connstr );
 	fprintf( stdout, "dsn->type:       %s\n",   dbtypes[ conninfo->type ] );
 	fprintf( stdout, "dsn->username:   '%s'\n", conninfo->username );
 	fprintf( stdout, "dsn->password:   '%s'\n", conninfo->password );
@@ -1842,16 +1842,16 @@ void print_dsn ( dsn_t *conninfo ) {
 	fprintf( stdout, "dsn->tablename:  '%s'\n", conninfo->tablename );
 	//fprintf( stdout, "dsn->socketpath: '%s'\n", conninfo->socketpath );
 	fprintf( stdout, "dsn->port:       %d\n", conninfo->port );
-	fprintf( stdout, "dsn->conn:       %p\n", conninfo->conn );	
-	fprintf( stdout, "dsn->options:    '%s'\n", conninfo->connoptions );	
+	fprintf( stdout, "dsn->conn:       %p\n", conninfo->conn );
+	fprintf( stdout, "dsn->options:    '%s'\n", conninfo->connoptions );
 
 	//if headers have been initialized show me that
 	if ( conninfo->headers ) {
-		fprintf( stdout, "dsn->headers:\n" );  
+		fprintf( stdout, "dsn->headers:\n" );
 		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
 			fprintf( stdout, "\t%s [%p, %d, %s]\n",
 				(*h)->label,
-				(*h)->ctype,	
+				(*h)->ctype,
 				(*h)->ntype,
 				itypes[ (*h)->type ]
 			);
@@ -1905,7 +1905,7 @@ void destroy_dsn_headers ( dsn_t *t ) {
 // Destroy all records
 void destroy_dsn_rows ( dsn_t *t ) {
 	for ( row_t **r = t->rows; r && *r; r++ ) {
-		for ( column_t **c = (*r)->columns; c && *c; c++ ) free( (*c) );	
+		for ( column_t **c = (*r)->columns; c && *c; c++ ) free( (*c) );
 		free( (*r)->columns );
 		free( (*r) );
 	}
@@ -1930,7 +1930,7 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 
 	// Schema creation won't work if no table name is specified.  Stop here if that's so.
 	if ( !strlen( oconn->tablename ) ) {
-		snprintf( err, errlen, "No table name was specified." );	
+		snprintf( err, errlen, "No table name was specified." );
 		return 0;
 	}
 
@@ -1983,7 +1983,7 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 			written = snprintf( fmt, fmtlen, "%s", "PRIMARY KEY" );
 			fmtlen -= written, fmt += written;
 		}
-	
+
 		if ( len > 1 ) {
 			written = snprintf( fmt, fmtlen, "%s", "," );
 			fmtlen -= written, fmt += written;
@@ -2078,7 +2078,7 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 
 	// SQLite: create table (db ought to be created when you open it)
 	if ( oconn->type == DB_SQLITE ) {
-		
+
 	}
 #ifdef BMYSQL_H
 	// MySQL: create db & table (use an if not exists?, etc)
@@ -2094,7 +2094,7 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 			return 0;
 		}
 
-		// Easiest to just cancel if no database is specified. 
+		// Easiest to just cancel if no database is specified.
 		if ( !strlen( oconn->dbname ) ) {
 			snprintf( err, errlen, "Database name was not specified for output datasource" );
 			return 0;
@@ -2106,7 +2106,7 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 			oconn->hostname,
 			strlen( oconn->username ) ? oconn->username : NULL,
 			strlen( oconn->password ) ? oconn->password : NULL,
-			oconn->dbname,	
+			oconn->dbname,
 			oconn->port,
 			NULL,
 			0
@@ -2165,7 +2165,7 @@ fprintf( stdout, "SCHEMA %s\n", schema_fmt );
 			cs = cs_buffer;
 		}
 fprintf( stdout, "CS = %s\n", cs );
-		
+
 		//if ( PQstatus( ( pgconn = PQconnectdb( conn->connstr ) ) ) != CONNECTION_OK ) {
 		if ( PQstatus( ( pgconn = PQconnectdb( cs ) ) ) != CONNECTION_OK ) {
 			const char fmt[] = "Couldn't initialize PostsreSQL connection: %s";
@@ -2254,7 +2254,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 			return 0;
 		}
 
-		// Handle stdout (since there will be no size, and it doesn't make tons of sense to mmap() it)	
+		// Handle stdout (since there will be no size, and it doesn't make tons of sense to mmap() it)
 		if ( STRLCMP( conn->connstr, "/dev/stdout" ) ) {
 			file->fd = 1;
 			file->start = file->map = NULL;
@@ -2287,7 +2287,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 		file->start = file->map;
 		file->offset = 0;
-		conn->conn = file;	
+		conn->conn = file;
 		return 1;
 	}
 
@@ -2375,7 +2375,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 #ifdef BPGSQL_H
 	if ( conn->type == DB_POSTGRESQL ) {
 	#if 0
-		// Define	
+		// Define
 		PGconn *pgconn = NULL;
 		PGresult *pgres = NULL;
 		char *connstr = conn->connstr;
@@ -2434,14 +2434,14 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 #endif
 	#if 0
 	else if ( conn->type == DB_SQLITE ) {
-		sqlite3_t *db = NULL;	
+		sqlite3_t *db = NULL;
 		if ( !( db = malloc( sizeof( pgsql_t ) ) ) || !memset( db, 0, sizeof( pgsql_t ) ) ) {
 			const char fmt[] = "Memory constraint encountered initializing SQLite3 connection.";
 			snprintf( err, errlen, fmt );
 			return 0;
 		}
 
-		//db->conn = sqlite3_open( );	
+		//db->conn = sqlite3_open( );
 
 		conn->conn = (void *)db;
 	}
@@ -2461,7 +2461,7 @@ typedef struct coerce_t {
 static const char * find_ctype ( coerce_t **list, const char *name ) {
 	for ( coerce_t **x = list; x && *x; x++ ) {
 		if ( !strcasecmp( (*x)->name, name ) ) return (*x)->typename;
-	}	
+	}
 	return NULL;
 }
 
@@ -2519,7 +2519,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 	int fcount = 0;
 	char *str = NULL;
 	char *ename = NULL;
-	coerce_t **ctypes = NULL;	
+	coerce_t **ctypes = NULL;
 	int ctypeslen = 0;
 	const typemap_t *cdefs = NULL;
 
@@ -2539,19 +2539,19 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 		mysql_t *db = (mysql_t *)conn->conn;
 
 		for ( int i = 0, fcount = mysql_field_count( db->conn ); i < fcount; i++ ) {
-			MYSQL_FIELD *f = mysql_fetch_field_direct( db->res, i ); 	
+			MYSQL_FIELD *f = mysql_fetch_field_direct( db->res, i );
 			header_t *st = NULL;
-	
+
 			if ( !( st = malloc( sizeof( header_t ) )) || !memset( st, 0, sizeof( header_t ) ) ) {
 			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
 				const char fmt[] = "Memory constraints encountered while fetching headers from DSN %s";
 				snprintf( err, errlen, fmt, conn->connstr );
-				return 0;	
+				return 0;
 			}
 
 			// Get the actual type from the database engine
 			st->ntype = f->type;
-			snprintf( st->label, sizeof( st->label ), "%s", f->name );	
+			snprintf( st->label, sizeof( st->label ), "%s", f->name );
 			add_item( &conn->headers, st, header_t *, &conn->hlen );
 		}
 	}
@@ -2568,7 +2568,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			if ( !( st = malloc( sizeof( header_t ) ) ) || !memset( st, 0, sizeof( header_t ) ) ) {
 			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
 				fprintf( stderr, "Memory constraints encountered while building schema" );
-				return 0;	
+				return 0;
 			}
 
 			// Get the actual type from the database engine
@@ -2594,7 +2594,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 		if ( !( file = (file_t *)conn->conn ) ) {
 			const char fmt[] = "mmap() src was lost.";
 			snprintf( err, errlen, fmt );
-			return 0;	
+			return 0;
 		}
 
 		// Walk through and find each column first
@@ -2602,13 +2602,13 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			char *t = ( !p.size ) ? no_header : copy( &((char *)file->map)[ p.pos ], p.size - 1, &len, case_type );
 			header_t *st = NULL;
 
-			// ...	
+			// ...
 			if ( !( st = malloc( sizeof( header_t ) ) ) || !memset( st, 0, sizeof( header_t ) ) ) {
 				const char fmt[] = "Memory constraints encountered while fetching headers from file '%s'";
 				snprintf( err, errlen, fmt, conn->connstr );
-				return 0;	
+				return 0;
 			}
-		
+
 			snprintf( st->label, sizeof( st->label ) - 1, "%s", t );
 			add_item( &conn->headers, st, header_t *, &conn->hlen );
 			free( t );
@@ -2659,15 +2659,15 @@ int struct_from_dsn( dsn_t * conn ) {
  *
  */
 int prepare_dsn ( dsn_t *conn, char *err, int errlen ) {
-	// Move up the buffer so that we start from the right offset	
+	// Move up the buffer so that we start from the right offset
 	//while ( *(buffer++) != '\n' );
-	
+
 	if ( conn->type == DB_FILE ) {
 		file_t *file = (file_t *)conn->conn;
 		int len = file->size;
 		// Prevent from reading past the end...
 		while ( len-- && *((unsigned char *)file->map++) != '\n' );
-		file->offset = file->size - len;	
+		file->offset = file->size - len;
 	}
 
 	return 1;
@@ -2695,13 +2695,13 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		row_t *row = NULL;
 		file_t *file = NULL;
 
-		const unsigned int dlen = strlen( delset ); 
+		const unsigned int dlen = strlen( delset );
 		unsigned int ci = 0;
 		unsigned int line = 0;
 		unsigned char *dset = (unsigned char *)delset;
 		int clen = 0;
 
-		// Cast 	
+		// Cast
 		if ( !( file = (file_t *)conn->conn ) ) {
 			const char fmt[] = "mmap() lost reference";
 			snprintf( err, errlen, fmt );
@@ -2711,7 +2711,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		// Cycle through the set of entries that we want
 		for ( column_t *col = NULL; memwalk( p, file->map, dset, file->size - file->offset, dlen ) && line < count; ) {
 			// Increase the line count
-			if ( p->chr == '\r' ) {	
+			if ( p->chr == '\r' ) {
 				line++;
 				continue;
 			}
@@ -2757,9 +2757,9 @@ int a = conn->headers[ ci ]->type;
 				else if ( col->type == T_CHAR && col->exptype == T_STRING ) {
 					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_STRING got T_CHAR";
 					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
-				}	
-			
-				// Anything else is a failure for now	
+				}
+
+				// Anything else is a failure for now
 				else {
 					const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (Expected %s, got %s)\n";
 					snprintf( err, errlen, fmt, line + 1, col->k, ci + 1, itypes[ col->type ], itypes[ col->exptype ] );
@@ -2782,7 +2782,7 @@ int a = conn->headers[ ci ]->type;
 
 				// Add an item to said row
 				row->columns = cols;
-				add_item( &conn->rows, row, row_t *, &conn->rlen );	
+				add_item( &conn->rows, row, row_t *, &conn->rlen );
 				cols = NULL, clen = 0, ci = 0, line++;
 			}
 		}
@@ -2826,14 +2826,14 @@ int a = conn->headers[ ci ]->type;
 				if ( !col || !memset( col, 0, sizeof( column_t ) ) ) {
 					const char fmt[] = "Out of memory when allocating space for entry at row %d, column %d: %s";
 					snprintf( err, errlen, fmt, i, ci, strerror( errno ) );
-					return 0;		
+					return 0;
 				}
 
 				// Set the values
 				col->k = conn->headers[ ci ]->label;
 				col->type = conn->headers[ ci ]->type;
 
-				// Get the value and trim stuff				
+				// Get the value and trim stuff
 				// TODO: Using trim(...) here might be dangerous and lead to leaks...
 				col->v = (unsigned char *)( *r );
 
@@ -2860,7 +2860,7 @@ int a = conn->headers[ ci ]->type;
 			row->columns = cols;
 
 			// And add this row to rows
-			add_item( &conn->rows, row, row_t *, &conn->rlen );	
+			add_item( &conn->rows, row, row_t *, &conn->rlen );
 
 			// Reset everything
 			cols = NULL;
@@ -2883,7 +2883,7 @@ int a = conn->headers[ ci ]->type;
 				if ( !col || !memset( col, 0, sizeof( column_t ) ) ) {
 					const char fmt[] = "Out of memory when allocating space for entry at row %d, column %d: %s";
 					snprintf( err, errlen, fmt, i, ci, strerror( errno ) );
-					return 0;		
+					return 0;
 				}
 
 				// Set the value, column name and more for the record
@@ -2898,7 +2898,7 @@ int a = conn->headers[ ci ]->type;
 			#endif
 
 				// Add it
-				add_item( &cols, col, column_t *, &clen );	
+				add_item( &cols, col, column_t *, &clen );
 			}
 
 			// Add a new row
@@ -2912,7 +2912,7 @@ int a = conn->headers[ ci ]->type;
 			row->columns = cols;
 
 			// And add this row to rows
-			add_item( &conn->rows, row, row_t *, &conn->rlen );	
+			add_item( &conn->rows, row, row_t *, &conn->rlen );
 
 			// Reset everything
 			cols = NULL;
@@ -2950,7 +2950,7 @@ int transform_from_dsn(
 	memset( insfmt, 0, sizeof( insfmt ) );
 
 	// Define any db specific stuff
-	int ri = 0;	
+	int ri = 0;
 #ifdef BMYSQL_H
 	MYSQL_STMT *mysql_stmt = NULL;
 	MYSQL_BIND *mysql_bind_array = NULL;
@@ -3000,11 +3000,11 @@ int transform_from_dsn(
 
 		//Prefix
 	if ( oconn->type == DB_FILE ) {
-	
+
 		file = (file_t *)oconn->conn;
 
 		( format.prefix ) ? FDPRINTF( file->fd, format.prefix ) : 0;
-		
+
 		if ( t == STREAM_PRINTF || t == STREAM_COMMA )
 			;
 		else if ( t == STREAM_XML )
@@ -3034,22 +3034,22 @@ int transform_from_dsn(
 			FDPRINTF( file->fd, oconn->tablename );
 			FDPRINTF( file->fd, " (" );
 
-			for ( header_t **x = iconn->headers; x && *x; x++ ) {	
+			for ( header_t **x = iconn->headers; x && *x; x++ ) {
 				// TODO: use the pointer to detect whether or not we're at the beginning
 				//fprintf( oconn->output, &",%s"[ ( *iconn->headers == *x ) ], (*x)->label );
 				( *iconn->headers != *x ) ? FDPRINTF( file->fd, "," ) : 0;
 				//write( file->fd, (*x)->label, strlen( (*x)->label ) );
 				FDPRINTF( file->fd, (*x)->label );
 			}
-	
+
 			//The VAST majority of engines will be handle specifying the column names
 			//fprintf( oconn->output, " ) VALUES ( " );
 			//write( file->fd, ") VALUES (", sizeof( ") VALUES (" ) - 1 );
 			FDPRINTF( file->fd, ") VALUES (" );
 		}
 	}
-	
-	else {	
+
+	else {
 		//else if ( t == STREAM_PGSQL || t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
 	#ifdef BPGSQL_H
 		if ( t == STREAM_PGSQL ) {
@@ -3065,13 +3065,13 @@ int transform_from_dsn(
 			memset( argfmt, 0, sizeof( argfmt ) );
 
 			// Reset the values counter
-			//vbindlen = 0;	
+			//vbindlen = 0;
 
 			// Create the header keys
 			for ( header_t **h = iconn->headers; h && *h; h++ ) {
 				int i = snprintf( ins, ilen, &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
 				ins += i, ilen -= i;
-			} 	
+			}
 
 			// Create the insert keys
 			for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
@@ -3099,13 +3099,13 @@ int transform_from_dsn(
 			memset( argfmt, 0, sizeof( argfmt ) );
 
 			// Reset the values counter
-			//vbindlen = 0;	
+			//vbindlen = 0;
 
 			// Create the header keys
 			for ( header_t **h = iconn->headers; h && *h; h++ ) {
 				int i = snprintf( ins, ilen, &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
 				ins += i, ilen -= i;
-			} 	
+			}
 
 			// Create the insert keys
 			for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
@@ -3300,7 +3300,7 @@ int transform_from_dsn(
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
 					snprintf( err, errlen, fmt );
-					return 0;	
+					return 0;
 				}
 			#else
 			#endif
@@ -3311,7 +3311,7 @@ int transform_from_dsn(
 			#ifdef DEBUG_H
 				fprintf( stderr, "Binding value %p of length %d\n", (*col)->v, (*col)->len );
 			#endif
-				// Bind and prepare an insert?		
+				// Bind and prepare an insert?
 				pgsql_bind_array[ ci ] = (char *)(*col)->v;
 				pgsql_lengths_array[ ci ] = (*col)->len;
 			#if 0
@@ -3333,7 +3333,7 @@ int transform_from_dsn(
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
 					snprintf( err, errlen, fmt );
-					return 0;	
+					return 0;
 				}
 			#endif
 			}
@@ -3374,39 +3374,39 @@ int transform_from_dsn(
 			if ( status != 0 ) {
 				const char fmt[] = "MySQL bind failed: '%s'";
 				snprintf( err, errlen, fmt, mysql_error( oconn->conn )  );
-				return 0;	
+				return 0;
 			}
 
 			status = mysql_real_query( oconn->conn, ffmt, strlen( ffmt ) );
 			if ( status != 0 ) {
 				const char fmt[] = "MySQL real query failed: '%s'";
 				snprintf( err, errlen, fmt, mysql_error( oconn->conn )  );
-				return 0;	
+				return 0;
 			}
 		#else
 			// Prepare the statement
 			if ( mysql_stmt_prepare( mysql_stmt, ffmt, strlen( ffmt ) ) != 0 ) {
 				const char fmt[] = "MySQL statement prepare failure: '%s'";
 				snprintf( err, errlen, fmt, mysql_stmt_error( mysql_stmt )  );
-				return 0;	
+				return 0;
 			}
 
 			// Use the parameter count to check that everything worked (probably useless)
 			if ( mysql_stmt_param_count( mysql_stmt ) != iconn->hlen ) {
 				snprintf( err, errlen, "MySQL column header count mismatch." );
-				return 0;	
+				return 0;
 			}
 
 			if ( mysql_stmt_bind_param( mysql_stmt, mysql_bind_array ) != 0 ) {
 				const char fmt[] = "MySQL bind failure: '%s'";
 				snprintf( err, errlen, fmt, mysql_stmt_error( mysql_stmt )  );
-				return 0;	
+				return 0;
 			}
 
 			if ( mysql_stmt_execute( mysql_stmt ) != 0 ) {
 				const char fmt[] = "MySQL statement exec failure: '%s'";
 				snprintf( err, errlen, fmt, mysql_stmt_error( mysql_stmt ) );
-				return 0;	
+				return 0;
 			}
 		#endif
 		}
@@ -3418,7 +3418,7 @@ int transform_from_dsn(
 			fprintf( stderr, "Writing values to Postgres db\n" );
 		#endif
 
-			PGresult *r = PQexecParams( 	
+			PGresult *r = PQexecParams(
 				oconn->conn,
 				ffmt,
 				iconn->hlen,
@@ -3426,9 +3426,9 @@ int transform_from_dsn(
 				(const char * const *)pgsql_bind_array,
 				pgsql_lengths_array,
 				NULL,
-				0	
+				0
 			);
-	
+
 			if ( PQresultStatus( r ) != PGRES_COMMAND_OK ) {
 				const char fmt[] = "PostgreSQL commit failed: %s";
 				snprintf( err, errlen, fmt, PQresultErrorMessage( r ) );
@@ -3469,7 +3469,7 @@ int transform_from_dsn(
 	// If the stream is a file, flush it
 	if ( t != STREAM_MYSQL && t != STREAM_PGSQL ) {
 		fsync( file->fd );
-	}	
+	}
 	#endif
 
 	return 1;
@@ -3538,7 +3538,7 @@ int rels_between_dsn( dsn_t *iconn, dsn_t *oconn, const char *err, int errlen ) 
 	// If not, then use the defaults
 	// Also, if the type is not available, we should warn and say something
 	if ( iconn->type == DB_FILE ) {
-		// Set up the backend	
+		// Set up the backend
 		if ( oconn->type == DB_SQLITE )
 			oconn->typemap = default_map;
 		else if ( oconn->type == DB_MYSQL )
@@ -3573,7 +3573,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	// Define
 	int fcount = 0;
 	char *ename = NULL;
-	coerce_t **ctypes = NULL;	
+	coerce_t **ctypes = NULL;
 	int ctypeslen = 0;
 	const typemap_t *cdefs = NULL;
 
@@ -3591,7 +3591,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 		}
 
-		// Single coerce	
+		// Single coerce
 		else if ( memchr( ov, '=', strlen( ov ) ) ) {
 			coerce_t *t = NULL;
 			if ( ( t = create_ctype( ov, strlen( ov ) ) ) ) {
@@ -3601,7 +3601,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 		// User called this wrong
 		else {
-			snprintf( err, errlen, "Argument supplied to --coerce is invalid.\n" );	
+			snprintf( err, errlen, "Argument supplied to --coerce is invalid.\n" );
 			return 0;
 		}
 	}
@@ -3618,7 +3618,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		if ( !( file = (file_t *)iconn->conn ) ) {
 			const char fmt[] = "mmap() lost reference";
 			snprintf( err, errlen, fmt );
-			return 0;	
+			return 0;
 		}
 
 		// Find the end of the first row
@@ -3630,7 +3630,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		if ( ( iconn->hlen - 1 ) != ( count = memstrocc( file->map, &delset[2], rowlen ) ) ) {
 			const char fmt[] = "Header count and column count differ in file: %s (%d != %d)";
 			snprintf( err, errlen, fmt, iconn->connstr, iconn->hlen, count );
-			return 0;	
+			return 0;
 		}
 
 		// Initialize buffer
@@ -3649,7 +3649,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 					const char fmt[] = "Failed to find desired type '%s' at column '%s' for "
 						"supported %s types";
 					snprintf( err, errlen, fmt, ctype, st->label, get_conn_type( oconn->type ) );
-					return 0;	
+					return 0;
 				}
 			}
 
@@ -3687,11 +3687,11 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 #ifdef BMYSQL_H
 	else if ( iconn->type == DB_MYSQL ) {
 		for ( int i = 0, fcount = mysql_field_count( iconn->conn ); i < fcount; i++ ) {
-			MYSQL_FIELD *f = mysql_fetch_field_direct( iconn->res, i ); 	
+			MYSQL_FIELD *f = mysql_fetch_field_direct( iconn->res, i );
 			header_t *st = iconn->headers[ i ];
 			typemap_t *type = NULL;
 			const char *ctype = NULL;
-	
+
 			// Get the actual type from the database engine
 			st->ntype = f->type;
 
@@ -3699,7 +3699,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			if ( !( type = get_typemap( iconn->typemap, st->ntype ) ) ) {
 				// TODO: Get the string representation of this name so the user knows
 				snprintf( err, errlen, "Unsupported MySQL type received: %d", st->ntype );
-				return 0;	
+				return 0;
 			}
 
 			// If the user asked for a coerced type, add it here
@@ -3708,7 +3708,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 				if ( !( st->ctype = get_typemap_by_native_name( oconn->typemap, ctype ) ) ) {
 					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
 					snprintf( err, errlen, fmt, ctype, f->name, ename );
-					return 0;	
+					return 0;
 				}
 			}
 
@@ -3722,7 +3722,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			st->filter = 0;
 			st->date = 0; // The timezone data?
 		#endif
-			snprintf( st->label, sizeof( st->label ), "%s", f->name );	
+			snprintf( st->label, sizeof( st->label ), "%s", f->name );
 			add_item( &iconn->headers, st, header_t *, &iconn->hlen );
 		}
 	}
@@ -3743,7 +3743,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			if ( !( type = get_typemap( iconn->typemap, st->ntype ) ) ) {
 				// TODO: Get the string representation of this name so the user knows
 				snprintf( err, errlen, "Invalid PostgreSQL type received: %d", st->ntype );
-				return 0;	
+				return 0;
 			}
 
 			// If the user asked for a coerced type, add it here
@@ -3753,7 +3753,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 					// LEt uesr know chosen engine, and real type name
 					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
 					snprintf( err, errlen, fmt, ctype, name, ename );
-					return 0;	
+					return 0;
 				}
 			}
 
@@ -3870,9 +3870,9 @@ int main ( int argc, char *argv[] ) {
 
 	for ( ++argv; *argv; ) {
 		if ( !strcmp( *argv, "--no-unsigned" ) )
-			no_unsigned = 1;	
+			no_unsigned = 1;
 		else if ( !strcmp( *argv, "--add-datestamps" ) )
-			want_datestamps = 1;	
+			want_datestamps = 1;
 		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
 			typesafe = 1;
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
@@ -3884,20 +3884,20 @@ int main ( int argc, char *argv[] ) {
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) )
 			stream_fmt = STREAM_SQL, convert = 1;
 		else if ( !strcmp( *argv, "--camel-case" ) )
-			case_type = CASE_CAMEL;	
+			case_type = CASE_CAMEL;
 		else if ( !strcmp( *argv, "-S" ) || !strcmp( *argv, "--schema" ) )
 			schema = 1;
 		else if ( !strcmp( *argv, "-H" ) || !strcmp( *argv, "--headers" ) )
-			headers_only = 1;	
+			headers_only = 1;
 		else if ( !strcmp( *argv, "-c" ) || !strcmp( *argv, "--convert" ) )
-			convert = 1;	
+			convert = 1;
 		else if ( !strcmp( *argv, "-C" ) || !strcmp( *argv, "--coerce" ) ) {
 			if ( !dupval( *( ++argv ), &coercion ) ) {
 				return PERR( "%s\n", "No argument specified for --coerce." );
 			}
 		}
 		else if ( !strcmp( *argv, "--id" ) ) {
-			want_id = 1;	
+			want_id = 1;
 			if ( !dupval( *( ++argv ), &id_name ) ) {
 				return PERR( "%s\n", "No argument specified for --id." );
 			}
@@ -3966,7 +3966,7 @@ int main ( int argc, char *argv[] ) {
 				return PERR( "%s\n", "No argument specified for --format." );
 			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
 				return PERR( "Invalid format '%s' requested.\n", streamtype );
-			}	
+			}
 		}
 		else if ( !strcmp( *argv, "--class" ) ) {
 			classdata = 1;
@@ -3988,7 +3988,7 @@ int main ( int argc, char *argv[] ) {
 #endif
 		}
 		else if ( !strcmp( *argv, "-a" ) || !strcmp( *argv, "--ascii" ) ) {
-			ascii = 1;	
+			ascii = 1;
 #if 0
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return PERR( "%s\n", "No argument specified for --id." );
@@ -4024,13 +4024,13 @@ int main ( int argc, char *argv[] ) {
 				od = strdup( *argv );
 				char *a = memchr( od, ',', strlen( od ) );
 				if ( !a )
-					ld = od, rd = od; 	
+					ld = od, rd = od;
 				else {
 					*a = '\0';
-					ld = od;	
+					ld = od;
 					rd = ++a;
 				}
-			}	
+			}
 		}
 #if 0
 		else if ( !strcmp( *argv, "-D" ) || !strcmp( *argv, "--datasource" ) ) {
@@ -4112,7 +4112,7 @@ int main ( int argc, char *argv[] ) {
 		return PERR( "Input source is invalid: %s\n", err );
 	}
 
-	// Open the DSN first (regardless of type)	
+	// Open the DSN first (regardless of type)
 	if ( !open_dsn( &input, query, err, sizeof( err ) ) ) {
 		PERR( "DSN open failed: %s.\n", err );
 		return 0;
@@ -4331,9 +4331,9 @@ exit(0);
 		} // end for
 
 		// once we get to the end, "dismount" whatever preparations we made
-		//freesupp_dsn( &input );	
-	
-		// close our open data source		
+		//freesupp_dsn( &input );
+
+		// close our open data source
 		close_dsn( &output );
 	}
 
