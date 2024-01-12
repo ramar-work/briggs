@@ -71,8 +71,11 @@
 #define nerr( ... ) \
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
 
-#define PERR( ... ) \
+#define ERRPRINTF( C, ... ) \
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
+
+// This is only here for easy transitioning later...
+#define ERRCODE 1
 
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
@@ -1567,27 +1570,31 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 	// Get the database type
 	if ( 0 ) 0;
 #ifdef BMYSQL_H
-	//if ( strlen( dsn ) > 8 && !memcmp( dsn, "mysql://", 8 ) )
-	if ( STRLCMP( dsn, "mysql://" ) )
-		conn->type = DB_MYSQL, conn->port = 3306, dsn += 8, dsnlen -= 8;
+	else if ( STRLCMP( dsn, "mysql://" ) ) {
+		conn->type = DB_MYSQL;
+		conn->port = 3306;
+		dsn += 8, dsnlen -= 8;
+	}
 #endif
 #ifdef BPGSQL_H
-	else if ( STRLCMP( dsn, "postgresql://" ) )
-	//else if ( strlen( dsn ) > 13 && !memcmp( dsn, "postgresql://", strlen( "postgresql://" ) ) )
-		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 13, dsnlen -= 13;
-	else if ( STRLCMP( dsn, "postgres://" ) )
-	//else if ( strlen( dsn ) > 11 && !memcmp( dsn, "postgres://", strlen( "postgres://" ) ) )
-		conn->type = DB_POSTGRESQL, conn->port = 5432, dsn += 11, dsnlen -= 11;
+	else if ( ( STRLCMP( dsn, "postgresql://" ) ) || ( STRLCMP( dsn, "postgres://" ) ) ) {
+		const int len = STRLCMP( dsn, "postgresql://" ) ? 13 : 11;
+		conn->type = DB_POSTGRESQL;
+		conn->port = 5432;
+		dsn += len, dsnlen -= len;
+	}
 #endif
-	else if ( STRLCMP( dsn, "sqlite3://" ) )
-	//else if ( strlen( dsn ) > 10 && !memcmp( dsn, "sqlite3://", strlen( "sqlite3://" ) ) )
-		conn->type = DB_SQLITE, conn->port = 0, dsn += 10, dsnlen -= 10;
+	else if ( STRLCMP( dsn, "sqlite3://" ) ) {
+		conn->type = DB_SQLITE;
+		conn->port = 0;
+		dsn += 10, dsnlen -= 10;
+	}
 	else {
-		if ( strlen( dsn ) > 7 && !memcmp( dsn, "file://", 7 ) ) {
-			conn->connstr += 7, dsnlen -= 7;
-		}
-		else if ( strlen( dsn ) == 1 && *dsn == '-' ) {
-			conn->connstr = "/dev/stdin";
+		if ( strlen( dsn ) == 1 && *dsn == '-' )
+			conn->connstr = "/dev/stdin", dsnlen -= 1, dsn += 1;
+		else if ( STRLCMP( dsn, "file://" ) ) {
+			// Use memmove to get rid of the file:// prefix
+			conn->connstr += 7, dsn += 7, dsnlen -= 7;
 		}
 
 		// TODO: Check valid extensions
@@ -1851,7 +1858,7 @@ void print_dsn ( dsn_t *conninfo ) {
 		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
 			fprintf( stdout, "\t%s [%p, %d, %s]\n",
 				(*h)->label,
-				(*h)->ctype,
+				(void *)(*h)->ctype,
 				(*h)->ntype,
 				itypes[ (*h)->type ]
 			);
@@ -2614,6 +2621,12 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			free( t );
 			if ( p.chr == '\n' || p.chr == '\r' ) break;
 		}
+	}
+
+	if ( conn->hlen < 2 ) {
+		const char fmt[] = "Delimiter ('%s') not found at connection '%s'";
+		snprintf( err, errlen, fmt, DELIM, conn->connstr );
+		return 0;
 	}
 
 	return 1;
@@ -3660,7 +3673,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 
 			// Try to copy again
-			if ( !( t = copy( (char *)&file->map[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
+			if ( !( t = copy( &((char *)file->map)[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
 				// TODO: This isn't very clear, but it is unlikely we'll ever run into it...
 				snprintf( err, errlen, "Out of memory error occurred." );
 				return 0;
@@ -3779,6 +3792,88 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 
 
+/**
+ * scaffold_dsn( dsn_t *, dsn_t *, const char * )
+ * ==============================================
+ *
+ * 
+ *
+ */
+int scaffold_dsn ( dsn_t *ic, dsn_t *oc, char *tname, char *err, int errlen  ) {
+
+
+	// If a connection string was specified, try parsing for info
+	if ( oc->connstr ) {
+		if ( !parse_dsn_info( oc, err, sizeof( err  ) ) ) {
+			return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
+			return 0;
+		}
+
+		// Set the table if the user specified one
+		if ( tname ) {
+			if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
+				return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", tname );
+				return 0;
+			}
+			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
+		}
+	}
+
+	// If a table only was specified, use it as the output source
+	else if ( tname ) {
+		if ( strlen( tname ) < 1 ) {
+			return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
+			return 0;
+		}
+
+		if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
+			return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", tname );
+			return 0;
+		}
+
+		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
+	}
+
+	// Finally, if nothing was specified, assume the input source has the table name
+	else {
+		if ( !strlen( ic->tablename ) ) {
+			return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
+			return 0;
+		}
+
+		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", ic->tablename );
+	}
+
+	if ( !oc->type ) {
+		oc->type = DB_SQLITE;
+		oc->typemap = default_map;
+	}
+
+
+	return 1;
+} 
+
+
+
+
+/**
+ * cmd_headers ( dsn_t * )
+ * ===========================
+ *
+ * Dump the headers only and stop.
+ *
+ */
+int cmd_headers ( dsn_t *conn ) {
+	for ( header_t **s = conn->headers; s && *s; s++ )
+		printf( "%s\n", (*s)->label );
+
+	// Free everything
+	destroy_dsn_headers( conn );
+	close_dsn( conn );
+	return 0;
+}
+
+
 
 //Options
 int help () {
@@ -3893,41 +3988,41 @@ int main ( int argc, char *argv[] ) {
 			convert = 1;
 		else if ( !strcmp( *argv, "-C" ) || !strcmp( *argv, "--coerce" ) ) {
 			if ( !dupval( *( ++argv ), &coercion ) ) {
-				return PERR( "%s\n", "No argument specified for --coerce." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
 			}
 		}
 		else if ( !strcmp( *argv, "--id" ) ) {
 			want_id = 1;
 			if ( !dupval( *( ++argv ), &id_name ) ) {
-				return PERR( "%s\n", "No argument specified for --id." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
 			}
 		}
 #if 0
 		else if ( !strcmp( *argv, "-k" ) || !strcmp( *argv, "--schema" ) ) {
 			schema = 1;
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --schema." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --schema." );
 			}
 		}
 		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
 			if ( !dupval( *( ++argv ), &root ) ) {
-				return PERR( "%s\n", "No argument specified for --root / --name." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --root / --name." );
 			}
 		}
 		else if ( !strcmp( *argv, "--name" ) ) {
 			if ( !dupval( *( ++argv ), &root ) ) {
-				return PERR( "%s\n", "No argument specified for --name / --root." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --name / --root." );
 			}
 		}
 #endif
 		else if ( !strcmp( *argv, "--for" ) ) {
 			if ( output.connstr ) {
 				// Can't peicfy both output and --for
-				return PERR( "%s\n", "Can't specify both --for & --output" );
+				return ERRPRINTF( ERRCODE, "%s\n", "Can't specify both --for & --output" );
 			}
 
 			if ( *( ++argv ) == NULL ) {
-				PERR( "%s\n", "No argument specified for flag --for." );
+				ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
 				return 1;
 			}
 
@@ -3952,20 +4047,20 @@ int main ( int argc, char *argv[] ) {
 				dbengine = SQL_MSSQLSRV;
 			else if ( !strcasecmp( *argv, "oracle" ) ) {
 				dbengine = SQL_ORACLE;
-				return PERR( "Oracle SQL dialect is currently unsupported, sorry...\n" );
+				return ERRPRINTF( ERRCODE, "Oracle SQL dialect is currently unsupported, sorry...\n" );
 			}
 		#endif
 			else {
-				return PERR( "Argument specified '%s' for flag --for is an invalid option.", *argv );
+				return ERRPRINTF( ERRCODE, "Argument specified '%s' for flag --for is an invalid option.", *argv );
 			}
 
 		}
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
 			convert = 1;
 			if ( !dupval( *( ++argv ), &streamtype ) )
-				return PERR( "%s\n", "No argument specified for --format." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --format." );
 			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
-				return PERR( "Invalid format '%s' requested.\n", streamtype );
+				return ERRPRINTF( ERRCODE, "Invalid format '%s' requested.\n", streamtype );
 			}
 		}
 		else if ( !strcmp( *argv, "--class" ) ) {
@@ -3974,7 +4069,7 @@ int main ( int argc, char *argv[] ) {
 			case_type = CASE_CAMEL;
 #if 0
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --class." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --class." );
 			}
 #endif
 		}
@@ -3983,7 +4078,7 @@ int main ( int argc, char *argv[] ) {
 			serialize = 1;
 #if 0
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --struct." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --struct." );
 			}
 #endif
 		}
@@ -3991,35 +4086,35 @@ int main ( int argc, char *argv[] ) {
 			ascii = 1;
 #if 0
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --id." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
 			}
 #endif
 		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) )
-			return PERR( "%s\n", "No argument specified for --prefix." );
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
 		}
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--suffix" ) ) {
 			if ( !dupval( *(++argv), &suffix ) )
-			return PERR( "%s\n", "No argument specified for --suffix." );
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --suffix." );
 		}
 		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
 			char *del = *(++argv);
 			if ( !del ) {
-				return PERR( "%s\n", "No argument specified for --delimiter." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
 			}
 			else if ( *del == 9 || ( strlen( del ) == 2 && !strcmp( del, "\\t" ) ) )  {
 				DELIM = "\t";
 			}
 			else if ( !dupval( del, &DELIM ) ) {
-				return PERR( "%s\n", "No argument specified for --delimiter." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
 			}
 		}
 		else if ( !strcmp( *argv, "-u" ) || !strcmp( *argv, "--output-delimiter" ) ) {
 			//Output delimters can be just about anything,
 			//so we don't worry about '-' or '--' in the statement
 			if ( ! *( ++argv ) )
-				return PERR( "%s\n", "No argument specified for --output-delimiter." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output-delimiter." );
 			else {
 				od = strdup( *argv );
 				char *a = memchr( od, ',', strlen( od ) );
@@ -4035,32 +4130,32 @@ int main ( int argc, char *argv[] ) {
 #if 0
 		else if ( !strcmp( *argv, "-D" ) || !strcmp( *argv, "--datasource" ) ) {
 			if ( !dupval( *(++argv), &input.connstr ) )
-			return PERR( "%s\n", "No argument specified for --datasource." );
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --datasource." );
 		}
 #endif
 		else if ( !strcmp( *argv, "-T" ) || !strcmp( *argv, "--table" ) ) {
 			if ( !dupval( *(++argv), &table ) )
-			return PERR( "%s\n", "No argument specified for --table." );
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --table." );
 		}
 		else if ( !strcmp( *argv, "-Q" ) || !strcmp( *argv, "--query" ) ) {
 			if ( !dupval( *(++argv), &query ) )
-			return PERR( "%s\n", "No argument specified for --query." );
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --query." );
 		}
 		else if ( !strcmp( *argv, "-i" ) || !strcmp( *argv, "--input" ) ) {
 		#if 0
 			char *arg = *( ++argv );
 			if ( !arg || !dupval( arg, &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --input." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
 			}
 		#endif
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --input." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
 			}
 		}
 		else if ( !strcmp( *argv, "-o" ) || !strcmp( *argv, "--output" ) ) {
 			char *arg = *( ++argv );
 			if ( !arg || !dupval( arg, &output.connstr ) ) {
-				return PERR( "%s\n", "No argument specified for --output." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output." );
 			}
 		}
 		else if ( !strcmp( *argv, "-X" ) || !strcmp( *argv, "--dumpdsn" ) ) {
@@ -4076,65 +4171,142 @@ int main ( int argc, char *argv[] ) {
 		argv++;
 	}
 
-	// Dump the DSN(s)
-	if ( dump_parsed_dsn ) {
-		if ( !parse_dsn_info( &input, err, sizeof( err ) ) ) {
-			PERR( "Input file was invalid: %s\n", err );
-			return 1;
-		}
-
-		print_dsn( &input );
-#if 0
-		if ( output.connstr ) {
-			if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
-				PERR( "Output file was invalid: %s\n", err );
-				return 1;
-			}
-
-			print_dsn( &output );
-		}
-#endif
-		return 0;
-	}
-
 	// Start the timer here
 	if ( show_stats )
 		clock_gettime( CLOCK_REALTIME, &stimer );
 
 	// If the user didn't actually specify an action, we should close and tell them that
 	// what they did is useless.
-	if ( !convert && !schema && !headers_only ) {
-		return PERR( "No action specified, exiting.\n" );
-	}
+	if ( !convert && !schema && !headers_only )
+		return ERRPRINTF( ERRCODE, "No action specified, exiting.\n" );
 
 	// The dsn is always going to be the input
-	if ( !parse_dsn_info( &input, err, sizeof( err  ) ) ) {
-		return PERR( "Input source is invalid: %s\n", err );
-	}
+	if ( !parse_dsn_info( &input, err, sizeof( err  ) ) )
+		return ERRPRINTF( ERRCODE, "Input source is invalid: %s\n", err );
 
 	// Open the DSN first (regardless of type)
-	if ( !open_dsn( &input, query, err, sizeof( err ) ) ) {
-		PERR( "DSN open failed: %s.\n", err );
-		return 0;
-	}
+	if ( !open_dsn( &input, query, err, sizeof( err ) ) )
+		return ERRPRINTF( ERRCODE, "DSN open failed: %s.\n", err );
 
 	// Create the header_t here
 	if ( !headers_from_dsn( &input, err, sizeof( err ) ) ) {
-		PERR( "Header creation failed: %s.\n", err );
-		return 0;
+		close_dsn( &input );
+		return ERRPRINTF( ERRCODE, "Header creation failed: %s.\n", err );
 	}
 
 	// Create the headers only
-	if ( headers_only ) {
-		for ( header_t **s = input.headers; s && *s; s++ ) {
-			printf( "%s\n", (*s)->label );
-		}
+	if ( headers_only )
+		return cmd_headers( &input );	
 
-		// Free everything
-		destroy_dsn_headers( &input );
-		close_dsn( &input );
+
+scaffold_dsn( &input, &output, table, err, sizeof( err ) );
+
+fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
+	print_dsn( &input ),
+fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
+	print_dsn( &output );
+
+return 0;
+	// The second source should ALWAYS be mocked
+#if 0
+- schema, struct, and class are all based off of the headers 
+- convert to some other format
+#endif
+
+// If a connection string was specified, try parsing for info
+if ( output.connstr ) {
+	if ( !parse_dsn_info( &output, err, sizeof( err  ) ) ) {
+		return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
 		return 0;
 	}
+
+	// Set the table if the user specified one
+	if ( table ) {
+		if ( strlen( table ) >= sizeof( output.tablename ) ) {
+			return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
+			return 0;
+		}
+		snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
+	}
+}
+
+// If a table only was specified, use it as the output source
+else if ( table ) {
+	if ( strlen( table ) < 1 ) {
+		return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
+		return 0;
+	}
+
+	if ( strlen( table ) >= sizeof( output.tablename ) ) {
+		return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
+		return 0;
+	}
+
+	snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
+}
+
+// Finally, if nothing was specified, assume the input source has the table name
+else {
+	if ( !strlen( input.tablename ) ) {
+		return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
+		return 0;
+	}
+
+	snprintf( output.tablename, sizeof( output.tablename ), "%s", input.tablename );
+}
+
+if ( !output.type ) {
+	output.type = DB_SQLITE;
+	output.typemap = default_map;
+}
+
+// Do any preparation on the input dsn first
+if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
+	destroy_dsn_headers( &input );
+	close_dsn( &input );
+	return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
+	return 1;
+}
+#if 0
+// Set for SQLite by default
+if ( !output.type ) {
+	if ( input.type == DB_FILE || input.type == DB_SQLITE )
+		output.type = DB_SQLITE;
+	else if ( input.type == DB_MYSQL )
+		output.type = DB_MYSQL;
+	else if ( input.type == DB_POSTGRESQL )
+		output.type = DB_POSTGRESQL;
+}
+// Figure out any relevant mappings
+if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
+	return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
+	return 0;
+}
+#endif
+
+// Get the types of each thing in the column
+if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
+	return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
+	return 0;
+}
+
+fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
+	print_dsn( &input ),
+fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
+	print_dsn( &output );
+#if 0
+for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
+	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
+#endif
+
+// Test that everything can be destroyed too
+return 0;
+
+
+
+
+
+
 
 
 	// Create a schema
@@ -4143,14 +4315,14 @@ int main ( int argc, char *argv[] ) {
 		// If a connection string was specified, try parsing for info
 		if ( output.connstr ) {
 			if ( !parse_dsn_info( &output, err, sizeof( err  ) ) ) {
-				PERR( "Output sink is invalid: %s\n", err );
+				return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
 				return 0;
 			}
 
 			// Set the table if the user specified one
 			if ( table ) {
 				if ( strlen( table ) >= sizeof( output.tablename ) ) {
-					PERR( "Table name '%s' is too long for buffer.\n", table );
+					return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
 					return 0;
 				}
 				snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
@@ -4160,12 +4332,12 @@ int main ( int argc, char *argv[] ) {
 		// If a table only was specified, use it as the output source
 		else if ( table ) {
 			if ( strlen( table ) < 1 ) {
-				PERR( "Table name is invalid or unspecified for --schema command.\n" );
+				return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
 				return 0;
 			}
 
 			if ( strlen( table ) >= sizeof( output.tablename ) ) {
-				PERR( "Table name '%s' is too long for buffer.\n", table );
+				return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
 				return 0;
 			}
 
@@ -4175,7 +4347,7 @@ int main ( int argc, char *argv[] ) {
 		// Finally, if nothing was specified, assume the input source has the table name
 		else {
 			if ( !strlen( input.tablename ) ) {
-				PERR( "Table name is invalid or unspecified for --schema command.\n" );
+				return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
 				return 0;
 			}
 
@@ -4191,7 +4363,7 @@ int main ( int argc, char *argv[] ) {
 		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "Failed to prepare DSN: %s.\n", err );
+			return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
 			return 1;
 		}
 #if 0
@@ -4206,14 +4378,14 @@ int main ( int argc, char *argv[] ) {
 		}
 		// Figure out any relevant mappings
 		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
-			PERR( "Rel build failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
 			return 0;
 		}
 #endif
 
 		// Get the types of each thing in the column
 		if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
-			PERR( "typeget failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 			return 0;
 		}
 
@@ -4230,7 +4402,7 @@ exit(0);
 			free( output.connstr );
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "Schema build failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "Schema build failed: %s\n", err );
 			return 0;
 		}
 		// Dump said schema
@@ -4252,10 +4424,11 @@ exit(0);
 		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "Failed to prepare DSN: %s.\n", err );
+			return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
 			return 1;
 		}
 
+#if 0
 		// Then open a new DSN for the output (there must be an --output flag)
 		if ( !output.connstr ) {
 			output.connstr = strdup( "/dev/stdout" );
@@ -4265,16 +4438,17 @@ exit(0);
 		if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "Output DSN is invalid: %s\n", err );
+			return ERRPRINTF( ERRCODE, "Output DSN is invalid: %s\n", err );
 			return 1;
 		}
+#endif
 
 	#if 1
 		// Test and try to create if it does not exist
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "Output DSN '%s' is inaccessible or could not be created: %s\n", output.connstr, err );
+			return ERRPRINTF( ERRCODE, "Output DSN '%s' is inaccessible or could not be created: %s\n", output.connstr, err );
 			close_dsn( &output );
 			return 1;
 		}
@@ -4290,19 +4464,19 @@ exit(0);
 		if ( !open_dsn( &output, query, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
-			PERR( "DSN open failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 			return 1;
 		}
 
 		// Figure out any relevant mappings
 		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
-			PERR( "Rel build failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
 			return 0;
 		}
 
 		// Get the types of each thing in the column
 		if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
-			PERR( "typeget failed: %s\n", err );
+			return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 			return 0;
 		}
 
@@ -4315,7 +4489,7 @@ exit(0);
 			if ( !records_from_dsn( &input, 100, 0, err, sizeof( err ) ) ) {
 				destroy_dsn_headers( &input );
 				close_dsn( &input );
-				return PERR( "Failed to generate records from data source: %s.\n", err );
+				return ERRPRINTF( ERRCODE, "Failed to generate records from data source: %s.\n", err );
 			}
 
 			// Do the transport (buffering can be added pretty soon)
