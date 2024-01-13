@@ -67,6 +67,7 @@
  #include <sqlite3.h>
 #endif
 
+#define TYPEMAP_TERM INT_MIN
 
 #define nerr( ... ) \
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
@@ -413,7 +414,7 @@ typedef struct header_t {
 	int options;
 
 	/* The native type used to save this value in the original datasource */
-	int ntype;
+	//int ntype;
 
 	/* The matched type used to convert this value into a format suitable for another datasource */
 	int mtype;
@@ -421,8 +422,11 @@ typedef struct header_t {
 	/* A sensible base type */
 	type_t type;
 
-	/* A coerced type (preferably a name) */
+	/* Native matched type */
 	typemap_t *ctype;
+
+	/* A coerced type (preferably a name) */
+	typemap_t *ntype;
 } header_t;
 
 
@@ -497,16 +501,15 @@ typedef struct dsn_t {
 	int options;
 	//char socketpath[ 2048 ];
 	char *connstr;
-	//FILE *file;
 	void *conn;
-	void *res;
+	//void *res;
 	header_t **headers;
 	row_t **rows;
 	int hlen;
 	int rlen;
 	int clen;
-	char **defs;
-	FILE *output;
+	//char **defs;
+	//FILE *output;
 	const typemap_t *typemap;
 	const typemap_t *convmap;
 	int offset;
@@ -534,8 +537,34 @@ typedef struct function_t {
 } function_t;
 
 
+typedef struct config_t {
 
-#define TYPEMAP_TERM INT_MIN
+	stream_t wstream;	// wstream - A chosen stream
+	char wdeclaration;	// wdeclaration - Dump a class or struct declaration only 
+	char wschema;	// wschema - Dump the schema only
+	char wheaders;	// wheaders - Dump the headers only
+	char wconvert;	// wconvert - Convert the source into some other format
+	char wclass;	// wclass - Convert to a class
+	char wstruct;	// wstruct - Convert to a struct
+	char wtypesafe;
+	char wnewline;
+	char wdatestamps;
+	char wnounsigned;
+	char wspcase;
+	char wid;   // Use a unique ID when reading from a datasource
+	char wstats;   // Use the stats
+	
+	char *wcutcols;  // The user wants to cut columns
+	char *widname;  // The unique ID column name
+	char *wcoerce;  // The user wants to override certain types
+	char *wquery;	// A custom query from the user
+	char *wprefix;
+	char *wsuffix; 
+	char *wtable; 
+
+} config_t;
+
+
 
 
 // This is for default types.  A map IS a lot of overhead...
@@ -547,7 +576,23 @@ const typemap_t default_map[] = {
 	{ T_INTEGER, N(T_INTEGER), "INTEGER", T_INTEGER, 1 },
 	{ T_DOUBLE, N(T_DOUBLE), "REAL", T_DOUBLE, 1 },
 	{ T_BINARY, N(T_BINARY), "BLOB", T_BINARY, 1 },
+	{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN, 1 },
+
+	// Supporting base dates is EXTREMELY difficult... be careful supporting it
 	//{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN },
+	{ TYPEMAP_TERM },
+};
+
+
+const typemap_t sqlite3_map[] = {
+	{ T_NULL, N(T_NULL), NULL, T_NULL, 0 },
+	{ T_STRING, N(T_STRING), "TEXT", T_STRING, 1 },
+	/* NOTE: This will force STRING to take precedence over CHAR.  DO NOT TOUCH THIS */
+	{ T_CHAR, N(T_CHAR), "TEXT", T_CHAR, 1 },
+	{ T_INTEGER, N(T_INTEGER), "INTEGER", T_INTEGER, 1 },
+	{ T_DOUBLE, N(T_DOUBLE), "REAL", T_DOUBLE, 1 },
+	{ T_BINARY, N(T_BINARY), "BLOB", T_BINARY, 1 },
+	{ T_INTEGER, N(T_INTEGER), "INTEGER", T_BOOLEAN, 1 },
 	{ TYPEMAP_TERM },
 };
 
@@ -561,15 +606,17 @@ static const char * dbtypes[] = {
 };
 
 
-static const char * get_conn_type( dbtype_t type ) {
-	if ( type < sizeof( dbtypes ) / sizeof( const char * ) && dbtypes[ type ] ) {
-		return dbtypes[ type ];
-	}
-	return NULL;
+static const char * get_conn_type( dbtype_t t ) {
+	return ( t >= 0 && t < sizeof( dbtypes ) / sizeof( char * ) ) ? dbtypes[ t ] : NULL; 
 }
 
 
-typemap_t * get_typemap ( const typemap_t *types, int type ) {
+static const char * get_btypename ( type_t t ) {
+	return ( t >= 0 && (int)t < sizeof( itypes ) / sizeof( char * ) ) ? itypes[ t ] : NULL;
+}
+
+
+typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
 		if ( t->ntype == type ) return (typemap_t *)t;
 	}
@@ -577,15 +624,25 @@ typemap_t * get_typemap ( const typemap_t *types, int type ) {
 }
 
 
-typemap_t * get_typemap_by_native_name ( const typemap_t *types, const char *name ) {
+typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		if ( !strcmp( name, t->typename ) ) {
+		if ( !strcasecmp( name, t->typename ) ) {
 			return (typemap_t *)t;
 		}
 	}
 	return NULL;
 }
 
+
+typemap_t * get_typemap_by_etype ( const typemap_t *types, int type ) {
+	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
+		if ( t->ntype == type ) return (typemap_t *)t;
+	}
+	return NULL;
+}
+
+
+// Use this to look for matches by basetype
 typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
 	#ifdef DEBUG_H
@@ -666,6 +723,7 @@ static const typemap_t pgsql_map[] = {
 	{ PG_VARCHAROID, N(PG_VARCHAROID), "varchar", T_CHAR, 1 },
 	{ PG_BYTEAOID, N(PG_BYTEAOID), "bytea", T_BINARY, 1 },
 	{ PG_BYTEAOID, N(PG_BYTEAOID), "blob", T_BINARY, 0 },
+	{ PG_BOOLOID, N(PG_BOOLOID), "boolean", T_BOOLEAN, 1 },
 	{ TYPEMAP_TERM },
 #if 0
 	[PG_DATEOID] = "PG_DATEOID",
@@ -673,6 +731,9 @@ static const typemap_t pgsql_map[] = {
 	[PG_TIMESTAMPOID] = "PG_TIMESTAMPOID",
 	[PG_TIMESTAMPZOID] = "PG_TIMESTAMPZOID",
 	[PG_TIMETZOID] = "PG_TIMETZOID",
+	[PG_DATETIMEOID] = "PG_DATETIMEOID",
+#endif
+#if 0
 	[PG_OIDOID] = "PG_OIDOID",
 	[PG_BITOID] = "PG_BITOID",
 	[PG_VARBITOID] = "PG_VARBITOID",
@@ -799,6 +860,7 @@ static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "TINYINT", T_INTEGER },
 	{ MYSQL_TYPE_SHORT, N(MYSQL_TYPE_SHORT), "SMALLINT", T_INTEGER },
 	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INT", T_INTEGER, 1 },
+	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INTEGER", T_INTEGER, 0 },
 	{ MYSQL_TYPE_INT24, N(MYSQL_TYPE_INT24), "MEDIUMINT", T_INTEGER },
 	{ MYSQL_TYPE_LONGLONG, N(MYSQL_TYPE_LONGLONG), "BIGINT", T_INTEGER },
 	{ MYSQL_TYPE_DECIMAL, N(MYSQL_TYPE_DECIMAL), "DECIMAL", T_DOUBLE, 1 }, /* or NUMERIC */
@@ -808,6 +870,8 @@ static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_STRING, N(MYSQL_TYPE_STRING), "CHAR", T_CHAR, 1 },
 	{ MYSQL_TYPE_VAR_STRING, N(MYSQL_TYPE_VAR_STRING), "VARCHAR", T_STRING, 1 },
 	{ MYSQL_TYPE_BLOB, N(MYSQL_TYPE_BLOB), "BLOB", T_BINARY, 1 },
+	/* This just maps to TINYINT behind the scenes */ 
+	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "BOOL", T_BOOLEAN, 1 },
 	{ TYPEMAP_TERM },
 #if 0
 	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "TIMESTAMP", T_XXX },
@@ -923,7 +987,6 @@ char *output_file = NULL;
 char *FFILE = NULL;
 char *OUTPUT = NULL;
 char *INPUT = NULL;
-//char *DELIM = ",";
 char *DELIM = ",";
 char *prefix = NULL;
 char *suffix = NULL;
@@ -1573,6 +1636,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 	else if ( STRLCMP( dsn, "mysql://" ) ) {
 		conn->type = DB_MYSQL;
 		conn->port = 3306;
+		conn->typemap = mysql_map;
 		dsn += 8, dsnlen -= 8;
 	}
 #endif
@@ -1581,12 +1645,14 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		const int len = STRLCMP( dsn, "postgresql://" ) ? 13 : 11;
 		conn->type = DB_POSTGRESQL;
 		conn->port = 5432;
+		conn->typemap = pgsql_map;
 		dsn += len, dsnlen -= len;
 	}
 #endif
 	else if ( STRLCMP( dsn, "sqlite3://" ) ) {
 		conn->type = DB_SQLITE;
 		conn->port = 0;
+		conn->typemap = default_map;
 		dsn += 10, dsnlen -= 10;
 	}
 	else {
@@ -1600,6 +1666,7 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 		// TODO: Check valid extensions
 		conn->type = DB_FILE;
 		conn->port = 0;
+		conn->typemap = default_map;
 		return 1;
 	}
 
@@ -1851,15 +1918,25 @@ void print_dsn ( dsn_t *conninfo ) {
 	fprintf( stdout, "dsn->port:       %d\n", conninfo->port );
 	fprintf( stdout, "dsn->conn:       %p\n", conninfo->conn );
 	fprintf( stdout, "dsn->options:    '%s'\n", conninfo->connoptions );
+	fprintf( stdout, "dsn->typemap:    '%p' ", (void *)conninfo->typemap );
+
+	if ( conninfo->typemap == default_map )
+		fprintf( stdout, "(default|SQLite3)" );
+	else if ( conninfo->typemap == mysql_map )
+		fprintf( stdout, "(MySQL)" );
+	else if ( conninfo->typemap == pgsql_map ) {
+		fprintf( stdout, "(PostgreSQL)" );
+	}
+	fprintf( stdout, "\n" );
 
 	//if headers have been initialized show me that
+	fprintf( stdout, "dsn->headers:    %p\n", (void *)conninfo->headers );
 	if ( conninfo->headers ) {
-		fprintf( stdout, "dsn->headers:\n" );
 		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
-			fprintf( stdout, "\t%s [%p, %d, %s]\n",
+			fprintf( stdout, "  %-30s [%s, %s, %s]\n",
 				(*h)->label,
-				(void *)(*h)->ctype,
-				(*h)->ntype,
+				(*h)->ctype ? "?" : "(nil)",
+				(*h)->ntype ? (*h)->ntype->typename : "(nil)",
 				itypes[ (*h)->type ]
 			);
 		}
@@ -1939,6 +2016,12 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 	if ( !strlen( oconn->tablename ) ) {
 		snprintf( err, errlen, "No table name was specified." );
 		return 0;
+	}
+
+	// If there is no schema chosen, use SQLite as the default
+	if ( oconn->type == DB_FILE && oconn->typemap == default_map ) {
+fprintf( stderr, "[[[ !!! Changing to default engine... SQLite !!! ]]]\n" );
+		oconn->typemap = sqlite3_map;
 	}
 
 	// Write the first line
@@ -2324,13 +2407,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 			return 0;
 		}
 
-#if 0
-		// Define
-		MYSQL *myconn = NULL;
-		MYSQL *t = NULL;
-		MYSQL_RES *myres = NULL;
-#endif
-
 		// Initialize the connection
 		if ( !( db->conn = mysql_init( 0 ) ) ) {
 			const char fmt[] = "Couldn't initialize MySQL connection: %s";
@@ -2354,27 +2430,28 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		// Check the connection
 		if ( !t ) {
 			const char fmt[] = "Couldn't connect to server: %s";
-			snprintf( err, errlen, fmt, mysql_error( db->conn ) );
+			snprintf( err, errlen, fmt, mysql_error( t ) );
 			return 0;
 		}
 
 		// Execute whatever query
-		if ( mysql_query( db->conn, query ) > 0 ) {
+		if ( mysql_query( t, query ) > 0 ) {
 			const char fmt[] = "Failed to run query against selected db and table: %s";
-			snprintf( err, errlen, fmt, mysql_error( db->conn ) );
-			mysql_close( db->conn );
+			snprintf( err, errlen, fmt, mysql_error( t ) );
+			mysql_close( t );
 			return 0;
 		}
 
 		// Use the result
-		if ( !( db->res = mysql_store_result( db->conn ) ) ) {
+		if ( !( db->res = mysql_store_result( t ) ) ) {
 			const char fmt[] = "Failed to store results set from last query: %s";
-			snprintf( err, errlen, fmt, mysql_error( db->conn ) );
-			mysql_close( db->conn );
+			snprintf( err, errlen, fmt, mysql_error( t ) );
+			mysql_close( t );
 			return 0;
 		}
 
 		// Set both of these
+		db->conn = t;
 		conn->conn = (void *)db;
 	}
 #endif
@@ -2461,7 +2538,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 typedef struct coerce_t {
 	const char name[ 128 ];
-	const char typename[ 32 ];
+	const char typename[ 64 ];
 } coerce_t;
 
 
@@ -2557,7 +2634,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			}
 
 			// Get the actual type from the database engine
-			st->ntype = f->type;
+			//st->ntype = f->type;
 			snprintf( st->label, sizeof( st->label ), "%s", f->name );
 			add_item( &conn->headers, st, header_t *, &conn->hlen );
 		}
@@ -2579,11 +2656,9 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			}
 
 			// Get the actual type from the database engine
-			st->ntype = PQftype( db->res, i );
 			snprintf( st->label, sizeof( st->label ), "%s", name );
 			add_item( &conn->headers, st, header_t *, &conn->hlen );
 		}
-
 	}
 #endif
 	else {
@@ -2807,6 +2882,7 @@ int a = conn->headers[ ci ]->type;
 	}
 #endif
 #ifdef BMYSQL_H
+#if 0
 	else if ( conn->type == DB_MYSQL ) {
 	#if 1
 		my_ulonglong rowcount = mysql_num_rows( conn->res );
@@ -2881,7 +2957,9 @@ int a = conn->headers[ ci ]->type;
 		//}
 	}
 #endif
+#endif
 #ifdef BPGSQL_H
+ #if 0
 	else if ( conn->type == DB_POSTGRESQL )  {
 		int rcount = PQntuples( conn->res );
 		for ( int i = 0; i < rcount; i++ ) {
@@ -2931,7 +3009,7 @@ int a = conn->headers[ ci ]->type;
 			cols = NULL;
 		}
 	}
-
+#endif
 #endif
 
 	return 1;
@@ -3285,7 +3363,7 @@ int transform_from_dsn(
 			#ifdef DEBUG_H
 				// We definitely do use this...
 				header_t **headers = iconn->headers;
-				fprintf( stderr, "Binding value %p, %d of length %d\n", (*col)->v, (headers[ci])->ntype,(*col)->len );
+				//fprintf( stderr, "Binding value %p, %d of length %d\n", (*col)->v, (headers[ci])->ntype,(*col)->len );
 			#endif
 
 			#if 1
@@ -3544,36 +3622,6 @@ void close_dsn( dsn_t *conn ) {
 
 
 
-// Determine the relationship between in & out srcs
-int rels_between_dsn( dsn_t *iconn, dsn_t *oconn, const char *err, int errlen ) {
-
-	// If the user was specific about which engine to use, use those settings
-	// If not, then use the defaults
-	// Also, if the type is not available, we should warn and say something
-	if ( iconn->type == DB_FILE ) {
-		// Set up the backend
-		if ( oconn->type == DB_SQLITE )
-			oconn->typemap = default_map;
-		else if ( oconn->type == DB_MYSQL )
-			oconn->typemap = mysql_map;
-		else if ( oconn->type == DB_POSTGRESQL )
-			oconn->typemap = pgsql_map;
-	}
-	else if ( iconn->type == DB_SQLITE ) {
-		oconn->typemap = default_map;
-		//oconn->convmap =
-	}
-	else if ( iconn->type == DB_MYSQL ) {
-		oconn->typemap = mysql_map;
-		//oconn->convmap =
-	}
-	else if ( iconn->type == DB_POSTGRESQL ) {
-		oconn->typemap = pgsql_map;
-	}
-
-	return 1;
-}
-
 
 /**
  * types_from_dsn( dsn_t * )
@@ -3587,17 +3635,18 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	int fcount = 0;
 	char *ename = NULL;
 	coerce_t **ctypes = NULL;
-	int ctypeslen = 0;
 	const typemap_t *cdefs = NULL;
 
 	// Evaluate the coercion string if one is available
 	// The type that is saved will be the coerced one
 	if ( ov ) {
+		int i = 0;
+		int ctypeslen = 0;
+
 		// Multiple coerced types
 		if ( memchr( ov, ',', strlen( ov ) ) ) {
 			zw_t p = { 0 };
-			for ( ; strwalk( &p, ov, "," ); ) {
-				coerce_t *t = NULL;
+			for ( coerce_t *t = NULL; strwalk( &p, ov, "," ); t = NULL ) {
 				if ( ( t = create_ctype( &ov[ p.pos ], p.size ) ) ) {
 					add_item( &ctypes, t, coerce_t *, &ctypeslen );
 				}
@@ -3616,6 +3665,20 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		else {
 			snprintf( err, errlen, "Argument supplied to --coerce is invalid.\n" );
 			return 0;
+		}
+
+		// Better check the coerced columns against the columns
+		for ( coerce_t **c = ctypes; c && *c; c++ ) {
+			int i = 0;
+
+			for ( header_t **t = iconn->headers; !i && t && *t; t++ )
+				if ( !strcmp( (*c)->name, (*t)->label ) ) i++; 
+
+			if ( !i ) {
+				const char fmt[] = "Requested type coercion on column '%s', not found in datasource.";	
+				snprintf( err, errlen, fmt, (*c)->name );
+				return 0;
+			}
 		}
 	}
 
@@ -3658,9 +3721,9 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 			// Check if any of these are looking for a coerced type
 			if ( ov && ( ctype = find_ctype( ctypes, st->label ) ) ) {
-				if ( !( st->ctype = get_typemap_by_native_name( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = "Failed to find desired type '%s' at column '%s' for "
-						"supported %s types";
+				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
+					const char fmt[] = "FIL: Failed to find desired type '%s' at column '%s' for "
+						"supported %s types ";
 					snprintf( err, errlen, fmt, ctype, st->label, get_conn_type( oconn->type ) );
 					return 0;
 				}
@@ -3685,7 +3748,6 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 				continue;
 			}
 
-//write( 1, "Jams and stuff: ", strlen("Jams and stuff: " ) ), write( 1, t, len ), write( 1, "\n", 1 );
 			st->type = get_type( (unsigned char *)t, T_STRING, len );
 			free( t );
 		}
@@ -3699,87 +3761,78 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 #ifdef BMYSQL_H
 	else if ( iconn->type == DB_MYSQL ) {
-		for ( int i = 0, fcount = mysql_field_count( iconn->conn ); i < fcount; i++ ) {
-			MYSQL_FIELD *f = mysql_fetch_field_direct( iconn->res, i );
+		mysql_t *b = (mysql_t *)iconn->conn;
+
+		for ( int i = 0, fcount = mysql_field_count( b->conn ); i < fcount; i++ ) {
+			MYSQL_FIELD *f = mysql_fetch_field_direct( b->res, i );
 			header_t *st = iconn->headers[ i ];
-			typemap_t *type = NULL;
 			const char *ctype = NULL;
 
-			// Get the actual type from the database engine
-			st->ntype = f->type;
-
-			// Get the type of the column from our list and make sure we can support it
-			if ( !( type = get_typemap( iconn->typemap, st->ntype ) ) ) {
-				// TODO: Get the string representation of this name so the user knows
-				snprintf( err, errlen, "Unsupported MySQL type received: %d", st->ntype );
+			// Get the actual type from the database engine and make sure it's supported
+			if ( !( st->ntype = get_typemap_by_ntype( iconn->typemap, f->type ) ) ) {
+				snprintf( err, errlen, "Unsupported MySQL type received: %d", f->type );
 				return 0;
 			}
 
 			// If the user asked for a coerced type, add it here
 			if ( ov && ( ctype = find_ctype( ctypes, f->name ) ) ) {
 				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_native_name( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
+fprintf( stdout, "typemap = %p\n", (void *)oconn->typemap );  
+				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
+					const char fmt[] = "MY: Failed to find desired type '%s' for column '%s' "
+						"for supported %s types ";
 					snprintf( err, errlen, fmt, ctype, f->name, ename );
 					return 0;
 				}
 			}
 
-			// Finally, if the output type is a db and different, we'll need to match that type here...
-
 			// Set the base type and write the column name
-			st->type = type->basetype;
+			st->type = st->ntype->basetype;
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
 			st->filter = 0;
 			st->date = 0; // The timezone data?
 		#endif
-			snprintf( st->label, sizeof( st->label ), "%s", f->name );
-			add_item( &iconn->headers, st, header_t *, &iconn->hlen );
 		}
 	}
 #endif
 
 #ifdef BPGSQL_H
 	else if ( iconn->type == DB_POSTGRESQL ) {
-		for ( int i = 0, fcount = PQnfields( iconn->res ); i < fcount; i++ ) {
+		pgsql_t *b = (pgsql_t *)iconn->conn;
+		for ( int i = 0, fcount = PQnfields( b->res ); i < fcount; i++ ) {
 			header_t *st = iconn->headers[ i ];
-			typemap_t *type = NULL;
 			const char *ctype = NULL;
-			const char *name = PQfname( iconn->res, i );
+			const char *name = PQfname( b->res, i );
+			Oid pgtype = PQftype( b->res, i );
 
-			// Get the actual type from the database engine
-			st->ntype = PQftype( iconn->res, i );
-
-			// Get the type of the column
-			if ( !( type = get_typemap( iconn->typemap, st->ntype ) ) ) {
-				// TODO: Get the string representation of this name so the user knows
-				snprintf( err, errlen, "Invalid PostgreSQL type received: %d", st->ntype );
+			// Get the actual type from the database engine and make sure it's supported
+			if ( !( st->ntype = get_typemap_by_ntype( iconn->typemap, (int)pgtype ) ) ) {
+				snprintf( err, errlen, "Unsupported Postgres type received: %d", pgtype );
 				return 0;
 			}
 
+#if 1
 			// If the user asked for a coerced type, add it here
 			if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
 				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_native_name( cdefs, ctype ) ) ) {
-					// LEt uesr know chosen engine, and real type name
-					const char fmt[] = "Failed to find desired type '%s' for column '%s' in supported %s types";
-					snprintf( err, errlen, fmt, ctype, name, ename );
+				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
+					const char fmt[] = 
+						"PG: Failed to find desired type '%s' for column '%s' in supported %s types";
+					snprintf( err, errlen, fmt, ctype, name, "Postgres" );
 					return 0;
 				}
 			}
-
+#endif
 			// Set the base type and write the column name
-			st->type = type->basetype;
+			st->type = st->ntype->basetype;
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
 			st->filter = 0;
 			st->date = 0; // The timezone data?
 		#endif
-			snprintf( st->label, sizeof( st->label ), "%s", name );
-			add_item( &iconn->headers, st, header_t *, &iconn->hlen );
 		}
 
 	}
@@ -3796,57 +3849,105 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
  * scaffold_dsn( dsn_t *, dsn_t *, const char * )
  * ==============================================
  *
- * 
+ * This is intended to fill out a dsn_t manually when we already have an input 
+ * source.
  *
  */
-int scaffold_dsn ( dsn_t *ic, dsn_t *oc, char *tname, char *err, int errlen  ) {
+int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err, int errlen  ) {
 
+	// Define stuffs
+	char *t = NULL;
 
-	// If a connection string was specified, try parsing for info
-	if ( oc->connstr ) {
-		if ( !parse_dsn_info( oc, err, sizeof( err  ) ) ) {
-			return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
-			return 0;
-		}
+	// No connection string was specified, so we can make a few assumptions.
+	if ( !oc->connstr ) {
+		// Output source is going to be stdout
+		oc->type = DB_FILE;
+		oc->connstr = strdup( "/dev/stdout" );
+		oc->stream = STREAM_PRINTF;
+		oc->typemap = default_map;
 
-		// Set the table if the user specified one
 		if ( tname ) {
 			if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
-				return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", tname );
+				snprintf( err, errlen, "Table name '%s' is too long for buffer.", tname );
 				return 0;
 			}
 			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
 		}
+		else if ( strlen( ic->tablename ) > 0 ) {
+			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", ic->tablename );
+		}
+
+		// I'll need a table name depending on other options
+	#if 0
+		if ( config->wschema && !config->tname && !strlen( ic->tablename ) ) {
+			snprintf( err, errlen, "Wanted --schema, but table name is invalid or unspecified." );
+			return 0;
+		}
+	#endif
+
+		// If we're reading from a database input source make some assumptions
+		if ( ic->type == DB_MYSQL )
+			oc->typemap = mysql_map;
+		else if ( ic->type == DB_POSTGRESQL )
+			oc->typemap = pgsql_map;
+		else {
+			oc->typemap = default_map;
+		}	
+
+		// There is no real need to parse here.
+		return 1;
 	}
 
-	// If a table only was specified, use it as the output source
-	else if ( tname ) {
-		if ( strlen( tname ) < 1 ) {
-			return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-			return 0;
-		}
 
+	// TODO: Might need to parse output dsn twice...
+	if ( !parse_dsn_info( oc, err, errlen ) ) {
+		return 0;
+	}
+
+
+	// A cli table name takes highest priority
+	if ( tname /* config->tname */ ) {
 		if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
-			return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", tname );
+			snprintf( err, errlen, "Table name '%s' is too long for buffer.", tname );
 			return 0;
 		}
-
 		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
 	}
 
-	// Finally, if nothing was specified, assume the input source has the table name
-	else {
-		if ( !strlen( ic->tablename ) ) {
-			return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-			return 0;
-		}
-
+	// Copy the ic->tn to the oc->tn
+	else if ( !strlen( oc->tablename ) && strlen( ic->tablename ) > 0 ) {
 		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", ic->tablename );
 	}
 
-	if ( !oc->type ) {
-		oc->type = DB_SQLITE;
-		oc->typemap = default_map;
+	
+	// Check if it's NOT a file, and then make some decisions
+	if ( !oc->type || oc->type == DB_NONE ) {
+		snprintf( err, errlen, "We shouldn't have gotten here..." );
+		return 0;
+	}
+	else if ( oc->type != DB_FILE && !strlen( oc->tablename ) ) {
+		snprintf( err, errlen, "Writing to a database, but no table specified." );
+		return 0;
+	}
+	else if ( oc->type == DB_FILE ) {
+		// If we're reading from a database input source make some assumptions
+		if ( ic->type == DB_MYSQL )
+			oc->typemap = mysql_map;
+		else if ( ic->type == DB_POSTGRESQL )
+			oc->typemap = pgsql_map;
+		else {
+			oc->typemap = default_map;
+		}	
+	}
+	else {
+		// If we're reading from db to db, also make some smart assumptions
+		if ( oc->type == DB_MYSQL )
+			oc->typemap = mysql_map;
+		else if ( oc->type == DB_POSTGRESQL )
+			oc->typemap = pgsql_map;
+		else {
+			oc->typemap = default_map;
+		}	
 	}
 
 
@@ -3933,6 +4034,36 @@ int help () {
 	}
 	return 0;
 }
+
+
+
+
+
+static config_t config = {
+	.wstream = 0,	// wstream - A chosen stream
+	.wdeclaration = 0,	// wdeclaration - Dump a class or struct declaration only 
+	.wschema = 0,	// wschema - Dump the schema only
+	.wheaders = 0,	// wheaders - Dump the headers only
+	.wconvert = 0,	// wconvert - Convert the source into some other format
+	.wclass = 0,	// wclass - Convert to a class
+	.wstruct = 0,	// wstruct - Convert to a struct
+	.wtypesafe = 0,
+	.wnewline = 0,
+	.wdatestamps = 0,
+	.wnounsigned = 0,
+	.wspcase = 0,
+	.wid = 0,   // Use a unique ID when reading from a datasource
+	.wstats = 0,   // Use the stats
+	
+	.wcutcols = NULL,  // The user wants to cut columns
+	.widname = NULL,  // The unique ID column name
+	.wcoerce = NULL,  // The user wants to override certain types
+	.wquery = NULL,	// A custom query from the user
+	.wprefix = NULL,
+	.wsuffix = NULL, 
+	.wtable = NULL
+
+};
 
 
 
@@ -4198,206 +4329,41 @@ int main ( int argc, char *argv[] ) {
 	if ( headers_only )
 		return cmd_headers( &input );	
 
+	// Scaffolding can fail
+	if ( !scaffold_dsn( &config, &input, &output, table, err, sizeof( err ) ) )
+		return ERRPRINTF( ERRCODE, "%s", err );
 
-scaffold_dsn( &input, &output, table, err, sizeof( err ) );
+	// The input datasource has to be prepared too
+	if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
+		destroy_dsn_headers( &input );
+		close_dsn( &input );
+		return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
+	}
+
+	// This should assert, but we check it anyway 
+	if ( !input.typemap || !output.typemap ) {
+		destroy_dsn_headers( &input );
+		close_dsn( &input );
+		return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
+	}
+
+	// Get the types of each thing in the column
+	if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
+		return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
+	}
 
 fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
 	print_dsn( &input ),
 fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
 	print_dsn( &output );
 
-return 0;
-	// The second source should ALWAYS be mocked
-#if 0
-- schema, struct, and class are all based off of the headers 
-- convert to some other format
-#endif
-
-// If a connection string was specified, try parsing for info
-if ( output.connstr ) {
-	if ( !parse_dsn_info( &output, err, sizeof( err  ) ) ) {
-		return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
-		return 0;
-	}
-
-	// Set the table if the user specified one
-	if ( table ) {
-		if ( strlen( table ) >= sizeof( output.tablename ) ) {
-			return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
-			return 0;
-		}
-		snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
-	}
-}
-
-// If a table only was specified, use it as the output source
-else if ( table ) {
-	if ( strlen( table ) < 1 ) {
-		return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-		return 0;
-	}
-
-	if ( strlen( table ) >= sizeof( output.tablename ) ) {
-		return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
-		return 0;
-	}
-
-	snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
-}
-
-// Finally, if nothing was specified, assume the input source has the table name
-else {
-	if ( !strlen( input.tablename ) ) {
-		return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-		return 0;
-	}
-
-	snprintf( output.tablename, sizeof( output.tablename ), "%s", input.tablename );
-}
-
-if ( !output.type ) {
-	output.type = DB_SQLITE;
-	output.typemap = default_map;
-}
-
-// Do any preparation on the input dsn first
-if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
-	destroy_dsn_headers( &input );
-	close_dsn( &input );
-	return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
-	return 1;
-}
-#if 0
-// Set for SQLite by default
-if ( !output.type ) {
-	if ( input.type == DB_FILE || input.type == DB_SQLITE )
-		output.type = DB_SQLITE;
-	else if ( input.type == DB_MYSQL )
-		output.type = DB_MYSQL;
-	else if ( input.type == DB_POSTGRESQL )
-		output.type = DB_POSTGRESQL;
-}
-// Figure out any relevant mappings
-if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
-	return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
-	return 0;
-}
-#endif
-
-// Get the types of each thing in the column
-if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
-	return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
-	return 0;
-}
-
-fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
-	print_dsn( &input ),
-fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
-	print_dsn( &output );
 #if 0
 for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
 	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
 #endif
 
-// Test that everything can be destroyed too
-return 0;
-
-
-
-
-
-
-
-
 	// Create a schema
 	if ( schema ) {
-	#if 1
-		// If a connection string was specified, try parsing for info
-		if ( output.connstr ) {
-			if ( !parse_dsn_info( &output, err, sizeof( err  ) ) ) {
-				return ERRPRINTF( ERRCODE, "Output sink is invalid: %s\n", err );
-				return 0;
-			}
-
-			// Set the table if the user specified one
-			if ( table ) {
-				if ( strlen( table ) >= sizeof( output.tablename ) ) {
-					return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
-					return 0;
-				}
-				snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
-			}
-		}
-
-		// If a table only was specified, use it as the output source
-		else if ( table ) {
-			if ( strlen( table ) < 1 ) {
-				return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-				return 0;
-			}
-
-			if ( strlen( table ) >= sizeof( output.tablename ) ) {
-				return ERRPRINTF( ERRCODE, "Table name '%s' is too long for buffer.\n", table );
-				return 0;
-			}
-
-			snprintf( output.tablename, sizeof( output.tablename ), "%s", table );
-		}
-
-		// Finally, if nothing was specified, assume the input source has the table name
-		else {
-			if ( !strlen( input.tablename ) ) {
-				return ERRPRINTF( ERRCODE, "Table name is invalid or unspecified for --schema command.\n" );
-				return 0;
-			}
-
-			snprintf( output.tablename, sizeof( output.tablename ), "%s", input.tablename );
-		}
-
-		if ( !output.type ) {
-			output.type = DB_SQLITE;
-			output.typemap = default_map;
-		}
-
-		// Do any preparation on the input dsn first
-		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
-			destroy_dsn_headers( &input );
-			close_dsn( &input );
-			return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
-			return 1;
-		}
-#if 0
-		// Set for SQLite by default
-		if ( !output.type ) {
-			if ( input.type == DB_FILE || input.type == DB_SQLITE )
-				output.type = DB_SQLITE;
-			else if ( input.type == DB_MYSQL )
-				output.type = DB_MYSQL;
-			else if ( input.type == DB_POSTGRESQL )
-				output.type = DB_POSTGRESQL;
-		}
-		// Figure out any relevant mappings
-		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
-			return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
-			return 0;
-		}
-#endif
-
-		// Get the types of each thing in the column
-		if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
-			return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
-			return 0;
-		}
-
-fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), print_dsn( &input );print_dsn( &output );
-exit(0);
-	#if 1
-	for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
-	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
-	#endif
-
-	#endif
-
 		if ( !schema_from_dsn( &input, &output, schema_fmt, MAX_STMT_SIZE, err, sizeof( err ) ) ) {
 			free( output.connstr );
 			destroy_dsn_headers( &input );
@@ -4405,6 +4371,7 @@ exit(0);
 			return ERRPRINTF( ERRCODE, "Schema build failed: %s\n", err );
 			return 0;
 		}
+
 		// Dump said schema
 		fprintf( stdout, "%s", schema_fmt );
 
@@ -4420,29 +4387,6 @@ exit(0);
 #endif
 
 	else if ( convert ) {
-		// Do any preparation on the input dsn first
-		if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
-			destroy_dsn_headers( &input );
-			close_dsn( &input );
-			return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
-			return 1;
-		}
-
-#if 0
-		// Then open a new DSN for the output (there must be an --output flag)
-		if ( !output.connstr ) {
-			output.connstr = strdup( "/dev/stdout" );
-		}
-
-		// Parse the output source
-		if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
-			destroy_dsn_headers( &input );
-			close_dsn( &input );
-			return ERRPRINTF( ERRCODE, "Output DSN is invalid: %s\n", err );
-			return 1;
-		}
-#endif
-
 	#if 1
 		// Test and try to create if it does not exist
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
@@ -4467,20 +4411,6 @@ exit(0);
 			return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 			return 1;
 		}
-
-		// Figure out any relevant mappings
-		if ( !rels_between_dsn( &input, &output, err, sizeof( err ) ) ) {
-			return ERRPRINTF( ERRCODE, "Rel build failed: %s\n", err );
-			return 0;
-		}
-
-		// Get the types of each thing in the column
-		if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
-			return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
-			return 0;
-		}
-
-//print_dsn( &input ), print_dsn( &output ), exit(0);
 
 		// Control the streaming / buffering from here
 		for ( int i = 0; i < 1; i++ ) {
