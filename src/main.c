@@ -73,7 +73,7 @@
 	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
 
 #define ERRPRINTF( C, ... ) \
-	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
+	fprintf( stderr, "briggs: " ) && (fprintf( stderr, __VA_ARGS__ ) ? C : C )
 
 // This is only here for easy transitioning later...
 #define ERRCODE 1
@@ -714,6 +714,7 @@ static const typemap_t pgsql_map[] = {
 	//{ PG_INT2OID, N(PG_INT2OID), "smallint", T_INTEGER, 0 },
 	{ PG_INT2OID, N(PG_INT2OID), "smallint", T_INTEGER, 0 },
 	{ PG_INT4OID, N(PG_INT4OID), "int", T_INTEGER, 1, },
+	{ PG_INT4OID, N(PG_INT4OID), "integer", T_INTEGER, 0, },
 	{ PG_INT8OID, N(PG_INT8OID), "bigint", T_INTEGER, 0 },
 	{ PG_NUMERICOID, N(PG_NUMERICOID), "numeric", T_DOUBLE, 0 },
 	{ PG_FLOAT4OID, N(PG_FLOAT4OID), "real", T_DOUBLE, 1 }, /* or float4 */
@@ -1907,33 +1908,33 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
-	fprintf( stdout, "dsn->connstr:    '%s'\n", conninfo->connstr );
-	fprintf( stdout, "dsn->type:       %s\n",   dbtypes[ conninfo->type ] );
-	fprintf( stdout, "dsn->username:   '%s'\n", conninfo->username );
-	fprintf( stdout, "dsn->password:   '%s'\n", conninfo->password );
-	fprintf( stdout, "dsn->hostname:   '%s'\n", conninfo->hostname );
-	fprintf( stdout, "dsn->dbname:     '%s'\n", conninfo->dbname );
-	fprintf( stdout, "dsn->tablename:  '%s'\n", conninfo->tablename );
-	//fprintf( stdout, "dsn->socketpath: '%s'\n", conninfo->socketpath );
-	fprintf( stdout, "dsn->port:       %d\n", conninfo->port );
-	fprintf( stdout, "dsn->conn:       %p\n", conninfo->conn );
-	fprintf( stdout, "dsn->options:    '%s'\n", conninfo->connoptions );
-	fprintf( stdout, "dsn->typemap:    '%p' ", (void *)conninfo->typemap );
+	fprintf( stderr, "dsn->connstr:    '%s'\n", conninfo->connstr );
+	fprintf( stderr, "dsn->type:       %s\n",   dbtypes[ conninfo->type ] );
+	fprintf( stderr, "dsn->username:   '%s'\n", conninfo->username );
+	fprintf( stderr, "dsn->password:   '%s'\n", conninfo->password );
+	fprintf( stderr, "dsn->hostname:   '%s'\n", conninfo->hostname );
+	fprintf( stderr, "dsn->dbname:     '%s'\n", conninfo->dbname );
+	fprintf( stderr, "dsn->tablename:  '%s'\n", conninfo->tablename );
+	//fprintf( stderr, "dsn->socketpath: '%s'\n", conninfo->socketpath );
+	fprintf( stderr, "dsn->port:       %d\n", conninfo->port );
+	fprintf( stderr, "dsn->conn:       %p\n", conninfo->conn );
+	fprintf( stderr, "dsn->options:    '%s'\n", conninfo->connoptions );
+	fprintf( stderr, "dsn->typemap:    '%p' ", (void *)conninfo->typemap );
 
 	if ( conninfo->typemap == default_map )
-		fprintf( stdout, "(default|SQLite3)" );
+		fprintf( stderr, "(default|SQLite3)" );
 	else if ( conninfo->typemap == mysql_map )
-		fprintf( stdout, "(MySQL)" );
+		fprintf( stderr, "(MySQL)" );
 	else if ( conninfo->typemap == pgsql_map ) {
-		fprintf( stdout, "(PostgreSQL)" );
+		fprintf( stderr, "(PostgreSQL)" );
 	}
-	fprintf( stdout, "\n" );
+	fprintf( stderr, "\n" );
 
 	//if headers have been initialized show me that
-	fprintf( stdout, "dsn->headers:    %p\n", (void *)conninfo->headers );
+	fprintf( stderr, "dsn->headers:    %p\n", (void *)conninfo->headers );
 	if ( conninfo->headers ) {
 		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
-			fprintf( stdout, "  %-30s [%s, %s, %s]\n",
+			fprintf( stderr, "  %-30s [%s, %s, %s]\n",
 				(*h)->label,
 				(*h)->ctype ? "?" : "(nil)",
 				(*h)->ntype ? (*h)->ntype->typename : "(nil)",
@@ -4315,6 +4316,10 @@ int main ( int argc, char *argv[] ) {
 	if ( !parse_dsn_info( &input, err, sizeof( err  ) ) )
 		return ERRPRINTF( ERRCODE, "Input source is invalid: %s\n", err );
 
+	// If the user specified a table, fill out 
+	if ( table && strlen( table ) < sizeof( input.tablename ) )
+		snprintf( input.tablename, sizeof( input.tablename ), "%s", table );
+
 	// Open the DSN first (regardless of type)
 	if ( !open_dsn( &input, query, err, sizeof( err ) ) )
 		return ERRPRINTF( ERRCODE, "DSN open failed: %s.\n", err );
@@ -4340,6 +4345,14 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
 	}
 
+#if 0
+fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
+	print_dsn( &input ),
+fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
+	print_dsn( &output );
+return 0;
+#endif
+
 	// This should assert, but we check it anyway 
 	if ( !input.typemap || !output.typemap ) {
 		destroy_dsn_headers( &input );
@@ -4352,12 +4365,12 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 	}
 
+#if 0
 fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
 	print_dsn( &input ),
 fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
 	print_dsn( &output );
 
-#if 0
 for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
 	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
 #endif
@@ -4369,7 +4382,6 @@ for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Schema build failed: %s\n", err );
-			return 0;
 		}
 
 		// Dump said schema
