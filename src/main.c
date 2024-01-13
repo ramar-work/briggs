@@ -67,56 +67,65 @@
  #include <sqlite3.h>
 #endif
 
+/* Terminating character in typemaps */
 #define TYPEMAP_TERM INT_MIN
 
-#define nerr( ... ) \
-	(fprintf( stderr, "briggs: " ) ? 1 : 1 ) && (fprintf( stderr, __VA_ARGS__ ) ? 0 : 0 )
-
+/* Print an error code and return 1 (false) on the command line */
 #define ERRPRINTF( C, ... ) \
 	fprintf( stderr, "briggs: " ) && (fprintf( stderr, __VA_ARGS__ ) ? C : C )
 
-// This is only here for easy transitioning later...
+/* Eventually, these will be real return codes (just not now) */
 #define ERRCODE 1
 
+/* Show the compilation date */
 #define SHOW_COMPILE_DATE() \
 	fprintf( stderr, "briggs v" VERSION " compiled: " __DATE__ ", " __TIME__ "\n" )
 
+/* Compare against a string literal */
+#define STRLCMP(H,S) \
+	( strlen( H ) >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
+
+/* Compare against long & short options */
+#define OPTCMP(H,S,L) \
+	( strlen( H ) >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
+
+/* Compare against a string literal against somewhere in memory */
+#define MEMLCMP(H,S,L) \
+	( L >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
+
+/* Write to a file descriptor */
+#define FDPRINTF(fd, X) \
+	write( fd, X, strlen( X ) )
+
+/* Write a block of length to a file descriptor */
+#define FDNPRINTF(fd, X, L) \
+	write( fd, X, L )
+
+/* Malloc and memset (or just use calloc, b/c it's probably faster :) ) */
+#define CALLOC_NEW_FAILS(O,S) \
+	!( O = malloc( sizeof( S ) ) ) || !memset( O, 0, sizeof( S ) )
+
+/* Try to include rudimentary newline support */
 #ifdef WIN32
  #define NEWLINE "\r\n"
 #else
  #define NEWLINE "\n"
 #endif
 
-#ifdef DEBUG_H
- #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
- #define N(A) #A
-#else
+/* Debugging rules */
+#ifndef DEBUG_H
  #define DPRINTF( ... ) 0
  #define N(A) ""
+ #define print_dsn(A) 0
+ #define print_headers(A) 0
+ #define print_stream_type(A) 0
+#else
+	/* Optionally print arguments */
+ #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
+	/* Print the literal name of a type */
+ #define N(A) #A
 #endif
 
-/* Doing an index here will return the right type from array */
-#define CHECK_SQL_TYPE( type, type_array ) \
-	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
-
-/* Get is safer */
-#define GET_SQL_TYPE( type, type_array ) \
-	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
-
-#define STRLCMP(H,S) \
-	( strlen( H ) >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
-
-#define MEMLCMP(H,S,L) \
-	( L >= sizeof( S ) - 1 ) && !memcmp( H, S, sizeof( S ) - 1 )
-
-#define FDPRINTF(fd, X) \
-	write( fd, X, strlen( X ) )
-
-#define FDNPRINTF(fd, X, L) \
-	write( fd, X, L )
-
-#define CALLOC_NEW_FAILS(O,S) \
-	!( O = malloc( sizeof( S ) ) ) || !memset( O, 0, sizeof( S ) )
 
 /**
  * stream_t
@@ -164,7 +173,7 @@ typedef struct format_t {
 	char *rightdelim;
 } format_t;
 
-static format_t format = { 1, 1, 0, 0, NULL, NULL, "'", "'" };
+static format_t FF = { 1, 1, 0, 0, NULL, NULL, "'", "'" };
 
 
 /**
@@ -251,33 +260,6 @@ static const char * itypes[] = {
 	[T_BINARY] = "T_BINARY",
 };
 
-
-
-#if 0
-
-static char *cstr_type ( type_t type ) {
-	return c_family_typenames[ (int)type ];
-}
-
-static char *x_typenames[] = {
-	"null",
-	"char",
-	"String",
-	"int",
-	"double",
-	"bool"
-};
-
-
-static char *c_family_typenames[] = {
-	"null",
-	"char",
-	"char *",
-	"int",
-	"double",
-	"bool"
-};
-#endif
 
 
 /**
@@ -537,6 +519,12 @@ typedef struct function_t {
 } function_t;
 
 
+typedef struct coerce_t {
+	const char name[ 128 ];
+	const char typename[ 64 ];
+} coerce_t;
+
+
 typedef struct config_t {
 
 	stream_t wstream;	// wstream - A chosen stream
@@ -678,35 +666,6 @@ typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 #define PG_BITOID 1560
 #define PG_VARBITOID 1562
 
-// TODO: This is the preferred way to layout this structure,
-static const char * _pgsql_string_map[] = {
-	[0] = NULL,
-#if 0
-	[PG_BOOLOID] = "bool",
-#endif
-	[PG_BYTEAOID] = "BYTEAOID",
-	[PG_TEXTOID] = "TEXTOID",
-	[PG_BPCHAROID] = "BPCHAROID",
-	[PG_VARCHAROID] = "VARCHAROID",
-	[PG_INT2OID] = "INT2OID",
-	[PG_INT4OID] = "INT4OID",
-	[PG_INT8OID] = "INT8OID",
-	[PG_NUMERICOID] = "NUMERICOID",
-	[PG_FLOAT4OID] = "FLOAT4OID",
-	[PG_FLOAT8OID] = "FLOAT8OID",
-#if 0
-	[PG_DATEOID] = "PG_DATEOID",
-	[PG_TIMEOID] = "PG_TIMEOID",
-	[PG_TIMESTAMPOID] = "PG_TIMESTAMPOID",
-	[PG_TIMESTAMPZOID] = "PG_TIMESTAMPZOID",
-	[PG_TIMETZOID] = "PG_TIMETZOID",
-	[PG_OIDOID] = "PG_OIDOID",
-	[PG_BITOID] = "PG_BITOID",
-	[PG_VARBITOID] = "PG_VARBITOID",
-#endif
-};
-
-
 static const typemap_t pgsql_map[] = {
 #if 0
 	{ TYPENAME(PG_BOOLOID), "bool", T_BOOLEAN },
@@ -740,123 +699,11 @@ static const typemap_t pgsql_map[] = {
 	[PG_VARBITOID] = "PG_VARBITOID",
 #endif
 };
-
-
- #ifdef BMYSQL_H
-	// TODO: There MAY be a better way to lay out the mappings...
-	static const int pgsql_mysql_auto_map[] = {
-		[0] = 0,
-		[PG_BOOLOID] = MYSQL_TYPE_TINY,
-		[PG_BYTEAOID] = MYSQL_TYPE_BLOB,
-		[PG_TEXTOID] = MYSQL_TYPE_STRING,
-		[PG_BPCHAROID] = MYSQL_TYPE_VARCHAR,
-		[PG_VARCHAROID] = MYSQL_TYPE_VARCHAR,
-		[PG_INT2OID] = MYSQL_TYPE_SHORT,
-		[PG_INT4OID] = MYSQL_TYPE_LONG,
-		[PG_INT8OID] = MYSQL_TYPE_LONGLONG,
-	#if 0
-		[PG_OIDOID] = MYSQL_TYPE_LONG, // This is the unique column?
-	#endif
-		[PG_NUMERICOID] = MYSQL_TYPE_INT24,
-		[PG_FLOAT4OID] = MYSQL_TYPE_FLOAT,
-		[PG_FLOAT8OID] = MYSQL_TYPE_DOUBLE,
-	#if 0
-		[PG_DATEOID] = MYSQL_TYPE_DATE,
-		[PG_TIMEOID] = MYSQL_TYPE_TIME,
-		[PG_TIMESTAMPOID] = MYSQL_TYPE_TIMESTAMP,
-		[PG_TIMESTAMPZOID] = MYSQL_TYPE_TIMESTAMP,
-		[PG_TIMETZOID] = MYSQL_TYPE_TIMESTAMP,
-	#endif
-	#if 0
-		[PG_BITOID] = MYSQL_TYPE_,
-		[PG_VARBITOID] = MYSQL_TYPE_,
-	#endif
-	};
- #endif
 #endif
 
 
 
 #ifdef BMYSQL_H
-
-#if 0
-#define CHECK_MYSQL_TYPE( type, type_array ) \
-	memchr( (unsigned char *)type_array, type, sizeof( type_array ) )
-
-static const char * _mysql_string_map[] = {
-	[0] = NULL,
-	[MYSQL_TYPE_VAR_STRING] = "MYSQL_TYPE_VAR_STRING",
-	[MYSQL_TYPE_STRING] = "MYSQL_TYPE_STRING",
-	[MYSQL_TYPE_VARCHAR] = "MYSQL_TYPE_VARCHAR",
-	[MYSQL_TYPE_FLOAT ] = "MYSQL_TYPE_FLOAT ",
-	[MYSQL_TYPE_DOUBLE] = "MYSQL_TYPE_DOUBLE",
-	[MYSQL_TYPE_DECIMAL ] = "MYSQL_TYPE_DECIMAL ",
-	[MYSQL_TYPE_TINY] = "MYSQL_TYPE_TINY",
-	[MYSQL_TYPE_SHORT  ] = "MYSQL_TYPE_SHORT  ",
-	[MYSQL_TYPE_LONG] = "MYSQL_TYPE_LONG",
-	[MYSQL_TYPE_NULL   ] = "MYSQL_TYPE_NULL   ",
-	[MYSQL_TYPE_TIMESTAMP] = "MYSQL_TYPE_TIMESTAMP",
-	[MYSQL_TYPE_LONGLONG] = "MYSQL_TYPE_LONGLONG",
-	[MYSQL_TYPE_INT24] = "MYSQL_TYPE_INT24",
-	[MYSQL_TYPE_NEWDECIMAL] = "MYSQL_TYPE_NEWDECIMAL",
-	[MYSQL_TYPE_DATE   ] = "MYSQL_TYPE_DATE   ",
-	[MYSQL_TYPE_TIME] = "MYSQL_TYPE_TIME",
-	[MYSQL_TYPE_DATETIME ] = "MYSQL_TYPE_DATETIME ",
-	[MYSQL_TYPE_YEAR] = "MYSQL_TYPE_YEAR",
-	[MYSQL_TYPE_NEWDATE ] = "MYSQL_TYPE_NEWDATE ",
-	[MYSQL_TYPE_VARCHAR] = "MYSQL_TYPE_VARCHAR",
-	[MYSQL_TYPE_TINY_BLOB] = "MYSQL_TYPE_TINY_BLOB",
-	[MYSQL_TYPE_MEDIUM_BLOB] = "MYSQL_TYPE_MEDIUM_BLOB",
-	[MYSQL_TYPE_LONG_BLOB] = "MYSQL_TYPE_LONG_BLOB",
-	[MYSQL_TYPE_BLOB] = "MYSQL_TYPE_BLOB",
-};
-
-
-/* yamcha */
-static const unsigned char _mysql_strings[] = {
-	MYSQL_TYPE_VAR_STRING,
-	MYSQL_TYPE_STRING,
-};
-
-static const unsigned char _mysql_chars[] = {
-	MYSQL_TYPE_VARCHAR,
-};
-
-static const unsigned char _mysql_doubles[] = {
-	MYSQL_TYPE_FLOAT,
-	MYSQL_TYPE_DOUBLE
-};
-
-static const unsigned char _mysql_integers[] = {
-	MYSQL_TYPE_DECIMAL,
-	MYSQL_TYPE_TINY,
-	MYSQL_TYPE_SHORT,
-	MYSQL_TYPE_LONG,
-	MYSQL_TYPE_NULL,
-	MYSQL_TYPE_TIMESTAMP,
-	MYSQL_TYPE_LONGLONG,
-	MYSQL_TYPE_INT24,
-	MYSQL_TYPE_NEWDECIMAL
-};
-
-static const unsigned char _mysql_dates[] = {
-	MYSQL_TYPE_DATE,
-	MYSQL_TYPE_TIME,
-	MYSQL_TYPE_DATETIME,
-	MYSQL_TYPE_YEAR,
-	MYSQL_TYPE_NEWDATE,
-	MYSQL_TYPE_VARCHAR,
-};
-
-static const unsigned char _mysql_blobs[] = {
-	MYSQL_TYPE_TINY_BLOB,
-	MYSQL_TYPE_MEDIUM_BLOB,
-	MYSQL_TYPE_LONG_BLOB,
-	MYSQL_TYPE_BLOB,
-};
-
-#endif
-
 static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "TINYINT", T_INTEGER },
 	{ MYSQL_TYPE_SHORT, N(MYSQL_TYPE_SHORT), "SMALLINT", T_INTEGER },
@@ -873,7 +720,6 @@ static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_BLOB, N(MYSQL_TYPE_BLOB), "BLOB", T_BINARY, 1 },
 	/* This just maps to TINYINT behind the scenes */ 
 	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "BOOL", T_BOOLEAN, 1 },
-	{ TYPEMAP_TERM },
 #if 0
 	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "TIMESTAMP", T_XXX },
 	{ MYSQL_TYPE_DATE, N(MYSQL_TYPE_DATE), "DATE", T_XXX },
@@ -881,74 +727,9 @@ static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_DATETIME, N(MYSQL_TYPE_DATETIME), "DATETIME", T_XXX },
 	{ MYSQL_TYPE_YEAR, N(MYSQL_TYPE_YEAR), "YEAR", T_XXX },
 #endif
+	{ TYPEMAP_TERM },
 };
 
-#if 0
-static const char * _mysql_named_types[] = {
-	[0] = NULL,
-	[MYSQL_TYPE_TINY] = "TINYINT",
-	[MYSQL_TYPE_SHORT] = "SMALLINT",
-	[MYSQL_TYPE_LONG] = "INT",
-	[MYSQL_TYPE_INT24] = "MEDIUMINT",
-	[MYSQL_TYPE_LONGLONG] = "BIGINT",
-	[MYSQL_TYPE_DECIMAL] = "DECIMAL", /* or NUMERIC */
-	[MYSQL_TYPE_NEWDECIMAL] = "DECIMAL", /* or NUMERIC */
-	[MYSQL_TYPE_FLOAT] = "FLOAT",
-	[MYSQL_TYPE_DOUBLE] = "DOUBLE",
-	[MYSQL_TYPE_STRING] = "CHAR",
-	[MYSQL_TYPE_VAR_STRING] = "VARCHAR",
-	/* Where is text? */
-	[MYSQL_TYPE_BLOB] = "BLOB",
-	[MYSQL_TYPE_TIMESTAMP] = "TIMESTAMP",
-	[MYSQL_TYPE_DATE] = "DATE",
-	[MYSQL_TYPE_TIME] = "TIME",
-	[MYSQL_TYPE_DATETIME] = "DATETIME",
-	[MYSQL_TYPE_YEAR] = "YEAR",
-#endif
-#if 0
-/* I can't reliably support these yet  */
-	[MYSQL_TYPE_BIT] = "BIT",
-MYSQL_TYPE_SET	SET
-MYSQL_TYPE_ENUM	ENUM
-MYSQL_TYPE_GEOMETRY	Spatial
-MYSQL_TYPE_NULL	NULL-type
-};
-#endif
-
- #ifdef BPGSQL_H
-	static const int _mysql_pgsql_auto_map[] = {
-		//[0] = 0,
-		[MYSQL_TYPE_VAR_STRING] = PG_TEXTOID,
-		[MYSQL_TYPE_STRING] = PG_TEXTOID,
-		[MYSQL_TYPE_VARCHAR] = PG_VARCHAROID,
-		[MYSQL_TYPE_FLOAT] = PG_FLOAT4OID,
-		[MYSQL_TYPE_DOUBLE] = PG_FLOAT8OID,
-		[MYSQL_TYPE_DECIMAL] = PG_INT8OID,
-		[MYSQL_TYPE_TINY] = PG_INT2OID,
-		[MYSQL_TYPE_SHORT  ] = PG_INT4OID,
-		[MYSQL_TYPE_LONG] = PG_INT8OID,
-		//[MYSQL_TYPE_LONGLONG] = PG_xOID,
-		[MYSQL_TYPE_TIMESTAMP] = PG_TIMESTAMPOID,
-		[MYSQL_TYPE_INT24] = PG_INT8OID,
-		[MYSQL_TYPE_NEWDECIMAL] = PG_NUMERICOID,
-		[MYSQL_TYPE_DATE   ] = PG_DATEOID,
-		[MYSQL_TYPE_TIME] = PG_TIMEOID,
-		[MYSQL_TYPE_DATETIME ] = PG_TIMESTAMPOID,
-		[MYSQL_TYPE_YEAR] = PG_DATEOID, // Might just be numeric
-		[MYSQL_TYPE_NEWDATE ] = PG_DATEOID,
-		[MYSQL_TYPE_TINY_BLOB] = PG_BYTEAOID,
-		[MYSQL_TYPE_MEDIUM_BLOB] = PG_BYTEAOID,
-		[MYSQL_TYPE_LONG_BLOB] = PG_BYTEAOID,
-		[MYSQL_TYPE_BLOB] = PG_BYTEAOID,
-	#if 0
-		/* I can't reliably support these right now */
-		[MYSQL_TYPE_SET] = PG_BYTEAOID,
-		[MYSQL_TYPE_ENUM] = PG_BYTEAOID,
-		[MYSQL_TYPE_GEOMETRY] = PG_BYTEAOID,
-		[MYSQL_TYPE_NULL] = PG_BYTEAOID,
-	#endif
-	};
- #endif
 #endif
 
 
@@ -960,23 +741,6 @@ void p_cstruct( int, column_t * );
 void p_carray( int, column_t * );
 void p_sql( int, column_t * );
 void p_json( int, column_t * );
-
-
-
-
-sqldef_t coldefs[] = {
-	/* sqlite */
-	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT\n", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
-	/* postgres */
-	{ "%s SERIAL PRIMARY KEY\n", { "NULL",	"VARCHAR(1)",	"TEXT",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
-	/* oracle */
-	{ "%s INTEGER PRIMARY KEY AUTOINCREMENT", { "NULL",	"TEXT",	"TEXT",	"INTEGER","REAL","INTEGER", NULL, } },
-	/* mssql */
-	{ "%s INTEGER IDENTITY(1,1) NOT NULL\n", { "NULL",	"VARCHAR(1)",	"VARCHAR(MAX)",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
-	/* mysql */
-	{ "%s INTEGER NOT NULL\n", { "NULL",	"VARCHAR(1)",	"VARCHAR(MAX)",	"INTEGER","DOUBLE","BOOLEAN", NULL, } },
-	/* sqlite */
-};
 
 
 // Global variables to ease testing
@@ -1029,74 +793,6 @@ sqltype_t dbengine = SQL_SQLITE3;
 char *coercion = NULL;
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT";
 
-
-#if 0
-//Different languages need their own definitions
-char * struct_coldefs[] = {
-	"NULL",
-	"char",
-	"char *",
-	"int",
-	"double",
-	"int",
-	NULL,
-};
-
-
-char * class_coldefs[] = {
-	"NULL",
-	"int",
-	"String",
-	"int",
-	"double",
-	"bool",
-	NULL,
-};
-
-
-char * sqlite_coldefs[] = {
-	"NULL",
-	"TEXT",
-	"TEXT",
-	"INTEGER",
-	"REAL",
-	"INTEGER",
-	NULL,
-};
-
-
-char * postgres_coldefs[] = {
-	"NULL",
-	"VARCHAR(1)",
-	"VARCHAR(MAX)",
-	"INTEGER",
-	"DOUBLE",
-	"BOOLEAN",
-	NULL,
-};
-
-
-char * mysql_coldefs[] = {
-	"NULL",
-	"TEXT",
-	"TEXT",
-	"INTEGER",
-	"INTEGER",
-	"INTEGER",
-	NULL,
-};
-
-
-char * oracle_coldefs[] = {
-	"NULL",
-	"TEXT",
-	"TEXT",
-	"INTEGER",
-	"INTEGER",
-	"INTEGER",
-	NULL,
-};
-#endif
 
 
 // Convert word to snake_case
@@ -1233,13 +929,6 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 		return t;
 	}
 
-#if 0
-	// Check for booleans
-	if ( ( *v == 't' && MEMLCMP( v, "true", len ) ) || ( *v == 't' && MEMLCMP( v, "false", len ) ) ) {
-		t = T_BOOLEAN;
-		return t;
-	}
-#else
 	// Boolean true (regardless of spelling)
 	if ( len >= 4 && ( *v == 't' || *v == 'T' ) ) {
 		unsigned char *vv = v;
@@ -1269,12 +958,10 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 			return t;
 		}
 	}
-#endif
 
 	// If we start w/ '-', then this COULD mean that we're dealing with negative numbers
-	if ( *v == '-' ) {
-		v++;
-	}
+	if ( *v == '-' )
+		v++, len--;
 
 	// Check for either REAL, BINARY or STRING
 	for ( unsigned char *vv = v; *vv && len; vv++, len-- ) {
@@ -1294,112 +981,6 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	}
 
 	return t;
-}
-
-
-
-// Simple key-value
-void p_default( int ind, column_t *r ) {
-	fprintf( stdout, "%s => %s%s%s\n", r->k, ld, r->v, rd );
-}
-
-
-
-// JSON converter
-void p_json( int ind, column_t *r ) {
-	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout,
-		"%s%c\"%s\": \"%s\"\n", &TAB[9-ind], adv ? ' ' : ',', r->k, r->v );
-}
-
-
-
-// C struct converter
-void p_carray ( int ind, column_t *r ) {
-	fprintf( stdout, &", \"%s\""[ adv ], r->v );
-}
-
-
-
-// XML converter
-void p_xml( int ind, column_t *r ) {
-	fprintf( stdout, "%s<%s>%s</%s>\n", &TAB[9-ind], r->k, r->v, r->k );
-}
-
-
-
-// SQL converter
-void p_sql( int ind, column_t *r ) {
-	//Check if v is a number, null or some other value that should NOT be escaped
-	if ( !typesafe ) {
-		fprintf( stdout, &",%s%s%s"[adv], ld, r->v, rd );
-	}
-	else {
-#if 1
-		// Should check that they match too
-		if ( r->type != T_STRING && r->type != T_CHAR )
-			fprintf( stdout, &",%s"[adv], r->v );
-		else {
-			fprintf( stdout, &",%s%s%s"[adv], ld, r->v, rd );
-		}
-#endif
-	}
-}
-
-
-
-// Simple comma converter
-void p_comma ( int ind, column_t *r ) {
-	//Check if v is a number, null or some other value that should NOT be escaped
-	fprintf( stdout, &",\"%s\""[adv], r->v );
-}
-
-
-
-// C struct converter
-void p_cstruct ( int ind, column_t *r ) {
-	//check that it's a number
-	char *vv = (char *)r->v;
-
-	//Handle blank values
-	if ( !strlen( vv ) ) {
-		fprintf( stdout, "%s", &TAB[9-ind] );
-		fprintf( stdout, &", .%s = \"\"\n"[ adv ], r->k );
-		return;
-	}
-
-#if 1
-	fprintf( stdout, "%s", &TAB[9-ind] );
-	fprintf( stdout, &", .%s = \"%s\"\n"[adv], r->k, r->v );
-	return;
-#else
-	if ( !strcmp( vv, "true" ) || !strcmp( vv, "TRUE" ) ) {
-		fprintf( stdout, "%s.%s = 1,\n", &TAB[9-ind], k );
-		return;
-	}
-
-	if ( !strcmp( vv, "false" ) || !strcmp( vv, "FALSE" ) ) {
-		fprintf( stdout, "%s.%s = 0,\n", &TAB[9-ind], k );
-		return;
-	}
-
-	//Don't worry about typesafety
-	if ( !typesafe ) {
-		fprintf( stdout, "%s", &TAB[9-ind] );
-		fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
-		return;
-	}
-
-	//Handle typesafety
-	while ( *vv ) {
-		if ( !memchr( "0123456789", *vv, 10 ) ) {
-			fprintf( stdout, "%s", &TAB[9-ind] );
-			fprintf( stdout, &", .%s = \"%s\"\n"[adv], k, v );
-			return;
-		}
-		vv++;
-	}
-#endif
 }
 
 
@@ -1508,56 +1089,6 @@ static unsigned char * extract_row( void *buf, int buflen, unsigned int *newlen 
 
 
 
-#if 0
-int ascii_f ( const char *file, const char *delim, const char *output ) {
-	unsigned char *buf = NULL;
-	char err[ ERRLEN ] = { 0 };
-	int buflen = 0, len = 0;
-	#if 0
-	int fd = -1;
-	#endif
-
-	// Check for bad characters in the delimiter
-	for ( const char *d = delim; *d; d++ ) {
-		if ( *d > 127 ) {
-			return nerr( "delimiter contains something not ASCII\n" );
-		}
-	}
-
-	// Load the entire file
-	if ( !( buf = read_file( file, &buflen, err, sizeof( err ) ) ) ) {
-		return nerr( "%s\n", err );
-	}
-
-	#if 0
-	// Open whatever you asked for
-	if ( ( fd = open( output, O_RDWR | O_CREAT, 0755 ) ) == -1 ) {
-		return nerr( "Failed to open file %s: %s\n", output, strerror( errno ) );
-	}
-	#endif
-
-	// Check for bad characters in the file
-	// NOTE: Written this way b/c *d can easily be \0 if we're running this...
-	for ( const unsigned char *d = buf; buflen; buflen--, len++, d++ ) {
-	#if 0
-		// Maybe you need to stop here?  Or convert certain byte sequences?
-	#endif
-		if ( *d < 128 && ( write( 1, d, 1 ) == -1 ) ) {
-			return nerr( "Failed to write byte %d from %s to new file %s: %s\n",
-				len, file, output, strerror( errno ) );
-		}
-	}
-
-	#if 0
-		// Using another file, you can close it here
-	#endif
-
-	free( buf );
-	return 1;
-}
-#endif
-
-
 // A function to safely copy a string with an optional delimiter
 int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 
@@ -1596,6 +1127,10 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 }
 
 
+/*
+ * Copy to a number safely.
+ *
+ */
 int safecpynumeric( char *numtext ) {
 	for ( char *p = numtext; *p; p++ ) {
 		if ( !memchr( "0123456789", *p, 10 ) ) return -1;
@@ -1604,6 +1139,30 @@ int safecpynumeric( char *numtext ) {
 	return atoi( numtext );
 }
 
+
+/*
+ * Copy to a number safely from unsigned character block.
+ *
+ */
+int usafecpynumeric( unsigned char *numtext, long l ) {
+	long len = l;
+	char *jp = NULL;
+	int num = 0;
+
+	// Check for the stupid thing
+	for ( unsigned char *p = numtext; len && *p; p++, len-- )
+		if ( !memchr( "0123456789", *p, 10 ) ) return -1;
+
+	//Copy into a buffer to use atoi
+	if ( !( jp = malloc( l + 1 ) ) || !memset( jp, 0, l ) ) {
+		return -1;
+	}
+
+	memcpy( jp, numtext, len );	
+	num = atoi( jp );
+	free( jp );
+	return num;
+}
 
 /*
  * Parse DSN info the above structure
@@ -1900,11 +1459,8 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 
 
-#ifndef DEBUG_H
- #define print_dsn(A) 0
- #define print_headers(A) 0
- #define print_stream_type(A) 0
-#else
+
+#ifdef DEBUG_H
 
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
@@ -1922,7 +1478,9 @@ void print_dsn ( dsn_t *conninfo ) {
 	fprintf( stderr, "dsn->typemap:    '%p' ", (void *)conninfo->typemap );
 
 	if ( conninfo->typemap == default_map )
-		fprintf( stderr, "(default|SQLite3)" );
+		fprintf( stderr, "(default)" );
+	else if ( conninfo->typemap == sqlite3_map )
+		fprintf( stderr, "(SQLite)" );
 	else if ( conninfo->typemap == mysql_map )
 		fprintf( stderr, "(MySQL)" );
 	else if ( conninfo->typemap == pgsql_map ) {
@@ -2459,33 +2017,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 #ifdef BPGSQL_H
 	if ( conn->type == DB_POSTGRESQL ) {
-	#if 0
-		// Define
-		PGconn *pgconn = NULL;
-		PGresult *pgres = NULL;
-		char *connstr = conn->connstr;
-	#endif
-	#if 0
-		char *start = NULL, *tstart = NULL, *qstart = NULL;
-		//if ( connstr && modify_pgconnstr( &connstr );
-		// Fix the connection string if it hasn't been done yet...
-		if ( connstr && ( start = memchr( connstr, '@', strlen( connstr ) ) ) ) {
-			// If the table has been specified, get rid of everything before the '?'
-			if ( ( tstart = memchr( start, '.', strlen( start ) ) ) ) {
-				// Terminate the string and disregard the rest of the string for initializing PG
-				if ( !( qstart = memchr( start, '?', strlen( start ) ) ) ) {
-					*tstart = '\0';
-				}
-				else {
-					int qlen = strlen( qstart );
-					memmove( tstart, qstart, qlen );
-					*(tstart + qlen) = '\0';
-				}
-
-				//fprintf( stdout, "CONN = %s\n", connstr );
-			}
-		}
-	#endif
 		// Switch everything to use this format now
 		pgsql_t *db = NULL;
 
@@ -2537,10 +2068,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 
 
-typedef struct coerce_t {
-	const char name[ 128 ];
-	const char typename[ 64 ];
-} coerce_t;
 
 
 static const char * find_ctype ( coerce_t **list, const char *name ) {
@@ -2798,7 +2325,13 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		}
 
 		// Cycle through the set of entries that we want
-		for ( column_t *col = NULL; memwalk( p, file->map, dset, file->size - file->offset, dlen ) && line < count; ) {
+		//for ( column_t *col = NULL; memwalk( p, file->map, dset, file->size - file->offset, dlen ) && line < count; ) {
+		for ( ; memwalk( p, file->map, dset, file->size - file->offset, dlen ) && line < count; ) {
+
+			// Deifne some stuff to make this easier to walk
+			column_t *col = NULL;
+			type_t etype = T_NULL;
+
 			// Increase the line count
 			if ( p->chr == '\r' ) {
 				line++;
@@ -2819,31 +2352,39 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				return 0;
 			}
 
-			// Most of the database engines support reading from a pointer
-			// TODO: Keep in mind, that database access usually occurs over the net, so the connection could be cut at any time
+			// Get approximate types from the datasource and all of the other info
+			etype = conn->headers[ ci ]->type;
+			col->k = conn->headers[ ci ]->label;
 			col->v = &( (unsigned char *)file->map)[ p->pos ];
 			col->len = p->size - 1;
-			col->k = conn->headers[ ci ]->label;
-			col->exptype = 0;//conn->headers[ ci ]->type;
 
-//FIXME
-int a = conn->headers[ ci ]->type;
-			if ( a == T_INTEGER || a == T_DOUBLE )
-				col->type = a;
-			else
-			col->type = T_STRING;//get_type( col->v, col->exptype, col->len );
-
-#if 0
-			// ...
-			if ( col->exptype != col->type ) {
+			// Check the actual type against the expected type
+			if ( ( col->type = get_type( col->v, etype, col->len ) ) != etype ) {
+			//if ( col->type != etype ) {
 				// Integers can pass as floats
-				if ( col->type == T_INTEGER && col->exptype == T_DOUBLE ) {
-					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_DOUBLE got T_INTEGER";
+				if ( col->type == T_INTEGER && etype == T_DOUBLE ) {
+					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_DOUBLE got T_INTEGER\n";
+					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
+				}
+				else if ( col->type == T_INTEGER && etype == T_STRING ) {
+					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_STRING got T_INTEGER\n";
+					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
+				} 
+				// If I'm supposed to have a boolean and it comes back as an INTEGER, this isn't a problem if the value is right
+				else if ( col->type == T_INTEGER && etype == T_BOOLEAN ) {
+					// You'll have to convert the number and see if it's a 0 or 1
+					int check = usafecpynumeric( col->v, col->len ); 
+					if ( check > 1 || check < 0 ) {
+						const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (Expected T_BOOLEAN, got T_INTEGER)";
+						snprintf( err, errlen, fmt, line + 1, col->k, ci + 1 );
+						return 0;
+					} 
+					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_BOOLEAN got T_INTEGER\n";
 					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
 				}
 
 				// Chars can pass as strings
-				else if ( col->type == T_CHAR && col->exptype == T_STRING ) {
+				else if ( col->type == T_CHAR && etype == T_STRING ) {
 					const char fmt[] = "WARNING: Value at row %d, column '%s' (%d). Expected T_STRING got T_CHAR";
 					fprintf( stderr, fmt, line + 1, col->k, ci + 1 );
 				}
@@ -2851,11 +2392,11 @@ int a = conn->headers[ ci ]->type;
 				// Anything else is a failure for now
 				else {
 					const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (Expected %s, got %s)\n";
-					snprintf( err, errlen, fmt, line + 1, col->k, ci + 1, itypes[ col->type ], itypes[ col->exptype ] );
+					snprintf( err, errlen, fmt, line + 1, col->k, ci + 1, itypes[ etype ], itypes[ col->type ] );
 					return 0;
 				}
 			}
-#endif
+
 			// Add columns and increase column count
 			add_item( &cols, col, column_t *, &clen );
 			ci++;
@@ -3095,48 +2636,33 @@ int transform_from_dsn(
 
 		file = (file_t *)oconn->conn;
 
-		( format.prefix ) ? FDPRINTF( file->fd, format.prefix ) : 0;
+		( FF.prefix ) ? FDPRINTF( file->fd, FF.prefix ) : 0;
 
 		if ( t == STREAM_PRINTF || t == STREAM_COMMA )
 			;
-		else if ( t == STREAM_XML )
-			( format.prefix && format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+		else if ( t == STREAM_XML ) {
+			FDPRINTF( file->fd, "<" );
+			FDPRINTF( file->fd, oconn->tablename );
+			FDPRINTF( file->fd, ">" );
+			( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+		}
 		else if ( t == STREAM_CSTRUCT )
 			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" );
 		else if ( t == STREAM_CARRAY )
 			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" );
-		else if ( t == STREAM_JSON ) {
-		#if 1
-			FDPRINTF( file->fd, ( odv ) ? "," : " " );
-			FDNPRINTF( file->fd, "{\n", ( format.newline ) ? 2 : 1 );
-		#else
-			if ( prefix && newline )
-				fprintf( oconn->output, "%c{\n", odv ? ',' : ' ' );
-			else if ( prefix )
-				;
-			else {
-				fprintf( oconn->output, "%c{%s", odv ? ',' : ' ', newline ? "\n" : "" );
-			}
-		#endif
-		}
+		else if ( t == STREAM_JSON )
+			FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDNPRINTF( file->fd, "{\n", ( FF.newline ) ? 2 : 1 );
 		else if ( t == STREAM_SQL ) {
 			// Output the table name
-			//fprintf( oconn->output, "INSERT INTO %s ( ", iconn->tablename );
 			FDPRINTF( file->fd, "INSERT INTO " );
 			FDPRINTF( file->fd, oconn->tablename );
 			FDPRINTF( file->fd, " (" );
 
 			for ( header_t **x = iconn->headers; x && *x; x++ ) {
-				// TODO: use the pointer to detect whether or not we're at the beginning
-				//fprintf( oconn->output, &",%s"[ ( *iconn->headers == *x ) ], (*x)->label );
 				( *iconn->headers != *x ) ? FDPRINTF( file->fd, "," ) : 0;
-				//write( file->fd, (*x)->label, strlen( (*x)->label ) );
 				FDPRINTF( file->fd, (*x)->label );
 			}
 
-			//The VAST majority of engines will be handle specifying the column names
-			//fprintf( oconn->output, " ) VALUES ( " );
-			//write( file->fd, ") VALUES (", sizeof( ") VALUES (" ) - 1 );
 			FDPRINTF( file->fd, ") VALUES (" );
 		}
 	}
@@ -3219,25 +2745,36 @@ int transform_from_dsn(
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
 			int first = *col == *((*row)->columns);
 			if ( t == STREAM_PRINTF ) {
-				//fprintf( oconn->output, "%s => %s%s%s\n", (*col)->k, ld, (*col)->v, rd );
-//write( file->fd, (*col)->k, strlen( (*col)->k ) );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, " => " );
-				FDPRINTF( file->fd, format.leftdelim );
-				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-				FDPRINTF( file->fd, format.rightdelim );
+				if ( (*col)->type == T_BOOLEAN && memchr( "Tt1", *(*col)->v, 3 ) )
+					FDPRINTF( file->fd, "true" );
+				else if ( (*col)->type == T_BOOLEAN && memchr( "Ff0", *(*col)->v, 3 ) )
+					FDPRINTF( file->fd, "false" );
+				else if ( (*col)->type == T_BINARY ) {
+					char bin[ 64 ];
+					memset( &bin, 0, sizeof( bin ) );
+					snprintf( bin, sizeof( bin ) - 1, "%p (%d bytes)", (void *)(*col)->v, (*col)->len );
+					FDPRINTF( file->fd, bin );
+				}
+				else if ( (*col)->type == T_STRING	|| (*col)->type == T_CHAR ) {
+					FDPRINTF( file->fd, FF.leftdelim );
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					FDPRINTF( file->fd, FF.rightdelim );
+				}
+				else {
+					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				}
 				FDPRINTF( file->fd, "\n" );
 			}
 			else if ( t == STREAM_XML ) {
-				//fprintf( oconn->output, "%s<%s>%s</%s>\n", &TAB[9-1], (*col)->k, (*col)->v, (*col)->k );
-//FDPRINTF( file->fd, &TAB[9-1] ); // Control tabbing...
-				FDPRINTF( file->fd, "<" );
+				FDPRINTF( file->fd, "\t<" );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, ">" );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, (*col)->k );
-				FDNPRINTF( file->fd, ">\n", ( format.newline ) ? 2 : 1 );
+				FDNPRINTF( file->fd, ">\n", ( FF.newline ) ? 2 : 1 );
 			}
 			else if ( t == STREAM_CARRAY ) {
 				//fprintf( oconn->output, &", \"%s\""[ first ], (*col)->v );
@@ -3260,9 +2797,9 @@ int transform_from_dsn(
 
 				if ( (*col)->type == T_NULL )
 					FDPRINTF( file->fd, "null" );
-				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Tt", *(*col)->v, 2 ) )
+				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Tt1", *(*col)->v, 3 ) )
 					FDPRINTF( file->fd, "true" );
-				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Ff", *(*col)->v, 2 ) )
+				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Ff0", *(*col)->v, 3 ) )
 					FDPRINTF( file->fd, "false" );
 				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR ) {
 					FDPRINTF( file->fd, "\"" );
@@ -3272,7 +2809,7 @@ int transform_from_dsn(
 				else {
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				}
-				( format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( t == STREAM_CSTRUCT ) {
 				//p_cstruct( 1, *col );
@@ -3337,9 +2874,9 @@ int transform_from_dsn(
 				if ( (*col)->type != T_STRING && (*col)->type != T_CHAR )
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				else {
-					FDPRINTF( file->fd, format.leftdelim );
+					FDPRINTF( file->fd, FF.leftdelim );
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
-					FDPRINTF( file->fd, format.rightdelim );
+					FDPRINTF( file->fd, FF.rightdelim );
 				}
 #if 0
 				if ( !typesafe ) {
@@ -3439,8 +2976,11 @@ int transform_from_dsn(
 		// End the string
 		if ( t == STREAM_PRINTF )
 			;//p_default( 0, ib->k, ib->v );
-		else if ( t == STREAM_XML )
-			;//p_xml( 0, ib->k, ib->v );
+		else if ( t == STREAM_XML ) {
+			FDPRINTF( file->fd, "</" );
+			FDPRINTF( file->fd, oconn->tablename );
+			FDPRINTF( file->fd, ">" );
+		}
 		else if ( t == STREAM_COMMA )
 			;//fprintf( oconn->output, " },\n" );
 		else if ( t == STREAM_CSTRUCT )
@@ -3535,8 +3075,8 @@ int transform_from_dsn(
 
 		//Suffix
 		if ( oconn->type == DB_FILE ) {
-			( format.suffix ) ? FDPRINTF( file->fd, format.suffix ) : 0;
-			( format.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+			( FF.suffix ) ? FDPRINTF( file->fd, FF.suffix ) : 0;
+			( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		}
 
 	}
@@ -4129,34 +3669,12 @@ int main ( int argc, char *argv[] ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
 			}
 		}
-#if 0
-		else if ( !strcmp( *argv, "-k" ) || !strcmp( *argv, "--schema" ) ) {
-			schema = 1;
-			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --schema." );
-			}
-		}
-		else if ( !strcmp( *argv, "-r" ) || !strcmp( *argv, "--root" ) ) {
-			if ( !dupval( *( ++argv ), &root ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --root / --name." );
-			}
-		}
-		else if ( !strcmp( *argv, "--name" ) ) {
-			if ( !dupval( *( ++argv ), &root ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --name / --root." );
-			}
-		}
-#endif
 		else if ( !strcmp( *argv, "--for" ) ) {
-			if ( output.connstr ) {
-				// Can't peicfy both output and --for
+			if ( output.connstr )
 				return ERRPRINTF( ERRCODE, "%s\n", "Can't specify both --for & --output" );
-			}
 
-			if ( *( ++argv ) == NULL ) {
-				ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
-				return 1;
-			}
+			if ( *( ++argv ) == NULL )
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
 
 			if ( !strcasecmp( *argv, "sqlite3" ) ) {
 				dbengine = SQL_SQLITE3;
@@ -4190,7 +3708,7 @@ int main ( int argc, char *argv[] ) {
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
 			convert = 1;
 			if ( !dupval( *( ++argv ), &streamtype ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --format." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --FF." );
 			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
 				return ERRPRINTF( ERRCODE, "Invalid format '%s' requested.\n", streamtype );
 			}
@@ -4214,30 +3732,20 @@ int main ( int argc, char *argv[] ) {
 			}
 #endif
 		}
-		else if ( !strcmp( *argv, "-a" ) || !strcmp( *argv, "--ascii" ) ) {
-			ascii = 1;
-#if 0
-			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
-			}
-#endif
-		}
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) )
-			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
 		}
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--suffix" ) ) {
 			if ( !dupval( *(++argv), &suffix ) )
-			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --suffix." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --suffix." );
 		}
 		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
 			char *del = *(++argv);
-			if ( !del ) {
+			if ( !del )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
-			}
-			else if ( *del == 9 || ( strlen( del ) == 2 && !strcmp( del, "\\t" ) ) )  {
+			else if ( *del == 9 || ( strlen( del ) == 2 && !strcmp( del, "\\t" ) ) )
 				DELIM = "\t";
-			}
 			else if ( !dupval( del, &DELIM ) ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
 			}
@@ -4259,30 +3767,17 @@ int main ( int argc, char *argv[] ) {
 				}
 			}
 		}
-#if 0
-		else if ( !strcmp( *argv, "-D" ) || !strcmp( *argv, "--datasource" ) ) {
-			if ( !dupval( *(++argv), &input.connstr ) )
-			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --datasource." );
-		}
-#endif
 		else if ( !strcmp( *argv, "-T" ) || !strcmp( *argv, "--table" ) ) {
 			if ( !dupval( *(++argv), &table ) )
-			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --table." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --table." );
 		}
 		else if ( !strcmp( *argv, "-Q" ) || !strcmp( *argv, "--query" ) ) {
 			if ( !dupval( *(++argv), &query ) )
-			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --query." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --query." );
 		}
 		else if ( !strcmp( *argv, "-i" ) || !strcmp( *argv, "--input" ) ) {
-		#if 0
-			char *arg = *( ++argv );
-			if ( !arg || !dupval( arg, &input.connstr ) ) {
+			if ( !dupval( *( ++argv ), &input.connstr ) )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
-			}
-		#endif
-			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
-			}
 		}
 		else if ( !strcmp( *argv, "-o" ) || !strcmp( *argv, "--output" ) ) {
 			char *arg = *( ++argv );
@@ -4345,14 +3840,6 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
 	}
 
-#if 0
-fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
-	print_dsn( &input ),
-fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
-	print_dsn( &output );
-return 0;
-#endif
-
 	// This should assert, but we check it anyway 
 	if ( !input.typemap || !output.typemap ) {
 		destroy_dsn_headers( &input );
@@ -4399,6 +3886,13 @@ for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
 #endif
 
 	else if ( convert ) {
+#if 0
+fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
+	print_dsn( &input ),
+fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
+	print_dsn( &output );
+#endif
+
 	#if 1
 		// Test and try to create if it does not exist
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
