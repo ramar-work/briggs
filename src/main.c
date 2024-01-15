@@ -37,6 +37,7 @@
 #define VERSION "0.01"
 #define TAB "\t\t\t\t\t\t\t\t\t"
 #define ERRLEN 2048
+#define NODES "nodes"
 
 #include <stdio.h>
 #include <dirent.h>
@@ -122,6 +123,11 @@
 #else
 	/* Optionally print arguments */
  #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
+
+	/* Let me know where the program is */
+ #define WHERE() \
+ 	DPRINTF( "%s: [%s:%d]\n", __func__, __FILE__, __LINE__ )
+
 	/* Print the literal name of a type */
  #define N(A) #A
 #endif
@@ -369,7 +375,10 @@ typedef struct pgsql_t {
 	PGconn *conn;
 	PGresult *res;
 	char **bindargs;
-	int *bindlens;	
+	int *bindlens;
+	Oid *bindoids;
+	int *bindfmts; // the smallest I can think of
+	int arglen;	
 } pgsql_t;
 
 
@@ -1549,6 +1558,7 @@ void destroy_dsn_headers ( dsn_t *t ) {
 
 // Destroy all records
 void destroy_dsn_rows ( dsn_t *t ) {
+	WHERE();
 	for ( row_t **r = t->rows; r && *r; r++ ) {
 		for ( column_t **c = (*r)->columns; c && *c; c++ ) free( (*c) );
 		free( (*r)->columns );
@@ -1726,7 +1736,7 @@ int create_dsn ( dsn_t *ic, dsn_t *oc, char *err, int errlen ) {
 		return 0;
 	}
 
-#if 0
+#if 1
 	// TODO: Some engines can't run with a semicolon
 	for ( char *s = schema_fmt; *s; s++ ) {
 		if ( *s == ';' ) {
@@ -1833,8 +1843,8 @@ fprintf( stdout, "CS = %s\n", cs );
 			return 0;
 		}
 
-//fprintf( stdout, "OUTPUT CONN => %p\n", pgconn );
-//fprintf( stdout, "SCHEMA => %s\n", schema_fmt );
+fprintf( stdout, "OUTPUT CONN => %p\n", (void *)pgconn );
+fprintf( stdout, "SCHEMA => %s\n", schema_fmt );
 #if 1
 		// Check if db exists (if not create it)
 		if ( !( pgres = PQexec( pgconn, schema_fmt ) ) ) {
@@ -1848,10 +1858,6 @@ fprintf( stdout, "CS = %s\n", cs );
 		// Need to clear and preferably destroy it...
 		PQclear( pgres );
 		PQfinish( pgconn );
-
-		// Set both of these
-		//conn->conn = pgconn;
-		//conn->res = pgres;
 	}
 #endif
 
@@ -1892,6 +1898,7 @@ return 1;
  *
  */
 int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
+	WHERE();
 	char query[ 2048 ];
 	memset( query, 0, sizeof( query ) );
 
@@ -2278,9 +2285,10 @@ int struct_from_dsn( dsn_t * conn ) {
  * really be the only way to make this work sensibly with SQL.
  *
  */
-int prepare_dsn ( dsn_t *conn, char *err, int errlen ) {
+int prepare_dsn_for_read ( dsn_t *conn, char *err, int errlen ) {
 	// Move up the buffer so that we start from the right offset
 	//while ( *(buffer++) != '\n' );
+	WHERE();
 
 	if ( conn->type == DB_FILE ) {
 		file_t *file = (file_t *)conn->conn;
@@ -2288,38 +2296,85 @@ int prepare_dsn ( dsn_t *conn, char *err, int errlen ) {
 		// Prevent from reading past the end...
 		while ( len-- && *((unsigned char *)file->map++) != '\n' );
 		file->offset = file->size - len;
+		DPRINTF( "file->offset: %d\n", file->offset );
+		DPRINTF( "file->size: %ld\n", file->size );
+		DPRINTF( "file->map: %p\n", (void *)file->map );
 	}
 
 	else if ( conn->type == DB_MYSQL ) {
-fprintf( stderr, "PREPARING MySQL DSN\n" );
-		mysql_t *t = (mysql_t *)conn->conn;	
-		t->stmt = (void *)mysql_stmt_init( t->conn );
-		t->bindargs = malloc( sizeof( MYSQL_BIND ) * conn->hlen );	
-		memset( t->bindargs, 0, sizeof( MYSQL_BIND ) * conn->hlen );
 	}
 
 	else if ( conn->type == DB_POSTGRESQL ) {
-fprintf( stderr, "PREPARING PostgreSQL DSN\n" );
-		pgsql_t *t = (pgsql_t *)conn->conn;	
-		t->bindargs = malloc( sizeof( char * ) * conn->hlen );
-		memset( t->bindargs, 0, sizeof( char * ) * conn->hlen );
-		t->bindlens = malloc( sizeof( int ) * conn->hlen );
-		memset( t->bindlens, 0, sizeof( char * ) * conn->hlen );
 	}
-
-#if 0
-	else if ( conn->type == DB_POSTGRESQL ) {
-
-	}
-#endif
 
 	return 1;
 }
 
 
+/**
+ * int prepare_dsn_for_write ( dsn_t *, dsn_t *, char *, int) 
+ * ===========================
+ *
+ * Prepare DSN for writing.  
+ *
+ */
+int prepare_dsn_for_write ( dsn_t *dc, dsn_t *sc, char *err, int errlen ) {
+	WHERE();
+
+	if ( dc->type == DB_FILE ) {
+		// Reading happens from the input source, so that is another story
+	}
+
+
+	else if ( dc->type == DB_MYSQL ) {
+fprintf( stderr, "PREPARING MySQL DSN: %d columns\n", sc->hlen );
+		mysql_t *t = (mysql_t *)dc->conn;	
+		t->stmt = (void *)mysql_stmt_init( (MYSQL *)t->conn );
+
+		if ( !( t->bindargs = malloc( sizeof( MYSQL_BIND ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( MYSQL_BIND ) * sc->hlen ) ) {
+			const char fmt[] = "%s: out of memory occurred allocating MySQL bind structures: %s";
+			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+			return 0;	
+		}
+	}
+
+	else if ( dc->type == DB_POSTGRESQL ) {
+fprintf( stderr, "PREPARING PostgreSQL DSN: %d columns\n", sc->hlen );
+		pgsql_t *t = (pgsql_t *)dc->conn;	
+
+		if ( !( t->bindargs = malloc( sizeof( char * ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( char * ) * sc->hlen ) ) {
+			const char fmt[] = "%s: out of memory occurred allocating Postgres bind structures: %s";
+			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+			return 0;
+		}
+
+		if ( !( t->bindlens = malloc( sizeof( int ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( int ) * sc->hlen ) ) {
+			const char fmt[] = "%s: out of memory occurred allocating Postgres bind length structures: %s";
+			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+			return 0;	
+		}
+
+		if ( !( t->bindoids = malloc( sizeof( char * ) * sc->hlen ) ) || !memset( t->bindoids, 0, sizeof( char * ) * sc->hlen ) ) {
+			const char fmt[] = "%s: out of memory occurred allocating Postgres bind types structures: %s";
+			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+			return 0;
+		}
+
+		if ( !( t->bindfmts = malloc( sizeof( int ) * sc->hlen ) ) || !memset( t->bindfmts, 0, sizeof( int ) * sc->hlen ) ) {
+			const char fmt[] = "%s: out of memory occurred allocating Postgres bind types structures: %s";
+			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 
 // Destory structures
 void unprepare_dsn( dsn_t *conn ) {
+	WHERE();
+
 	// Rewinding the pointer to the beginning would be an ok idea. But unnecessary
 	if ( conn->type == DB_FILE ) {
 		file_t *file = (file_t *)conn->conn;
@@ -2337,6 +2392,8 @@ fprintf( stderr, "UNPREPARING PostgreSQL DSN\n" );
 		pgsql_t *t = (pgsql_t *)conn->conn;	
 		free( t->bindargs );
 		free( t->bindlens );
+		free( t->bindfmts );
+		free( t->bindoids );
 	}
 }
 
@@ -2354,6 +2411,7 @@ fprintf( stderr, "UNPREPARING PostgreSQL DSN\n" );
  *
  */
 int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen ) {
+	WHERE();
 
 	if ( conn->type == DB_FILE ) {
 		zw_t *p = malloc( sizeof( zw_t ) );
@@ -2629,12 +2687,15 @@ int transform_from_dsn(
 ) {
 
 	// Define
+	WHERE();
 	int odv = 0;
 	char insfmt[ 256 ];
 	memset( insfmt, 0, sizeof( insfmt ) );
 
 	// Define any db specific stuff
 	int ri = 0;
+
+	// Debug printing other things COULD help here
 
 	// Loop through all rows
 	for ( row_t **row = iconn->rows; row && *row; row++, ri++ ) {
@@ -2661,7 +2722,7 @@ int transform_from_dsn(
 				FDPRINTF( file->fd, "<" );
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, ">" );
-				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+				//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( t == STREAM_SQL ) {
 				FDPRINTF( file->fd, "INSERT INTO " );
@@ -2697,12 +2758,12 @@ int transform_from_dsn(
 				// Create the insert keys
 				for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
 					// TODO: You're going to need a way to track how big len is
-					bw = snprintf( s, l, &",$%d"[ (int)(i == 1) ], i );
+					bw = snprintf( s, l, &", $%d"[ (int)(i == 1) ], i );
 					l -= bw, s += bw;
 				}
 
 				// Finally, we create the final bind stmt
-				snprintf( ffmt, sizeof( ffmt ), fmt, iconn->tablename, insfmt, argfmt );
+				snprintf( ffmt, sizeof( ffmt ), fmt, oconn->tablename, insfmt, argfmt );
 			}
 		#endif
 		#ifdef BMYSQL_H
@@ -2731,11 +2792,12 @@ int transform_from_dsn(
 				}
 
 				// Finally, we create the final bind stmt
-				snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", iconn->tablename, insfmt, argfmt );
+				snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", oconn->tablename, insfmt, argfmt );
 				fprintf( stdout, "%s\n", ffmt );
 			}
 		#endif
 		} /* end for */
+
 
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
@@ -2766,13 +2828,15 @@ int transform_from_dsn(
 			}
 			else if ( t == STREAM_XML ) {
 				file_t *file = (file_t *)oconn->conn;
-				FDPRINTF( file->fd, "\t<" );
+				//FDPRINTF( file->fd, "\t<" );
+				FDPRINTF( file->fd, "<" );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, ">" );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, (*col)->k );
-				FDNPRINTF( file->fd, ">\n", ( FF.newline ) ? 2 : 1 );
+				//FDNPRINTF( file->fd, ">\n", ( FF.newline ) ? 2 : 1 );
+				FDPRINTF( file->fd, ">" );
 			}
 			else if ( t == STREAM_CARRAY ) {
 				file_t *file = (file_t *)oconn->conn;
@@ -2884,13 +2948,14 @@ int transform_from_dsn(
 		#ifdef BMYSQL_H
 			else if ( t == STREAM_MYSQL ) {
 			#ifdef DEBUG_H
-				// We definitely do use this...
 				header_t **headers = iconn->headers;
-				mysql_t *b = (mysql_t *)oconn->conn;
-				//fprintf( stderr, "Binding value %p, %d of length %d\n", (*col)->v, (headers[ci])->ntype,(*col)->len );
+				//fprintf( stderr, "Binding value %p, (%s) of length %d\n", (*col)->v, (headers[ci])->ntype->typename,(*col)->len );
 			#endif
 
-			#if 1
+			#if 0
+				// The type should come from the base native conversion (or ctype if user forced it)
+			#else
+				mysql_t *b = (mysql_t *)oconn->conn;
 				MYSQL_BIND *bind = &b->bindargs[ ci ];
 				bind->buffer = (*col)->v;
 				bind->is_null = NULL;
@@ -2899,52 +2964,71 @@ int transform_from_dsn(
 				if ( (*col)->type == T_NULL )
 					bind->buffer_type = MYSQL_TYPE_STRING;
 				else if ( (*col)->type == T_BOOLEAN )
-					bind->buffer_type = MYSQL_TYPE_BIT;
+					bind->buffer_type = MYSQL_TYPE_TINY;
 				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR )
 					bind->buffer_type = MYSQL_TYPE_STRING;
 				else if ( (*col)->type == T_INTEGER )
 					bind->buffer_type = MYSQL_TYPE_DECIMAL;
 				else if ( (*col)->type == T_DOUBLE )
 					bind->buffer_type = MYSQL_TYPE_DOUBLE;
-			#if 0
-				else if ( (*col).type == T_BINARY ) {
-				//binds[ ci ].buffer_type = (headers[ ci ])->ntype;
-				}
-			#endif
+				else if ( (*col)->type == T_BINARY )
+					bind->buffer_type = MYSQL_TYPE_BLOB;
 				else {
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
 					snprintf( err, errlen, fmt );
 					return 0;
 				}
-			#else
 			#endif
 			}
 		#endif
 		#ifdef BPGSQL_H
 			else if ( t == STREAM_PGSQL ) {
 			#ifdef DEBUG_H
-				fprintf( stderr, "Binding value %p of length %d\n", (*col)->v, (*col)->len );
+				header_t **headers = iconn->headers;
+				fprintf( stderr, "Binding value %p of length %d at %d\n", (*col)->v, (*col)->len, ci );
 			#endif
 				pgsql_t *b = (pgsql_t *)oconn->conn;
+
+#if 0
+					b->bindargs[ ci ] = (char *)(*col)->v; 
+					b->bindlens[ ci ] = (*col)->len;
+#else 
 				// Bind and prepare an insert?
-				b->bindargs[ ci ] = (char *)(*col)->v;
-				b->bindlens[ ci ] = (*col)->len;
+				if ( (*col)->type == T_BINARY ) {
+					b->bindargs[ ci ] = (char *)(*col)->v; 
+					b->bindlens[ ci ] = (*col)->len;
+					b->bindfmts[ ci ] = 1;
+				}
+				else {
+					char *v = NULL;
+					if ( !( v = malloc( (*col)->len + 1 ) ) || !memset( v, 0, (*col)->len + 1 ) ) {
+						const char fmt[] = "Out of memory when binding value at column %s for Postgres";
+						snprintf( err, errlen, fmt, iconn->headers[ ci ]->label );
+						return 0;
+					}
+					memcpy( v, (*col)->v, (*col)->len );
+					b->bindlens[ ci ] = (*col)->len;
+					b->bindargs[ ci ] = v; 
+					b->bindfmts[ ci ] = 0;
+				}
+#endif
 			#if 0
+				b->bindoids[ ci ] = 
+			#else
 				// Use the approximate type as a base for the format
 				if ( (*col)->type == T_NULL )
-					pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_STRING;
+					b->bindoids[ ci ] = PG_TEXTOID; 
 				else if ( (*col)->type == T_BOOLEAN )
-					pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_BIT;
+					b->bindoids[ ci ] = PG_BOOLOID; 
 				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR )
-					pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_STRING;
+					b->bindoids[ ci ] = PG_TEXTOID; 
 				else if ( (*col)->type == T_INTEGER )
-					pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_DECIMAL;
+					b->bindoids[ ci ] = PG_INT4OID; 
 				else if ( (*col)->type == T_DOUBLE )
-					pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_DOUBLE;
-				else if ( (*col)->type == T_DOUBLE ) {
-					//pgsql_types_array[ ci ].buffer_type = MYSQL_TYPE_DOUBLE;
-				}
+					b->bindoids[ ci ] = PG_FLOAT4OID; 
+				else if ( (*col)->type == T_BINARY )
+					b->bindoids[ ci ] = PG_FLOAT4OID;
 				else {
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
@@ -2973,11 +3057,8 @@ int transform_from_dsn(
 				FDPRINTF( file->fd, " }" );
 			else if ( t == STREAM_SQL )
 				FDPRINTF( file->fd, " );" );
-			else if ( t == STREAM_JSON ) {
-				//wipe the last ','
-				FDNPRINTF( file->fd, "}", 1 );
-				//FDPRINTF( file->fd, "," );
-			}
+			else if ( t == STREAM_JSON )
+				FDNPRINTF( file->fd, "},", 2 ); // count will depend on where in the stream
 			else if ( t == STREAM_XML ) {
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, oconn->tablename );
@@ -2988,12 +3069,9 @@ int transform_from_dsn(
 	#ifdef BMYSQL_H
 		else if ( t == STREAM_MYSQL ) {
 			mysql_t *b = (mysql_t *)oconn->conn;
-		#ifdef DEBUG_H
-			fprintf( stderr, "Writing values to MySQL db\n" );
-		#endif
 		#if 0
 			int status = 0;
-			status = mysql_bind_param( oconn->conn, iconn->hlen, mysql_bind_array, NULL );
+			status = mysql_bind_param( oconn->conn, iconn->hlen, b->bindargs, NULL );
 			if ( status != 0 ) {
 				const char fmt[] = "MySQL bind failed: '%s'";
 				snprintf( err, errlen, fmt, mysql_error( oconn->conn )  );
@@ -3007,6 +3085,7 @@ int transform_from_dsn(
 				return 0;
 			}
 		#else
+			// TODO: Statements are probably preferred, but its simpler to do it the other way
 			// Prepare the statement
 			if ( mysql_stmt_prepare( b->stmt, ffmt, strlen( ffmt ) ) != 0 ) {
 				const char fmt[] = "MySQL statement prepare failure: '%s'";
@@ -3037,20 +3116,15 @@ int transform_from_dsn(
 
 	#ifdef BPGSQL_H
 		else if ( t == STREAM_PGSQL ) {
-		#ifdef DEBUG_H
-			fprintf( stderr, "Writing values to Postgres db\n" );
-		#endif
-
 			pgsql_t *b = (pgsql_t *)oconn->conn;
-
 			PGresult *r = PQexecParams(
 				b->conn,
 				ffmt,
 				iconn->hlen,
-				NULL,
+				b->bindoids,
 				(const char * const *)b->bindargs,
 				b->bindlens,
-				NULL,
+				(int *)b->bindfmts,
 				0
 			);
 
@@ -3060,45 +3134,22 @@ int transform_from_dsn(
 				return 0;
 			}
 
+			DPRINTF( "Commit successful, freeing duplicated values\n" );
 			PQclear( r );
+
+			// Free all of the allocated values here
+			int ii = 0;
+			for ( char **bb = b->bindargs; ii < iconn->hlen; bb++, ii++ ) free( *bb );
 		}
 	#endif
-
-		DPRINTF( "Completed row: %d\n", ri ), fsync( 2 );
 
 		//Suffix
 		if ( oconn->type == DB_FILE ) {
 			file_t *file = (file_t *)oconn->conn;
 			( FF.suffix ) ? FDPRINTF( file->fd, FF.suffix ) : 0;
-			( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+			//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		}
-
 	}
-
-
-#if 0
-	// All of this crap should now be moved to teardown or unprepare_dsn()
-	if ( 0 ) ;
-#ifdef BMYSQL_H
-	else if ( oconn->type == DB_MYSQL ) {
-		mysql_stmt_close( mysql_stmt );
-		free( mysql_bind_array );
-	}
-#endif
-#ifdef BPGSQL_H
-	else if ( oconn->type == DB_POSTGRESQL ) {
-		free( pgsql_bind_array );
-		free( pgsql_lengths_array );
-	}
-#endif
-#endif
-
-#if 0
-	// If the stream is a file, flush it
-	if ( t != STREAM_MYSQL && t != STREAM_PGSQL ) {
-		fsync( file->fd );
-	}
-	#endif
 
 	return 1;
 }
@@ -3830,7 +3881,7 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "%s", err );
 
 	// The input datasource has to be prepared too
-	if ( !prepare_dsn( &input, err, sizeof( err ) ) ) {
+	if ( !prepare_dsn_for_read( &input, err, sizeof( err ) ) ) {
 		destroy_dsn_headers( &input );
 		close_dsn( &input );
 		return ERRPRINTF( ERRCODE, "Failed to prepare DSN: %s.\n", err );
@@ -3847,16 +3898,6 @@ int main ( int argc, char *argv[] ) {
 	if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
 		return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 	}
-
-#if 0
-fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
-	print_dsn( &input ),
-fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
-	print_dsn( &output );
-
-for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
-	printf( "typename: %s (%s)\n", t->typename, t->libtypename );
-#endif
 
 	// Create a schema
 	if ( schema ) {
@@ -3882,15 +3923,20 @@ for ( const typemap_t *t = output.typemap; t->ntype != TYPEMAP_TERM; t++ )
 #endif
 
 	else if ( convert ) {
-#if 1
-fprintf( stdout, "INPUT CS: %s\n", input.connstr ), 
-	print_dsn( &input ),
-fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ), 
-	print_dsn( &output );
-#endif
 
+		// Check the stream
+		if ( !stream_fmt ) {
+			if ( output.type == DB_MYSQL )
+				stream_fmt = STREAM_MYSQL;
+			else if ( output.type == DB_POSTGRESQL ) {
+				stream_fmt = STREAM_PGSQL;
+			}
+		}
+
+#if 1
 	#if 1
 		// Test and try to create if it does not exist
+fprintf( stderr, "WRITE PREP\n" );
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
 			//close_dsn( &output );
 			destroy_dsn_headers( &input );
@@ -3904,6 +3950,7 @@ fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ),
 			return 1;
 		}
 	#endif
+#endif
 
 		// Open the output dsn
 		if ( !open_dsn( &output, query, err, sizeof( err ) ) ) {
@@ -3913,11 +3960,18 @@ fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ),
 		}
 
 		// Try to prepare
-		if ( !prepare_dsn( &output, err, sizeof( err ) ) ) {
+		if ( !prepare_dsn_for_write( &output, &input, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Prepare output DSN failed: %s\n", err );
 		}	
+
+#if 0
+fprintf( stderr, "IN:\n" ),
+print_dsn( &input ), 
+fprintf( stderr, "\nOUT:\n" ),
+print_dsn( &output );
+#endif
 
 		// Control the streaming / buffering from here
 		for ( int i = 0; i < 1; i++ ) {
@@ -3929,17 +3983,20 @@ fprintf( stdout, "OUTPUT CS: %s\n", output.connstr ),
 				return ERRPRINTF( ERRCODE, "Failed to generate records from data source: %s.\n", err );
 			}
 
+			#if 0
+			for ( row_t **row = input.rows; row && *row; row++ ) {
+				fprintf( stderr, "**row - Why is it not? %p\n", (void *)*row ), getchar();
+			}
+			#endif
+
 			// Do the transport (buffering can be added pretty soon)
-//fprintf( stderr, "TRANSFORM DSN\n" ), getchar();
 			if ( !transform_from_dsn( &input, &output, stream_fmt, 0, 0, err, sizeof(err) ) ) {
 				fprintf( stderr, "Failed to transform records from data source: %s\n", err );
 				destroy_dsn_headers( &input );
 				close_dsn( &input );
 				return 1;
 			}
-
 			// Destroy the rows
-//fprintf( stderr, "DESTROY DSN\n" ), getchar();
 			destroy_dsn_rows( &input );
 		} // end for
 
