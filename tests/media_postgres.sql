@@ -31,7 +31,7 @@ booleanv boolean,
 timestampv timestamp,
 datev date,
 timev time,
-intervalv interval,
+/*intervalv interval,*/
 
 /*
 timestampv_wp timestamp,
