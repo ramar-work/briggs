@@ -120,6 +120,7 @@
  #define print_dsn(A) 0
  #define print_headers(A) 0
  #define print_stream_type(A) 0
+ #define print_date(A) 0
 #else
 	/* Optionally print arguments */
  #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
@@ -251,9 +252,25 @@ typedef enum type_t {
 	T_DOUBLE,
 	T_BOOLEAN,
 	T_BINARY, /* Assume that unsigned char * is what is expected */
-	// T_DATE, - Conversion to a base type (via tv_sec, tv_nsec ) might make the most sense)
-	/* T_BINARY // If integrating this, consider using a converter */
+	T_DATE, //- Conversion to a base type (via tv_sec, tv_nsec ) might make the most sense)
 } type_t;
+
+
+typedef struct date_t {
+	unsigned short year;
+	unsigned char month;
+	unsigned char day;
+	unsigned char hour;
+	unsigned char minute;
+	unsigned char second;
+	unsigned int micro;
+	unsigned int timezone; // Should probably be a datatype
+} date_t;
+
+
+typedef struct timezone_t {
+	int a;
+} timezone_t;
 
 
 static const char * itypes[] = {
@@ -264,6 +281,7 @@ static const char * itypes[] = {
 	[T_DOUBLE] = "T_DOUBLE",
 	[T_BOOLEAN] = "T_BOOLEAN",
 	[T_BINARY] = "T_BINARY",
+	[T_DATE] = "T_DATE",
 };
 
 
@@ -438,9 +456,6 @@ typedef struct record_t {
 } record_t;
 
 
-typedef struct dbengine_t {
-int i;
-}  dbengine_t;
 
 /**
  * column_t
@@ -455,6 +470,7 @@ typedef struct column_t {
 	type_t exptype;
 	int realtype;
 	unsigned int len;
+	date_t date;
 } column_t;
 
 
@@ -576,9 +592,9 @@ const typemap_t default_map[] = {
 	{ T_DOUBLE, N(T_DOUBLE), "REAL", T_DOUBLE, 1 },
 	{ T_BINARY, N(T_BINARY), "BLOB", T_BINARY, 1 },
 	{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN, 1 },
+	{ T_DATE, N(T_DATE), "DATE", T_DATE, 1 },
 
-	// Supporting base dates is EXTREMELY difficult... be careful supporting it
-	//{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN },
+	/* Supporting base dates is EXTREMELY difficult... be careful supporting it */
 	{ TYPEMAP_TERM },
 };
 
@@ -609,9 +625,14 @@ static const char * get_conn_type( dbtype_t t ) {
 	return ( t >= 0 && t < sizeof( dbtypes ) / sizeof( char * ) ) ? dbtypes[ t ] : NULL; 
 }
 
+#define get_btypename( T ) get_typename( T, default_map )
 
-static const char * get_btypename ( type_t t ) {
-	return ( t >= 0 && (int)t < sizeof( itypes ) / sizeof( char * ) ) ? itypes[ t ] : NULL;
+
+static const char * get_typename ( type_t t, const typemap_t *types ) {
+	for ( const typemap_t *f = types; f->ntype != TYPEMAP_TERM; f++ ) {
+		if ( f->ntype == t ) return f->typename;
+	}
+	return NULL;  
 }
 
 
@@ -676,6 +697,7 @@ typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 #define PG_FLOAT8OID 701
 #define PG_BITOID 1560
 #define PG_VARBITOID 1562
+#define PG_INTERVALOID 1186
 
 static const typemap_t pgsql_map[] = {
 #if 0
@@ -695,15 +717,16 @@ static const typemap_t pgsql_map[] = {
 	{ PG_BYTEAOID, N(PG_BYTEAOID), "bytea", T_BINARY, 1 },
 	{ PG_BYTEAOID, N(PG_BYTEAOID), "blob", T_BINARY, 0 },
 	{ PG_BOOLOID, N(PG_BOOLOID), "boolean", T_BOOLEAN, 1 },
-	{ TYPEMAP_TERM },
+	{ PG_DATEOID, N(PG_DATEOID), "date", T_DATE },
+	{ PG_TIMEOID, N(PG_TIMEOID), "time", T_DATE },
+	{ PG_TIMESTAMPOID, N(PG_TIMESTAMPOID), "timestamp", T_DATE },
 #if 0
-	[PG_DATEOID] = "PG_DATEOID",
-	[PG_TIMEOID] = "PG_TIMEOID",
-	[PG_TIMESTAMPOID] = "PG_TIMESTAMPOID",
-	[PG_TIMESTAMPZOID] = "PG_TIMESTAMPZOID",
-	[PG_TIMETZOID] = "PG_TIMETZOID",
-	[PG_DATETIMEOID] = "PG_DATETIMEOID",
+	{ PG_INTERVALOID, N(PG_INTERVALOID), "interval", T_DATE },
+	{ PG_DATETIMEOID, N(PG_DATETIMEOID), "datetime", T_DATE },
+	{ PG_TIMESTAMPZOID, N(PG_TIMESTAMPZOID), "timestamptz", T_DATE },
+	{ PG_TIMETZOID, N(PG_TIMETZOID), "timetz", T_DATE },
 #endif
+	{ TYPEMAP_TERM },
 #if 0
 	[PG_OIDOID] = "PG_OIDOID",
 	[PG_BITOID] = "PG_BITOID",
@@ -731,12 +754,12 @@ static const typemap_t mysql_map[] = {
 	{ MYSQL_TYPE_BLOB, N(MYSQL_TYPE_BLOB), "BLOB", T_BINARY, 1 },
 	/* This just maps to TINYINT behind the scenes */ 
 	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "BOOL", T_BOOLEAN, 1 },
-#if 0
-	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "TIMESTAMP", T_XXX },
-	{ MYSQL_TYPE_DATE, N(MYSQL_TYPE_DATE), "DATE", T_XXX },
-	{ MYSQL_TYPE_TIME, N(MYSQL_TYPE_TIME), "TIME", T_XXX },
-	{ MYSQL_TYPE_DATETIME, N(MYSQL_TYPE_DATETIME), "DATETIME", T_XXX },
-	{ MYSQL_TYPE_YEAR, N(MYSQL_TYPE_YEAR), "YEAR", T_XXX },
+#if 1
+	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "TIMESTAMP", T_DATE },
+	{ MYSQL_TYPE_DATE, N(MYSQL_TYPE_DATE), "DATE", T_DATE },
+	{ MYSQL_TYPE_TIME, N(MYSQL_TYPE_TIME), "TIME", T_DATE },
+	{ MYSQL_TYPE_DATETIME, N(MYSQL_TYPE_DATETIME), "DATETIME", T_DATE },
+	{ MYSQL_TYPE_YEAR, N(MYSQL_TYPE_YEAR), "YEAR", T_DATE },
 #endif
 	{ TYPEMAP_TERM },
 };
@@ -1164,12 +1187,13 @@ int usafecpynumeric( unsigned char *numtext, long l ) {
 	for ( unsigned char *p = numtext; len && *p; p++, len-- )
 		if ( !memchr( "0123456789", *p, 10 ) ) return -1;
 
-	//Copy into a buffer to use atoi
+	// Copy into a buffer to use atoi
 	if ( !( jp = malloc( l + 1 ) ) || !memset( jp, 0, l ) ) {
 		return -1;
 	}
 
-	memcpy( jp, numtext, len );	
+	// Copy from original block
+	memcpy( jp, numtext, l );	
 	num = atoi( jp );
 	free( jp );
 	return num;
@@ -1472,6 +1496,12 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 
 #ifdef DEBUG_H
+
+void print_date( date_t *date ) {
+	fprintf( stderr, "Y: %d, M: %d, D: %d, H: %d, m: %d, s:%d\n", 
+		date->year, date->month, date->day, date->hour, date->minute, date->second 
+	);
+}
 
 // Dump the DSN
 void print_dsn ( dsn_t *conninfo ) {
@@ -2527,35 +2557,30 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 		}
 		free( p );
 	}
-#ifdef BSQLITE_H
-	else if ( conn->type == DB_SQLITE ) {
-		;
-	}
-#endif
 #ifdef BMYSQL_H
-#if 0
 	else if ( conn->type == DB_MYSQL ) {
-	#if 1
-		my_ulonglong rowcount = mysql_num_rows( conn->res );
-	#else
-		//MYSQL_RES *res = NULL;
-		int blimit = 1000;
-		my_ulonglong rowcount = mysql_num_rows( conn->res );
-		int loopcount = ( rowcount / blimit < 1 ) ? 1 : rowcount / blimit;
-		if ( rowcount % blimit && loopcount > 1 ) {
-			loopcount++;
+		// Cast
+		mysql_t *b = (mysql_t *)conn->conn;
+		unsigned int rowcount = 0;
+
+		if ( !b ) {
+			const char fmt[] = "mysql() connection lost";
+			snprintf( err, errlen, fmt );
+			return 0;
 		}
 
-		// Move through all of the rows
-		// for ( int lc = 0, rc = 0; lc < loopcount; lc++ ) {
-	#endif
+		// Catch this unusual situation (should probably be an error)
+		if ( !( rowcount = mysql_num_rows( b->res ) ) ) {
+			snprintf( err, errlen, "Query returned no rows." );
+			return 0;	
+		}
 
 		// Move through all of the columns
-		for ( int i = 0; i < rowcount ; i++ ) {
-			MYSQL_ROW r = mysql_fetch_row( conn->res );
+		for ( unsigned int i = 0; i < rowcount ; i++ ) {
+			MYSQL_ROW r = mysql_fetch_row( b->res );
 			row_t *row = NULL;
 			column_t **cols = NULL;
-			unsigned long *lens = mysql_fetch_lengths( conn->res );
+			unsigned long *lens = mysql_fetch_lengths( b->res );
 
 			// Move through each column
 			for ( int ci = 0, clen = 0; ci < conn->hlen; ci++ ) {
@@ -2571,21 +2596,52 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 				// Set the values
 				col->k = conn->headers[ ci ]->label;
+				col->v = (unsigned char *)( *r );
+				col->len = lens[ ci ];
+				// This only gets the basetype
 				col->type = conn->headers[ ci ]->type;
 
-				// Get the value and trim stuff
-				// TODO: Using trim(...) here might be dangerous and lead to leaks...
-				col->v = (unsigned char *)( *r );
+				// If it's a date, then let's just see what's in the engine for now
+				if ( col->type == T_DATE ) {
+					date_t *d = &col->date;
+					memset( d, 0, sizeof( date_t ) );
+					unsigned char *v = col->v;
+					typemap_t *x = conn->headers[ ci ]->ntype;
 
-				// This SHOULD be fine even if we're dealing with strings
-				col->len = lens[ ci ];
+//DPRINTF( "Field %-10s is a date (type %d %s)!\n", col->k, x->ntype, x->libtypename );
+//write( 2, "'", 1 ), write( 2, col->v, col->len ), write( 2, "'\n", 2 );
+
+					if ( x->ntype == MYSQL_TYPE_YEAR ) {
+						d->year = usafecpynumeric( v, 4 );  
+					}
+					else if ( x->ntype == MYSQL_TYPE_DATE ) {
+						d->year = usafecpynumeric( v, 4 ), v += 5;
+						d->month = usafecpynumeric( v, 2 ), v += 3;
+						d->day = usafecpynumeric( v, 2 );
+					}
+					else if ( x->ntype == MYSQL_TYPE_TIME ) {
+						// Check if the hour is 3 lengths
+						d->hour = usafecpynumeric( v, 2 ), v += 3;
+						d->minute = usafecpynumeric( v, 2 ), v += 3;
+						d->second = usafecpynumeric( v, 2 );
+					}
+					else if ( x->ntype == MYSQL_TYPE_TIMESTAMP || x->ntype == MYSQL_TYPE_DATETIME ) {
+						d->year = usafecpynumeric( v, 4 ), v += 5;
+						d->month = usafecpynumeric( v, 2 ), v += 3;
+						d->day = usafecpynumeric( v, 2 ), v += 3;
+						// Check if the hour is 3 lengths
+						d->hour = usafecpynumeric( v, 2 ), v += 3;
+						d->minute = usafecpynumeric( v, 2 ), v += 3;
+						d->second = usafecpynumeric( v, 2 );
+					}
+				}
 
 				// Add to the column set
 				add_item( &cols, col, column_t *, &clen );
 
 				// This can be a debug only message
-				const char fmt[] = "Fetching value %p at column '%s' of type '%s' with length = %d\n";
-				fprintf( stderr, fmt, (void *)*r, col->k, itypes[ col->type ], col->len );
+				//const char fmt[] = "Fetching value %p at column '%s' of type '%s' with length = %d\n";
+				//DPRINTF( fmt, (void *)*r, col->k, get_btypename( col->type ), col->len );
 				r++;
 			}
 
@@ -2598,21 +2654,16 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 			// Add an item to said row
 			row->columns = cols;
-
-			// And add this row to rows
 			add_item( &conn->rows, row, row_t *, &conn->rlen );
-
-			// Reset everything
 			cols = NULL;
 		}
-		//}
 	}
 #endif
-#endif
 #ifdef BPGSQL_H
- #if 0
+ #if 1
 	else if ( conn->type == DB_POSTGRESQL )  {
-		int rcount = PQntuples( conn->res );
+		pgsql_t *b = (pgsql_t *)conn->conn;
+		int rcount = PQntuples( b->res );
 		for ( int i = 0; i < rcount; i++ ) {
 			row_t *row = NULL;
 			column_t **cols = NULL;
@@ -2630,14 +2681,45 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 				// Set the value, column name and more for the record
 				col->k = conn->headers[ ci ]->label;
-				col->len = PQgetlength( conn->res, i, ci );
+				col->len = PQgetlength( b->res, i, ci );
 				col->type = conn->headers[ ci ]->type;
 			#if 1
-				col->v = (unsigned char *)PQgetvalue( conn->res, i, ci );
+				col->v = (unsigned char *)PQgetvalue( b->res, i, ci );
 			#else
 				// If the network connection cuts out, it's very possible that this data will be gone
 				//col->v = (unsigned char *)strdup( PQgetvalue( conn->res, i, ci ) );
 			#endif
+
+				// If it's a date, then let's just see what's in the engine for now
+				if ( col->type == T_DATE ) {
+					date_t *d = &col->date;
+					memset( d, 0, sizeof( date_t ) );
+					unsigned char *v = col->v;
+					typemap_t *x = conn->headers[ ci ]->ntype;
+
+//DPRINTF( "Field %-10s is a date (type %d %s)!\n", col->k, x->ntype, x->libtypename );
+//write( 2, "'", 1 ), write( 2, col->v, col->len ), write( 2, "'\n", 2 );
+					if ( x->ntype == PG_DATEOID ) {
+						d->year = usafecpynumeric( v, 4 ), v += 5;
+						d->month = usafecpynumeric( v, 2 ), v += 3;
+						d->day = usafecpynumeric( v, 2 );
+					}
+					else if ( x->ntype == PG_TIMEOID ) {
+						// Check if the hour is 3 lengths
+						d->hour = usafecpynumeric( v, 2 ), v += 3;
+						d->minute = usafecpynumeric( v, 2 ), v += 3;
+						d->second = usafecpynumeric( v, 2 );
+					}
+					else if ( x->ntype == PG_TIMESTAMPOID ) {
+						d->year = usafecpynumeric( v, 4 ), v += 5;
+						d->month = usafecpynumeric( v, 2 ), v += 3;
+						d->day = usafecpynumeric( v, 2 ), v += 3;
+						// Check if the hour is 3 lengths
+						d->hour = usafecpynumeric( v, 2 ), v += 3;
+						d->minute = usafecpynumeric( v, 2 ), v += 3;
+						d->second = usafecpynumeric( v, 2 );
+					}
+				}
 
 				// Add it
 				add_item( &cols, col, column_t *, &clen );
@@ -2816,11 +2898,16 @@ int transform_from_dsn(
 					snprintf( bin, sizeof( bin ) - 1, "%p (%d bytes)", (void *)(*col)->v, (*col)->len );
 					FDPRINTF( file->fd, bin );
 				}
-				else if ( (*col)->type == T_STRING	|| (*col)->type == T_CHAR ) {
+				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR ) {
 					FDPRINTF( file->fd, FF.leftdelim );
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 					FDPRINTF( file->fd, FF.rightdelim );
 				}
+			#if 0
+				else if ( (*col)->type == T_DATE ) {
+					// Try a custom date format?
+				}
+			#endif
 				else {
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				}
@@ -2848,6 +2935,11 @@ int transform_from_dsn(
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, &",\""[ first ] );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+			#if 0
+				else if ( (*col)->type == T_DATE ) {
+					// Try a custom date format?
+				}
+			#endif
 				FDPRINTF( file->fd, "\"" );
 			}
 			else if ( t == STREAM_JSON ) {
@@ -2867,6 +2959,11 @@ int transform_from_dsn(
 				else if ( (*col)->type == T_BINARY ) /* TODO: Write unicode sequences out */
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				#endif
+			#if 0
+				else if ( (*col)->type == T_DATE ) {
+					// Try a custom date format?
+				}
+			#endif
 				else {
 					FDPRINTF( file->fd, "\"" );
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
@@ -2922,6 +3019,11 @@ int transform_from_dsn(
 
 				if ( (*col)->type != T_STRING && (*col)->type != T_CHAR )
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+			#if 0
+				else if ( (*col)->type == T_DATE ) {
+					// Try a custom date format?
+				}
+			#endif
 				else {
 					FDPRINTF( file->fd, FF.leftdelim );
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
@@ -2973,6 +3075,27 @@ int transform_from_dsn(
 					bind->buffer_type = MYSQL_TYPE_DOUBLE;
 				else if ( (*col)->type == T_BINARY )
 					bind->buffer_type = MYSQL_TYPE_BLOB;
+				else if ( (*col)->type == T_DATE ) {
+					MYSQL_TIME *ts = NULL;
+
+					// Allocate a new time structure and write stuff to it
+					if ( !( ts = malloc( sizeof( MYSQL_TIME ) ) ) || !memset( ts, 0, sizeof( MYSQL_TIME ) ) ) {
+						const char fmt[] = "Allocation error with MYSQL_TIME";
+						snprintf( err, errlen, fmt );
+						return 0;
+					}
+
+					bind->buffer_type = MYSQL_TYPE_DATETIME;
+					bind->buffer = (char *)ts;
+					bind->buffer_length = 0;
+					bind->length = 0;
+					ts->year = (*col)->date.year;
+					ts->month = (*col)->date.month;
+					ts->day = (*col)->date.day;
+					ts->hour = (*col)->date.hour;
+					ts->minute = (*col)->date.minute;
+					ts->second = (*col)->date.second;
+				}
 				else {
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
@@ -3029,6 +3152,11 @@ int transform_from_dsn(
 					b->bindoids[ ci ] = PG_FLOAT4OID; 
 				else if ( (*col)->type == T_BINARY )
 					b->bindoids[ ci ] = PG_FLOAT4OID;
+			#if 0
+				else if ( (*col)->type == T_DATE ) {
+					// Try a custom date format?
+				}
+			#endif
 				else {
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
@@ -3365,7 +3493,6 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			// If the user asked for a coerced type, add it here
 			if ( ov && ( ctype = find_ctype( ctypes, f->name ) ) ) {
 				// Find the forced/coerced type or die trying
-fprintf( stdout, "typemap = %p\n", (void *)oconn->typemap );  
 				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
 					const char fmt[] = "MY: Failed to find desired type '%s' for column '%s' "
 						"for supported %s types ";
@@ -3380,7 +3507,7 @@ fprintf( stdout, "typemap = %p\n", (void *)oconn->typemap );
 			st->maxlen = 0;
 			st->precision = 0;
 			st->filter = 0;
-			st->date = 0; // The timezone data?
+			st->date = 0;
 		#endif
 		}
 	}
