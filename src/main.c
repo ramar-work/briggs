@@ -355,9 +355,10 @@ typedef enum {
  */
 typedef struct typemap_t {
 	int ntype; /* best I can do ... */
-	const char *libtypename;
-	const char *typename;
+	const char *libname;
+	const char *name;
 	type_t basetype;
+	unsigned long size;
 	char preferred;
 } typemap_t;
 
@@ -425,20 +426,19 @@ typedef struct header_t {
 	/* Options that may have come from a database engine */
 	int options;
 
-	/* The native type used to save this value in the original datasource */
-	//int ntype;
-
 	/* A base type */
 	type_t type;
 
 	/* The native matched type */
 	typemap_t *ntype;
+	//int ntype;
 
 	/* A coerced type (if asked for) */
 	typemap_t *ctype;
+	//int ctype;
 
 	/* The preferred type to use */
-	int ptype;
+	typemap_t *ptype;
 
 } header_t;
 
@@ -471,7 +471,7 @@ typedef struct column_t {
 	type_t type;
 	type_t exptype;
 	int realtype;
-	unsigned int len;
+	unsigned long len;
 	date_t date;
 } column_t;
 
@@ -586,15 +586,15 @@ typedef struct config_t {
 
 // This is for default types.  A map IS a lot of overhead...
 const typemap_t default_map[] = {
-	{ T_NULL, N(T_NULL), NULL, T_NULL, 0 },
-	{ T_STRING, N(T_STRING), "TEXT", T_STRING, 1 },
+	{ T_NULL, N(T_NULL), NULL, T_NULL, 0, 0 },
+	{ T_STRING, N(T_STRING), "TEXT", T_STRING, -1, 1 },
 	/* NOTE: This will force STRING to take precedence over CHAR.  DO NOT TOUCH THIS */
-	{ T_CHAR, N(T_CHAR), "TEXT", T_CHAR, 1 },
-	{ T_INTEGER, N(T_INTEGER), "INTEGER", T_INTEGER, 1 },
-	{ T_DOUBLE, N(T_DOUBLE), "REAL", T_DOUBLE, 1 },
-	{ T_BINARY, N(T_BINARY), "BLOB", T_BINARY, 1 },
-	{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN, 1 },
-	{ T_DATE, N(T_DATE), "DATE", T_DATE, 1 },
+	{ T_CHAR, N(T_CHAR), "TEXT", T_CHAR, sizeof( char ), 1 },
+	{ T_INTEGER, N(T_INTEGER), "INTEGER", T_INTEGER, 0, 1 },
+	{ T_DOUBLE, N(T_DOUBLE), "REAL", T_DOUBLE, 0, 1 },
+	{ T_BINARY, N(T_BINARY), "BLOB", T_BINARY, 0, 1 },
+	{ T_BOOLEAN, N(T_BOOLEAN), "BOOLEAN", T_BOOLEAN, 0, 1 },
+	{ T_DATE, N(T_DATE), "DATE", T_DATE, 0, 1 },
 
 	/* Supporting base dates is EXTREMELY difficult... be careful supporting it */
 	{ TYPEMAP_TERM },
@@ -632,7 +632,7 @@ static const char * get_conn_type( dbtype_t t ) {
 
 static const char * get_typename ( type_t t, const typemap_t *types ) {
 	for ( const typemap_t *f = types; f->ntype != TYPEMAP_TERM; f++ ) {
-		if ( f->ntype == t ) return f->typename;
+		if ( f->ntype == t ) return f->name;
 	}
 	return NULL;  
 }
@@ -648,8 +648,8 @@ typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) {
 
 typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->typename ); 
-		if ( !strcasecmp( name, t->typename ) ) {
+		DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->name ); 
+		if ( !strcasecmp( name, t->name ) ) {
 			return (typemap_t *)t;
 		}
 	}
@@ -669,6 +669,7 @@ typemap_t * get_typemap_by_etype ( const typemap_t *types, int type ) {
 typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
 	#ifdef DEBUG_H
+		DPRINTF( "%s: Checking types: %s (%s) %d ?= %d\n", __func__, t->name, t->libname, t->basetype, btype );
 		//fprintf( stderr, "TYPESTUFF %s %s %d != %d\n", t->typename, t->libtypename, t->basetype, btype );
 	#endif
 		if ( btype == t->basetype && t->preferred ) return (typemap_t *)t;
@@ -703,38 +704,34 @@ typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 #define PG_INTERVALOID 1186
 
 static const typemap_t pgsql_map[] = {
-#if 0
-	{ TYPENAME(PG_BOOLOID), "bool", T_BOOLEAN },
-#endif
-	//{ PG_INT2OID, N(PG_INT2OID), "smallint", T_INTEGER, 0 },
-	{ PG_INT2OID, N(PG_INT2OID), "smallint", T_INTEGER, 0 },
-	{ PG_INT4OID, N(PG_INT4OID), "int", T_INTEGER, 1, },
-	{ PG_INT4OID, N(PG_INT4OID), "integer", T_INTEGER, 0, },
-	{ PG_INT8OID, N(PG_INT8OID), "bigint", T_INTEGER, 0 },
-	{ PG_NUMERICOID, N(PG_NUMERICOID), "numeric", T_DOUBLE, 0 },
-	{ PG_FLOAT4OID, N(PG_FLOAT4OID), "real", T_DOUBLE, 1 }, /* or float4 */
-	{ PG_FLOAT8OID, N(PG_FLOAT8OID), "double precision", T_DOUBLE, 0 }, /* or float8 */
-	{ PG_TEXTOID, N(PG_TEXTOID), "text", T_STRING, 1 },
-	{ PG_BPCHAROID, N(PG_BPCHAROID), "varchar", T_STRING, 0 },
-	{ PG_VARCHAROID, N(PG_VARCHAROID), "varchar", T_CHAR, 1 },
-	{ PG_BYTEAOID, N(PG_BYTEAOID), "bytea", T_BINARY, 1 },
-	{ PG_BYTEAOID, N(PG_BYTEAOID), "blob", T_BINARY, 0 },
-	{ PG_BOOLOID, N(PG_BOOLOID), "boolean", T_BOOLEAN, 1 },
-	{ PG_DATEOID, N(PG_DATEOID), "date", T_DATE },
-	{ PG_TIMEOID, N(PG_TIMEOID), "time", T_DATE },
-	{ PG_TIMESTAMPOID, N(PG_TIMESTAMPOID), "timestamp", T_DATE, 1 },
+	{ PG_INT2OID, N(PG_INT2OID), "smallint", T_INTEGER, sizeof( short ), 0 },
+	{ PG_INT4OID, N(PG_INT4OID), "int", T_INTEGER, sizeof( int ), 1, },
+	{ PG_INT4OID, N(PG_INT4OID), "integer", T_INTEGER, sizeof( int ), 0, },
+	{ PG_INT8OID, N(PG_INT8OID), "bigint", T_INTEGER, sizeof( int ), 0 },
+	{ PG_NUMERICOID, N(PG_NUMERICOID), "numeric", T_DOUBLE, sizeof( double ),  0 },
+	{ PG_FLOAT4OID, N(PG_FLOAT4OID), "real", T_DOUBLE, sizeof( double ), 1 }, /* or float4 */
+	{ PG_FLOAT8OID, N(PG_FLOAT8OID), "double precision", T_DOUBLE, sizeof( double ), 0 }, /* or float8 */
+	{ PG_TEXTOID, N(PG_TEXTOID), "text", T_STRING, 0, 1 },
+	{ PG_BPCHAROID, N(PG_BPCHAROID), "varchar", T_STRING, 0, 0 },
+	{ PG_VARCHAROID, N(PG_VARCHAROID), "varchar", T_CHAR, 0, 1 },
+	{ PG_BYTEAOID, N(PG_BYTEAOID), "bytea", T_BINARY, 0, 1 },
+	{ PG_BYTEAOID, N(PG_BYTEAOID), "blob", T_BINARY, 0, 0 },
+	{ PG_BOOLOID, N(PG_BOOLOID), "boolean", T_BOOLEAN, 0, 1 },
+	{ PG_DATEOID, N(PG_DATEOID), "date", T_DATE, 0 },
+	{ PG_TIMEOID, N(PG_TIMEOID), "time", T_DATE, 0 },
+	{ PG_TIMESTAMPOID, N(PG_TIMESTAMPOID), "timestamp", T_DATE, 0, 1 },
 #if 0
 	{ PG_INTERVALOID, N(PG_INTERVALOID), "interval", T_DATE },
 	{ PG_DATETIMEOID, N(PG_DATETIMEOID), "datetime", T_DATE },
 	{ PG_TIMESTAMPZOID, N(PG_TIMESTAMPZOID), "timestamptz", T_DATE },
 	{ PG_TIMETZOID, N(PG_TIMETZOID), "timetz", T_DATE },
 #endif
-	{ TYPEMAP_TERM },
 #if 0
 	[PG_OIDOID] = "PG_OIDOID",
 	[PG_BITOID] = "PG_BITOID",
 	[PG_VARBITOID] = "PG_VARBITOID",
 #endif
+	{ TYPEMAP_TERM },
 };
 #endif
 
@@ -742,29 +739,29 @@ static const typemap_t pgsql_map[] = {
 
 #ifdef BMYSQL_H
 static const typemap_t mysql_map[] = {
-	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "TINYINT", T_INTEGER },
-	{ MYSQL_TYPE_SHORT, N(MYSQL_TYPE_SHORT), "SMALLINT", T_INTEGER },
-	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INT", T_INTEGER, 1 },
-	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INTEGER", T_INTEGER, 0 },
-	{ MYSQL_TYPE_INT24, N(MYSQL_TYPE_INT24), "MEDIUMINT", T_INTEGER },
-	{ MYSQL_TYPE_LONGLONG, N(MYSQL_TYPE_LONGLONG), "BIGINT", T_INTEGER },
-	{ MYSQL_TYPE_DOUBLE, N(MYSQL_TYPE_DOUBLE), "DOUBLE", T_DOUBLE, 0 },
-	{ MYSQL_TYPE_DECIMAL, N(MYSQL_TYPE_DECIMAL), "DECIMAL", T_DOUBLE }, /* or NUMERIC */
-	{ MYSQL_TYPE_NEWDECIMAL, N(MYSQL_TYPE_NEWDECIMAL), "NUMERIC", T_DOUBLE }, /* or NUMERIC */
-	{ MYSQL_TYPE_FLOAT, N(MYSQL_TYPE_FLOAT), "FLOAT", T_DOUBLE, 1 },
-	{ MYSQL_TYPE_STRING, N(MYSQL_TYPE_STRING), "CHAR", T_CHAR, 1 },
-	{ MYSQL_TYPE_VAR_STRING, N(MYSQL_TYPE_VAR_STRING), "TEXT", T_STRING, 1 },
-	{ MYSQL_TYPE_BLOB, N(MYSQL_TYPE_BLOB), "BLOB", T_BINARY, 1 },
+	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "TINYINT", T_INTEGER, sizeof( short ) },
+	{ MYSQL_TYPE_SHORT, N(MYSQL_TYPE_SHORT), "SMALLINT", T_INTEGER, sizeof( int ) },
+	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INT", T_INTEGER, sizeof( long ), 1 },
+	{ MYSQL_TYPE_LONG, N(MYSQL_TYPE_LONG), "INTEGER", T_INTEGER, sizeof( int ), 0 },
+	{ MYSQL_TYPE_INT24, N(MYSQL_TYPE_INT24), "MEDIUMINT", T_INTEGER, sizeof( int ) },
+	{ MYSQL_TYPE_LONGLONG, N(MYSQL_TYPE_LONGLONG), "BIGINT", T_INTEGER, sizeof( int ) },
+	{ MYSQL_TYPE_DOUBLE, N(MYSQL_TYPE_DOUBLE), "DOUBLE", T_DOUBLE, sizeof( double ), 0 },
+	{ MYSQL_TYPE_DECIMAL, N(MYSQL_TYPE_DECIMAL), "DECIMAL", T_DOUBLE, sizeof( double ) }, /* or NUMERIC */
+	{ MYSQL_TYPE_NEWDECIMAL, N(MYSQL_TYPE_NEWDECIMAL), "NUMERIC", T_DOUBLE, sizeof( double ) }, /* or NUMERIC */
+	{ MYSQL_TYPE_FLOAT, N(MYSQL_TYPE_FLOAT), "FLOAT", T_DOUBLE, sizeof( double ), 1 },
+	{ MYSQL_TYPE_STRING, N(MYSQL_TYPE_STRING), "CHAR", T_CHAR, 0, 1 },
+	{ MYSQL_TYPE_VAR_STRING, N(MYSQL_TYPE_VAR_STRING), "TEXT", T_STRING, 0, 1 },
+	{ MYSQL_TYPE_BLOB, N(MYSQL_TYPE_BLOB), "BLOB", T_BINARY, 0, 1 },
 	/* This just maps to TINYINT behind the scenes */ 
-	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "BOOL", T_BOOLEAN, 1 },
+	{ MYSQL_TYPE_TINY, N(MYSQL_TYPE_TINY), "BOOL", T_BOOLEAN, 0, 1 },
 #if 1
-	{ MYSQL_TYPE_DATETIME, N(MYSQL_TYPE_DATETIME), "DATETIME", T_DATE, 1 },
+	{ MYSQL_TYPE_DATETIME, N(MYSQL_TYPE_DATETIME), "DATETIME", T_DATE, 0, 1 },
 	/* If the column is time only, select it */
-	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "DATETIME", T_DATE, 1 },
+	{ MYSQL_TYPE_TIMESTAMP, N(MYSQL_TYPE_TIMESTAMP), "DATETIME", T_DATE, 0, 1 },
 	/* If the column is time only, select it */
-	{ MYSQL_TYPE_TIME, N(MYSQL_TYPE_TIME), "TIME", T_DATE, 1 },
-	{ MYSQL_TYPE_DATE, N(MYSQL_TYPE_DATE), "DATE", T_DATE },
-	{ MYSQL_TYPE_YEAR, N(MYSQL_TYPE_YEAR), "YEAR", T_DATE },
+	{ MYSQL_TYPE_TIME, N(MYSQL_TYPE_TIME), "TIME", T_DATE, 0, 1 },
+	{ MYSQL_TYPE_DATE, N(MYSQL_TYPE_DATE), "DATE", T_DATE, 0 },
+	{ MYSQL_TYPE_YEAR, N(MYSQL_TYPE_YEAR), "YEAR", T_DATE, 0 },
 #endif
 	{ TYPEMAP_TERM },
 };
@@ -1537,12 +1534,14 @@ void print_dsn ( dsn_t *conninfo ) {
 	//if headers have been initialized show me that
 	fprintf( stderr, "dsn->headers:    %p\n", (void *)conninfo->headers );
 	if ( conninfo->headers ) {
+		fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n", "label", "C", "N", "B", "P" );
 		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
-			fprintf( stderr, "  %-30s [%s, %s, %s]\n",
+			fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n",
 				(*h)->label,
-				(*h)->ctype ? "?" : "(nil)",
-				(*h)->ntype ? (*h)->ntype->typename : "(nil)",
-				itypes[ (*h)->type ]
+				(*h)->ctype ? (*h)->ctype->name : "(nil)",
+				(*h)->ntype ? (*h)->ntype->name : "(nil)",
+				(*h)->ptype ? itypes[ (*h)->ptype->basetype ] : "(nil)",
+				(*h)->ptype ? (*h)->ptype->name : "(nil)"
 			);
 		}
 	}
@@ -1626,7 +1625,6 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 
 	// If there is no schema chosen, use SQLite as the default
 	if ( oconn->type == DB_FILE && oconn->typemap == default_map ) {
-fprintf( stderr, "[[[ !!! Changing to default engine... SQLite !!! ]]]\n" );
 		oconn->typemap = sqlite3_map;
 	}
 
@@ -1654,6 +1652,7 @@ fprintf( stderr, "[[[ !!! Changing to default engine... SQLite !!! ]]]\n" );
 	// SQL schema creation will
 	// Generate a line for each row
 	for ( header_t **s = iconn->headers; s && *s; s++, len-- ) {
+	#if 0
 		// Getting the type needs to be a bit smarter now
 		typemap_t *type = NULL;
 
@@ -1666,12 +1665,12 @@ fprintf( stderr, "[[[ !!! Changing to default engine... SQLite !!! ]]]\n" );
 			snprintf( err, errlen, fmt, (*s)->label, itypes[ (*s)->type ] );
 			return 0;
 		}
-	#if 0
 		/* map i->db type to o->db type here */
 	#endif
 
 		//const char fmt[] = "\t%s %s";
-		written = snprintf( fmt, fmtlen, "\t%s %s", (*s)->label, type->typename );
+		// TODO: To save some space, I'd be happy with get_ptypename( ... );
+		written = snprintf( fmt, fmtlen, "\t%s %s", (*s)->label, (*s)->ptype->name );
 		fmtlen -= written, fmt += written;
 
 		// Are we trying to populate or create a MySQL database
@@ -2182,60 +2181,7 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 	const typemap_t *cdefs = NULL;
 
 	// Empty condition to assist with compiling out code
-	if ( 0 ) {
-		;
-	}
-#ifdef BSQLITE_H
-	else if ( conn->type == DB_SQLITE ) {
-		snprintf( err, errlen, "%s", "SQLite3 driver not done yet" );
-		return 0;
-	}
-#endif
-
-#ifdef BMYSQL_H
-	else if ( conn->type == DB_MYSQL ) {
-		mysql_t *db = (mysql_t *)conn->conn;
-
-		for ( int i = 0, fcount = mysql_field_count( db->conn ); i < fcount; i++ ) {
-			MYSQL_FIELD *f = mysql_fetch_field_direct( db->res, i );
-			header_t *st = NULL;
-
-			if ( !( st = malloc( sizeof( header_t ) )) || !memset( st, 0, sizeof( header_t ) ) ) {
-			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
-				const char fmt[] = "Memory constraints encountered while fetching headers from DSN %s";
-				snprintf( err, errlen, fmt, conn->connstr );
-				return 0;
-			}
-
-			// Get the actual type from the database engine
-			//st->ntype = f->type;
-			snprintf( st->label, sizeof( st->label ), "%s", f->name );
-			add_item( &conn->headers, st, header_t *, &conn->hlen );
-		}
-	}
-#endif
-
-#ifdef BPGSQL_H
-	else if ( conn->type == DB_POSTGRESQL ) {
-		pgsql_t *db = (pgsql_t *)conn->conn;
-
-		for ( int i = 0, fcount = PQnfields( db->res ); i < fcount; i++ ) {
-			const char *name = PQfname( db->res, i );
-			header_t *st = NULL;
-
-			if ( !( st = malloc( sizeof( header_t ) ) ) || !memset( st, 0, sizeof( header_t ) ) ) {
-			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
-				fprintf( stderr, "Memory constraints encountered while building schema" );
-				return 0;
-			}
-
-			// Get the actual type from the database engine
-			snprintf( st->label, sizeof( st->label ), "%s", name );
-			add_item( &conn->headers, st, header_t *, &conn->hlen );
-		}
-	}
-#endif
-	else {
+	if ( conn->type == DB_FILE ) {
 		// TODO: Reimplement this to read line-by-line
 		zw_t p;
 		file_t *file = NULL;
@@ -2270,13 +2216,74 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 			free( t );
 			if ( p.chr == '\n' || p.chr == '\r' ) break;
 		}
-	}
 
-	if ( conn->hlen < 2 ) {
-		const char fmt[] = "Delimiter ('%s') not found at connection '%s'";
-		snprintf( err, errlen, fmt, DELIM, conn->connstr );
+		// TODO: You CAN still make a schema with an empty query...
+		// But this is kind of tricky to allow.
+		if ( conn->hlen < 1 ) {
+			const char fmt[] = "No data was returned in the query.  Not attempting to generate headers.";
+			snprintf( err, errlen, fmt );
+			return 0;
+		}
+	}
+#ifdef BMYSQL_H
+	else if ( conn->type == DB_MYSQL ) {
+		mysql_t *db = (mysql_t *)conn->conn;
+
+		for ( int i = 0, fcount = mysql_field_count( db->conn ); i < fcount; i++ ) {
+			MYSQL_FIELD *f = mysql_fetch_field_direct( db->res, i );
+			header_t *st = NULL;
+
+			if ( !( st = malloc( sizeof( header_t ) )) || !memset( st, 0, sizeof( header_t ) ) ) {
+			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
+				const char fmt[] = "Memory constraints encountered while fetching headers from DSN %s";
+				snprintf( err, errlen, fmt, conn->connstr );
+				return 0;
+			}
+
+			// Get the actual type from the database engine
+			//st->ntype = f->type;
+			snprintf( st->label, sizeof( st->label ), "%s", f->name );
+			add_item( &conn->headers, st, header_t *, &conn->hlen );
+		}
+
+		// TODO: You CAN still make a schema with an empty query...
+		// But this is kind of tricky to allow.
+		if ( conn->hlen < 1 ) {
+			const char fmt[] = "No data was returned in the query.  Not attempting to generate headers.";
+			snprintf( err, errlen, fmt );
+			return 0;
+		}
+	}
+#endif
+
+#ifdef BPGSQL_H
+	else if ( conn->type == DB_POSTGRESQL ) {
+		pgsql_t *db = (pgsql_t *)conn->conn;
+
+		for ( int i = 0, fcount = PQnfields( db->res ); i < fcount; i++ ) {
+			const char *name = PQfname( db->res, i );
+			header_t *st = NULL;
+
+			if ( !( st = malloc( sizeof( header_t ) ) ) || !memset( st, 0, sizeof( header_t ) ) ) {
+			//if ( CALLOC_NEW_FAILS( st, header_t ) ) {
+				fprintf( stderr, "Memory constraints encountered while building schema" );
+				return 0;
+			}
+
+			// Get the actual type from the database engine
+			snprintf( st->label, sizeof( st->label ), "%s", name );
+			add_item( &conn->headers, st, header_t *, &conn->hlen );
+		}
+
+	}
+#endif
+#ifdef BSQLITE_H
+	else if ( conn->type == DB_SQLITE ) {
+		snprintf( err, errlen, "%s", "SQLite3 driver not done yet" );
 		return 0;
 	}
+#endif
+
 
 	return 1;
 }
@@ -2330,8 +2337,8 @@ int prepare_dsn_for_read ( dsn_t *conn, char *err, int errlen ) {
 		int len = file->size;
 
 		// Move to the end of the first row
-		while ( len && *file->map != '\n' ) {
-			file->map++, len--;
+		while ( len-- && *(file->map)++ != '\n' ) {
+			//file->map++, len--;
 		}
 
 		file->offset = file->size - len;
@@ -2435,6 +2442,12 @@ fprintf( stderr, "UNPREPARING PostgreSQL DSN\n" );
 		free( t->bindoids );
 	}
 }
+
+
+
+unsigned long mysql_double_size = sizeof( double );
+unsigned long mysql_float_size = sizeof( float );
+unsigned long mysql_int_size = sizeof( int );
 
 
 
@@ -2609,16 +2622,13 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				col->len = lens[ ci ];
 				// This only gets the basetype
 				col->type = conn->headers[ ci ]->type;
-
+#if 0
 				// If it's a date, then let's just see what's in the engine for now
 				if ( col->type == T_DATE ) {
 					date_t *d = &col->date;
 					memset( d, 0, sizeof( date_t ) );
 					unsigned char *v = col->v;
 					typemap_t *x = conn->headers[ ci ]->ntype;
-
-//DPRINTF( "Field %-10s is a date (type %d %s)!\n", col->k, x->ntype, x->libtypename );
-//write( 2, "'", 1 ), write( 2, col->v, col->len ), write( 2, "'\n", 2 );
 
 					if ( x->ntype == MYSQL_TYPE_YEAR ) {
 						d->year = usafecpynumeric( v, 4 );  
@@ -2644,13 +2654,9 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 						d->second = usafecpynumeric( v, 2 );
 					}
 				}
-
+#endif
 				// Add to the column set
 				add_item( &cols, col, column_t *, &clen );
-
-				// This can be a debug only message
-				//const char fmt[] = "Fetching value %p at column '%s' of type '%s' with length = %d\n";
-				//DPRINTF( fmt, (void *)*r, col->k, get_btypename( col->type ), col->len );
 				r++;
 			}
 
@@ -2699,6 +2705,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 				//col->v = (unsigned char *)strdup( PQgetvalue( conn->res, i, ci ) );
 			#endif
 
+#if 0
 				// If it's a date, then let's just see what's in the engine for now
 				if ( col->type == T_DATE ) {
 					date_t *d = &col->date;
@@ -2729,7 +2736,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 						d->second = usafecpynumeric( v, 2 );
 					}
 				}
-
+#endif
 				// Add it
 				add_item( &cols, col, column_t *, &clen );
 			}
@@ -2759,6 +2766,8 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 
 
+int somenum = 0;
+
 
 /**
  * transform_from_dsn( dsn_t * )
@@ -2782,6 +2791,8 @@ int transform_from_dsn(
 	int odv = 0;
 	char insfmt[ 256 ];
 	memset( insfmt, 0, sizeof( insfmt ) );
+
+//print_dsn( iconn ), getchar();
 
 	// Define any db specific stuff
 	int ri = 0;
@@ -2893,6 +2904,7 @@ int transform_from_dsn(
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
 			int first = *col == *((*row)->columns);
+			header_t *st = iconn->headers[ ci ];
 			if ( t == STREAM_PRINTF ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, (*col)->k );
@@ -2904,7 +2916,7 @@ int transform_from_dsn(
 				else if ( (*col)->type == T_BINARY ) {
 					char bin[ 64 ];
 					memset( &bin, 0, sizeof( bin ) );
-					snprintf( bin, sizeof( bin ) - 1, "%p (%d bytes)", (void *)(*col)->v, (*col)->len );
+					snprintf( bin, sizeof( bin ) - 1, "%p (%ld bytes)", (void *)(*col)->v, (*col)->len );
 					FDPRINTF( file->fd, bin );
 				}
 				else if ( (*col)->type == T_STRING || (*col)->type == T_CHAR ) {
@@ -3058,26 +3070,20 @@ int transform_from_dsn(
 			}
 		#ifdef BMYSQL_H
 			else if ( t == STREAM_MYSQL ) {
-			#ifdef DEBUG_H
-				header_t **headers = iconn->headers;
-				//fprintf( stderr, "Binding value %p, (%s) of length %d\n", (*col)->v, (headers[ci])->ntype->typename,(*col)->len );
-			#endif
-
-			#if 0
-				// The type should come from the base native conversion (or ctype if user forced it)
-			#else
+#if 0
+FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col)->len ), FDPRINTF ( 2, "\n" );
+#endif
+				// Deref and define
 				mysql_t *b = (mysql_t *)oconn->conn;
 				MYSQL_BIND *bind = &b->bindargs[ ci ];
 				bind->buffer = (*col)->v;
 				bind->is_null = NULL;
-bind->buffer_length = (*col)->len;
-#if 0
-FDPRINTF ( 2, (*col)->k ), 
-FDPRINTF ( 2, " = " ), 
-FDNPRINTF( 2, (*col)->v, (*col)->len );
-FDPRINTF ( 2, "\n" );
-#endif
+				bind->length = &(*col)->len;
+				//bind->buffer_type = iconn->headers[ ci ]->ptype->ntype; 
+				bind->buffer_type = MYSQL_TYPE_STRING;
 
+#if 0
+				//bind->buffer_length = (*col)->len;
 				// Use the approximate type as a base for the format
 				if ( (*col)->type == T_NULL )
 					bind->buffer_type = MYSQL_TYPE_STRING;
@@ -3091,19 +3097,23 @@ FDPRINTF ( 2, "\n" );
 					bind->buffer_type = MYSQL_TYPE_STRING, bind->buffer_length = (*col)->len;
 				else if ( (*col)->type == T_BINARY )
 					bind->buffer_type = MYSQL_TYPE_BLOB, bind->buffer_length = (*col)->len;
+#endif
+#if 0
+				if ( (*col)->type == T_STRING || (*col)->type == T_CHAR || (*col)->type == T_BINARY )
+					;//bind->buffer_length = (*col)->len;
 				else if ( (*col)->type == T_DATE ) {
 					MYSQL_TIME *ts = NULL;
-					// Allocate a new time structure and write stuff to it
+					// Allocate a new time structure and write stuff to i
 					if ( !( ts = malloc( sizeof( MYSQL_TIME ) ) ) || !memset( ts, 0, sizeof( MYSQL_TIME ) ) ) {
 						const char fmt[] = "Allocation error with MYSQL_TIME";
 						snprintf( err, errlen, fmt );
 						return 0;
 					}
 
-					bind->buffer_type = MYSQL_TYPE_DATETIME;
+					bind->buffer_type = iconn->headers[ ci ]->ptype->ntype;
 					bind->buffer = (char *)ts;
 					bind->buffer_length = 0;
-					bind->length = 0;
+					bind->length = NULL;
 					ts->year = (*col)->date.year;
 					ts->month = (*col)->date.month;
 					ts->day = (*col)->date.day;
@@ -3111,61 +3121,43 @@ FDPRINTF ( 2, "\n" );
 					ts->minute = (*col)->date.minute;
 					ts->second = (*col)->date.second;
 				}
+				// If it's null?  I'm not sure, should be a string anyway
+				else {
+					// any numeric type will have to be turned into a real value
+
+					// float
+					// double
+					// any integer type can be cast to a long (hopefully)
+				}
+
+				// May have to read and set a double or an integer, etc
+				else {
+					// Any numeric types?
+					//bind->buffer_length = 1;
+					bind->length = &iconn->headers[ ci ]->ptype->size;
+					bind->buffer = &somenum;
+				}
 				else {
 					// We ought to not get here...
 					const char fmt[] = "Invalid bind type";
 					snprintf( err, errlen, fmt );
 					return 0;
 				}
-			#endif
+#endif
 			}
 		#endif
 		#ifdef BPGSQL_H
 			else if ( t == STREAM_PGSQL ) {
 			#ifdef DEBUG_H
-				header_t **headers = iconn->headers;
-				fprintf( stderr, "Binding value %p of length %d at %d\n", (*col)->v, (*col)->len, ci );
+				DPRINTF( "Binding value %p of length %ld at %d\n", (*col)->v, (*col)->len, ci );
 			#endif
 				pgsql_t *b = (pgsql_t *)oconn->conn;
-#if 1
-FDPRINTF ( 2, (*col)->k ), 
-FDPRINTF ( 2, " = " ), 
-FDNPRINTF( 2, (*col)->v, (*col)->len );
-FDPRINTF ( 2, "\n" );
-#endif
-
 #if 0
-				if ( (*col)->ctype ) {
-					// Use this to bind and do all the stuff
-					(*col)->ptype = (*col)->ctype;
-				}
-				else if ( (*col)->ntype ) 
-					if ( DSN1 == DSN2 )
-						(*col)->ptype = (*col)->ntype;
-					else {
-						(*col)->type = get_base_type_match_of( (*col)->ntype, DSN1maps );
-						(*col)->ptype = get_closest_match_for_type( (*col)->type, DSN2maps );
-						OR DIE BECAUSE THERE IS NO MATCH FOR THAT COLUMN	
-					}
-				}
-				else {
-					(*col)->ptype = get_closest_match_for_type( (*col)->type );
-				}	
+FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col)->len ), FDPRINTF ( 2, "\n" );
 #endif
 
 				// Bind and prepare an insert?
-				if ( (*col)->type == T_BINARY ) {
-					// How do I fetch this differently?
-					b->bindargs[ ci ] = (char *)(*col)->v; 
-					b->bindlens[ ci ] = (*col)->len;
-					b->bindfmts[ ci ] = 1;
-				}
-#if 0
-				else if ( (*col)->type == T_DATE ) {
-					//date_t *d = &(*col)->date;	
-				} 
-#endif
-				else {
+				if ( (*col)->type != T_BINARY ) {
 					char *v = NULL;
 					if ( !( v = malloc( (*col)->len + 1 ) ) || !memset( v, 0, (*col)->len + 1 ) ) {
 						const char fmt[] = "Out of memory when binding value at column %s for Postgres";
@@ -3177,8 +3169,20 @@ FDPRINTF ( 2, "\n" );
 					b->bindargs[ ci ] = v; 
 					b->bindfmts[ ci ] = 0;
 				}
-			#if 0
-				b->bindoids[ ci ] = 
+				else {
+					// How do I fetch this differently?
+					b->bindargs[ ci ] = (char *)(*col)->v; 
+					b->bindlens[ ci ] = (*col)->len;
+					b->bindfmts[ ci ] = 1;
+				}
+#if 0
+				else if ( (*col)->type == T_DATE ) {
+					//date_t *d = &(*col)->date;	
+				} 
+#endif
+				
+			#if 1
+				//b->bindoids[ ci ] = 
 			#else
 				// Use the approximate type as a base for the format
 				if ( (*col)->type == T_NULL )
@@ -3480,37 +3484,43 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			char *t = NULL;
 			const char *ctype = NULL;
 			int len = 0;
+			typemap_t *nm = NULL, *cm = NULL, *am = NULL;
 
 			// Check if any of these are looking for a coerced type
 			if ( ov && ( ctype = find_ctype( ctypes, st->label ) ) ) {
-				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = "FIL: Failed to find desired type '%s' at column '%s' for "
-						"supported %s types ";
-					snprintf( err, errlen, fmt, ctype, st->label, get_conn_type( oconn->type ) );
+				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
+					// TODO: Complete this message
+					const char fmt[] = "FILE: Failed to find desired type '%s' at column '%s'";
+					snprintf( err, errlen, fmt, ctype, st->label );
 					return 0;
 				}
 			}
 
 			// TODO: Assuming a blank value is a string might not always be the best move
-			if ( !p.size ) {
+			if ( !p.size || !( p.size - 1 ) ) {
 				st->type = T_STRING;
+				st->ptype = get_typemap_by_btype( oconn->typemap, T_STRING );
 				continue;
 			}
 
 			// Try to copy again
 			if ( !( t = copy( &((char *)file->map)[ p.pos ], p.size - 1, &len, CASE_NONE ) ) ) {
 				// TODO: This isn't very clear, but it is unlikely we'll ever run into it...
-				snprintf( err, errlen, "Out of memory error occurred." );
+				const char fmt[] = "FILE: Encountered memory bound at line 2, column %d";
+				snprintf( err, errlen, fmt, i );
 				return 0;
 			}
 
 			// Handle NULL or empty strings
 			if ( !len ) {
 				st->type = T_STRING;
+				st->ptype = get_typemap_by_btype( oconn->typemap, T_STRING );
 				continue;
 			}
 
+			// This will be the default type
 			st->type = get_type( (unsigned char *)t, T_STRING, len );
+			st->ptype = ( cm ) ? cm : get_typemap_by_btype( oconn->typemap, st->type );
 			free( t );
 		}
 	}
@@ -3528,28 +3538,50 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		for ( int i = 0, fcount = mysql_field_count( b->conn ); i < fcount; i++ ) {
 			MYSQL_FIELD *f = mysql_fetch_field_direct( b->res, i );
 			header_t *st = iconn->headers[ i ];
-			const char *ctype = NULL;
+			const char *name = f->name;
+			const char *ctypename = NULL;
+			typemap_t *nm = NULL, *cm = NULL, *am = NULL;
 
-			// Always get the native type 
-			// TODO: If unsupported, it probably should be null and you either coerce or guess.
-			if ( !( st->ntype = get_typemap_by_ntype( iconn->typemap, f->type ) ) ) {
+			// Find the native typemap
+			// TODO: If unsupported, it probably should be null and I either 
+			// coerce or guess instead of just dying...
+			if ( !( nm = get_typemap_by_ntype( iconn->typemap, f->type ) ) ) {
 				snprintf( err, errlen, "Unsupported MySQL type received: %d", f->type );
 				return 0;
 			}
 
 			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctype = find_ctype( ctypes, f->name ) ) ) {
+			if ( ov && ( ctypename = find_ctype( ctypes, name ) ) ) {
 				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = "MY: Failed to find desired type '%s' for column '%s' "
-						"for supported %s types ";
-					snprintf( err, errlen, fmt, ctype, f->name, ename );
+				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctypename ) ) ) {
+					const char fmt[] = "MySQL: Failed to find desired type '%s' "
+						"for column '%s' for supported %s types ";
+					snprintf( err, errlen, fmt, ctypename, name, ename );
 					return 0;
 				}
 			}
 
-			// Set the base type and write the column name
-			st->type = st->ntype->basetype;
+			// Set the native type always
+			st->ntype = nm;
+
+			// Now, we set the preferred type
+			if ( cm )
+				st->ptype = cm, st->type = cm->basetype;
+			else if ( iconn->type == oconn->type )
+				st->ptype = nm, st->type = nm->basetype;
+			else {
+				// Different output type, and no coercion, so find the closest match
+DPRINTF( "BASE TYPE IS %d %s\n", nm->basetype, itypes[ nm->basetype ] );
+				if ( !( am = get_typemap_by_btype( oconn->typemap, nm->basetype ) ) ) {
+					const char fmt[] = "MySQL: Failed to find matching type "
+						"for column '%s', type '%s' for supported %s types ";
+					snprintf( err, errlen, fmt, name, "x", "x" );
+					return 0;
+				}
+				st->ptype = am;
+				st->type = nm->basetype; //am->basetype would work too
+			}
+		
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
@@ -3565,30 +3597,50 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		pgsql_t *b = (pgsql_t *)iconn->conn;
 		for ( int i = 0, fcount = PQnfields( b->res ); i < fcount; i++ ) {
 			header_t *st = iconn->headers[ i ];
-			const char *ctype = NULL;
 			const char *name = PQfname( b->res, i );
+			const char *ctypename = NULL;
 			Oid pgtype = PQftype( b->res, i );
+			typemap_t *nm = NULL, *cm = NULL, *am = NULL;
 
-			// Get the actual type from the database engine and make sure it's supported
-			if ( !( st->ntype = get_typemap_by_ntype( iconn->typemap, (int)pgtype ) ) ) {
+			// Find the native typemap
+			// TODO: If unsupported, it probably should be null and I either 
+			// coerce or guess instead of just dying...
+			if ( !( nm = get_typemap_by_ntype( iconn->typemap, pgtype ) ) ) {
 				snprintf( err, errlen, "Unsupported Postgres type received: %d", pgtype );
 				return 0;
 			}
 
-#if 1
 			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctype = find_ctype( ctypes, name ) ) ) {
+			if ( ov && ( ctypename = find_ctype( ctypes, name ) ) ) {
 				// Find the forced/coerced type or die trying
-				if ( !( st->ctype = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
-					const char fmt[] = 
-						"PG: Failed to find desired type '%s' for column '%s' in supported %s types";
-					snprintf( err, errlen, fmt, ctype, name, "Postgres" );
+				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctypename ) ) ) {
+					const char fmt[] = "Postgres: Failed to find desired tye '%s' "
+						"for column '%s' for supported %s types ";
+					snprintf( err, errlen, fmt, ctypename, name, ename );
 					return 0;
 				}
 			}
-#endif
-			// Set the base type and write the column name
-			st->type = st->ntype->basetype;
+
+			// Set the native type always
+			st->ntype = nm;
+
+			// Now, we set the preferred type
+			if ( cm )
+				st->ptype = cm, st->type = cm->basetype; 		
+			else if ( iconn->type == oconn->type )
+				st->ptype = nm, st->type = nm->basetype; 		
+			else {
+				// Different output type, and no coercion, so find the closest match
+				if ( !( am = get_typemap_by_btype( oconn->typemap, nm->basetype ) ) ) {
+					const char fmt[] = "Postgres: Failed to find matching type "
+						"for column '%s', type '%s' in supported %s types ";
+					snprintf( err, errlen, fmt, name, nm->name, get_conn_type( oconn->type ) );
+					return 0;
+				}
+				st->ptype = am;
+				st->type = nm->basetype;					
+			}
+		
 		#if 0
 			st->maxlen = 0;
 			st->precision = 0;
@@ -3602,6 +3654,8 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 	for ( coerce_t **x = ctypes; x && *x; x++ ) free( *x );
 	free( ctypes );
+
+print_dsn( iconn );
 	return 1;
 }
 
