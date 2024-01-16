@@ -45,7 +45,10 @@ blobv bytea
 );
 
 
+/*INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev) VALUES (32000,123,1,1,1,1,234.02,'A','A','A','T','The quick brown fox jumps over the lazy dog.','2024-01-01','1999-01-08','00:00');*/
+
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (32000,123,1,1,1,1,234.02,'A','A','A','T','The quick brown fox jumps over the lazy dog.','2024-01-01','1999-01-08','00:00','The quick brown fox jumps over the lazy dog. ☺' );
+/*
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (0,0,0,0,0,0,0,'B','B','B','t','The quick brown fox jumps over the lazy dog.','2024-01-01','January 8, 1999','00:00','The quick brown fox jumps over the lazy dog. ☺' );
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (-19324,2147483647,1,1,1,1,234234.232342345,'C','C','C','F','The quick brown fox jumps over the lazy dog.','2024-01-01','1/8/1999','00:00','The quick brown fox jumps over the lazy dog. ☺' );
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (-19324,2147483647,1,1,1,1,234234.232342345,'C','C','C','F','The quick brown fox jumps over the lazy dog.','2024-01-01','1/18/1999','00:00','The quick brown fox jumps over the lazy dog. ☺' );
@@ -77,3 +80,4 @@ INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,r
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (-19324,2147483647,1,1,1,1,234234.232342345,'C','C','C','F','The quick brown fox jumps over the lazy dog.','1999-01-08 04:05:06','2024-01-01','04:05','The quick brown fox jumps over the lazy dog. ☺' );
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (-19324,2147483647,1,1,1,1,234234.232342345,'C','C','C','F','The quick brown fox jumps over the lazy dog.','1999-01-08 04:05:06 -8:00','2024-01-01','04:05','The quick brown fox jumps over the lazy dog. ☺' );
 INSERT INTO postgres_fancy_media (smallintv,integerv,bigintv,decimalv,numericv,realv,doublev,varcharv,charv,bpcharv,booleanv,textv,timestampv,datev,timev,blobv) VALUES (-19324,2147483647,1,1,1,1,234234.232342345,'C','C','C','F','The quick brown fox jumps over the lazy dog.','January 8 04:05:06 1999 PST','2024-01-01','04:05','The quick brown fox jumps over the lazy dog. ☺' );
+*/
