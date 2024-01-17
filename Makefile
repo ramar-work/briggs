@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0.1d
+VERSION = 1.0.1e
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
