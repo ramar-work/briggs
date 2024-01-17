@@ -122,6 +122,7 @@
  #define print_stream_type(A) 0
  #define print_date(A) 0
  #define WHERE() 0
+ #define WHEREF( ... ) 0 
 #else
 	/* Optionally print arguments */
  #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
@@ -390,6 +391,7 @@ typedef struct mysql_t {
 	MYSQL_STMT *stmt;
 	MYSQL_BIND *bindargs;
 	MYSQL_RES *res;
+	const char *query;
 } mysql_t;
 
 
@@ -402,8 +404,27 @@ typedef struct pgsql_t {
 	Oid *bindoids;
 	int *bindfmts; // the smallest I can think of
 	int arglen;	
+	const char *query;
 } pgsql_t;
 
+
+
+typedef enum {
+	BINDTYPE_NONE,
+	BINDTYPE_ALPHA,
+	BINDTYPE_NUMERIC,
+	BINDTYPE_ANON,
+	BINDTYPE_AT	
+} bindtype_t;
+
+
+const char * bindtypes[] = {
+	NULL,
+	":%s",	
+	"$%d",	
+	"?",	
+	"@%s",	
+};
 
 #if 0
 typedef struct sqlite3_t {
@@ -2311,12 +2332,128 @@ int struct_from_dsn( dsn_t * conn ) {
 	}
 
 	// Add the rest of the rows
-	for ( header_t **s = conn->headers; s && *s; s++ ) {
-		fprintf( stdout, "\t%s %s;\n", defs[ (*s)->type ], (*s)->label );
+for ( header_t **s = conn->headers; s && *s; s++ ) {
+	fprintf( stdout, "\t%s %s;\n", defs[ (*s)->type ], (*s)->label );
+}
+
+return 1;
+}
+
+
+/**
+* create_sql_insert_stmt
+* ===========================
+*
+* Create an SQL insert statement suitable for a specific type of 
+* engine.  
+* 
+* TODO: Create a bindtype_t for { ALPHA, NUM, QUESTION_MARK }
+* TODO: This code is beyond terrible.  Please fix it...
+*
+*/
+char * create_sql_insert_statement ( dsn_t *dc, dsn_t *sc, bindtype_t bindtype, char *err, int errlen ) {
+	int p = 0;
+	char *bindstmt = NULL;
+	char  buffer[ 512 ] = { 0 };
+	const char *fmt = NULL;
+
+	// TODO: Complians about not const string, fix this...
+	if ( bindtype == BINDTYPE_ANON )
+		fmt = bindtypes[ BINDTYPE_ANON ];
+	else if ( bindtype == BINDTYPE_NUMERIC )
+		fmt = bindtypes[ BINDTYPE_NUMERIC ];
+	else if ( bindtype == BINDTYPE_ALPHA )
+		fmt = bindtypes[ BINDTYPE_ALPHA ];
+	else if ( bindtype == BINDTYPE_AT ) {
+		fmt = bindtypes[ BINDTYPE_AT ];
 	}
 
-	return 1;
+	// Also go ahead and create the reusable bind statement
+	if ( !( bindstmt = malloc( 1 ) ) || !memset( bindstmt, 0, 1 ) ) {
+		const char fmt[] = "%s: out of memory occurred allocating MySQL bind statement: %s";
+		snprintf( err, errlen, fmt, __func__, strerror( errno ) );
+		return 0;	
+	}
+
+	// Write the "preamble"
+	p = snprintf( buffer, sizeof( buffer ), "INSERT INTO %s ( ", dc->tablename ); 
+	if ( p >= sizeof( buffer ) - 1 || buffer[p] != '\0' ) {
+		const char fmt[] = "%s: Truncation occurred writing MySQL bind statement";
+		snprintf( err, errlen, fmt, __func__ );
+		return 0;
+	}
+
+	// Copy it and then loop through the rest
+	bindstmt = realloc( bindstmt, p );
+	memcpy( bindstmt, buffer, p );
+
+	// All column headers 
+	for ( header_t **h = sc->headers; h && *h; h++ ) {
+		int i = p;
+		int size = 0;
+		memset( buffer, 0, sizeof( buffer ) );
+		size = snprintf( buffer, sizeof( buffer ) - 1 , &",%s"[ ( *sc->headers == *h ) ], (*h)->label );
+		p += size;
+		bindstmt = realloc( bindstmt, p );
+		memcpy( &bindstmt[ i ], buffer, size );	
+	}
+
+	// Then VALUES string
+	if ( 1 ) {
+		int i = p;
+		int size = 0;
+		memset( buffer, 0, sizeof( buffer ) );
+		size = snprintf( buffer, sizeof( buffer ), " ) VALUES ( " );
+		p += size;
+		bindstmt = realloc( bindstmt, p );
+		memcpy( &bindstmt[ i ], buffer, size );
+	}
+
+	// Then each parameter 
+	// All column headers 
+	int column = 1;
+	for ( header_t **h = sc->headers; h && *h; h++, column++ ) {
+		int i = p;
+		int size = 0;
+		int f = ( *sc->headers == *h ) ? 0 : 1;
+		memset( buffer, 0, sizeof( buffer ) );
+
+		if ( f ) {
+			size = snprintf( buffer, sizeof( buffer ), "," );
+		} 
+
+		if ( bindtype == BINDTYPE_ANON )
+			size += snprintf( &buffer[f], sizeof( buffer ) - 1, "%s", fmt );
+		else if ( bindtype == BINDTYPE_NUMERIC )
+			size += snprintf( &buffer[f], sizeof( buffer ) - 1 , fmt, column ); 
+		else if ( bindtype == BINDTYPE_ALPHA )
+			size += snprintf( &buffer[f], sizeof( buffer ) - 1 , fmt, (*h)->label );
+		else if ( bindtype == BINDTYPE_AT ) {
+			size += snprintf( &buffer[f], sizeof( buffer ) - 1 , fmt, (*h)->label ); 
+		}
+
+		p += size;
+		bindstmt = realloc( bindstmt, p );
+		memcpy( &bindstmt[ i ], buffer, size );	
+	}
+	
+	// Then the end	
+	if ( 1 ) {
+		int i = p;
+		int size = 0;
+		memset( buffer, 0, sizeof( buffer ) );
+		size = snprintf( buffer, sizeof( buffer ), " )" );
+		p += size;
+		bindstmt = realloc( bindstmt, p );
+		memcpy( &bindstmt[ i ], buffer, size );
+	}
+
+	// Terminate 
+	bindstmt = realloc( bindstmt, p + 1 );
+	memcpy( &bindstmt[ p ], "\0", 1 );
+	return bindstmt;
 }
+
 
 
 
@@ -2374,8 +2511,19 @@ int prepare_dsn_for_write ( dsn_t *dc, dsn_t *sc, char *err, int errlen ) {
 
 
 	else if ( dc->type == DB_MYSQL ) {
-fprintf( stderr, "PREPARING MySQL DSN: %d columns\n", sc->hlen );
+		WHEREF( "PREPARING MySQL DSN: %d columns\n", sc->hlen );
+
+		// Deref and check that this is still here...
 		mysql_t *t = (mysql_t *)dc->conn;	
+	
+		// Make the insert statement
+		if ( !( t->query = create_sql_insert_statement( dc, sc, BINDTYPE_ANON, err, errlen ) ) ) {
+			const char fmt[] = "%s: %s";
+			snprintf( err, errlen, fmt, __func__,err );
+			return 0;
+		}
+
+		// Allocate statement and bind arguments structures
 		t->stmt = (void *)mysql_stmt_init( (MYSQL *)t->conn );
 
 		if ( !( t->bindargs = malloc( sizeof( MYSQL_BIND ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( MYSQL_BIND ) * sc->hlen ) ) {
@@ -2386,8 +2534,17 @@ fprintf( stderr, "PREPARING MySQL DSN: %d columns\n", sc->hlen );
 	}
 
 	else if ( dc->type == DB_POSTGRESQL ) {
-fprintf( stderr, "PREPARING PostgreSQL DSN: %d columns\n", sc->hlen );
+		WHEREF( "PREPARING PostgreSQL DSN: %d columns\n", sc->hlen );
+
+		// Der
 		pgsql_t *t = (pgsql_t *)dc->conn;	
+
+		// Make the insert statement
+		if ( !( t->query = create_sql_insert_statement( dc, sc, BINDTYPE_NUMERIC, err, errlen ) ) ) {
+			const char fmt[] = "%s: %s";
+			snprintf( err, errlen, fmt, __func__,err );
+			return 0;
+		}
 
 		if ( !( t->bindargs = malloc( sizeof( char * ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( char * ) * sc->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating Postgres bind structures: %s";
@@ -2420,35 +2577,29 @@ fprintf( stderr, "PREPARING PostgreSQL DSN: %d columns\n", sc->hlen );
 
 // Destory structures
 void unprepare_dsn( dsn_t *conn ) {
-	WHERE();
-
 	// Rewinding the pointer to the beginning would be an ok idea. But unnecessary
 	if ( conn->type == DB_FILE ) {
 		file_t *file = (file_t *)conn->conn;
 	}
 
 	else if ( conn->type == DB_MYSQL ) {
-fprintf( stderr, "UNPREPARING MySQL DSN\n" );
+		WHEREF( "UNPREPARING MySQL DSN\n" );
 		mysql_t *t = (mysql_t *)conn->conn;	
 		mysql_stmt_close( t->stmt );
 		free( t->bindargs );
+		free( (void *)t->query );
 	}
 
 	else if ( conn->type == DB_POSTGRESQL ) {
-fprintf( stderr, "UNPREPARING PostgreSQL DSN\n" );
+		WHEREF( "UNPREPARING Postgres DSN\n" );
 		pgsql_t *t = (pgsql_t *)conn->conn;	
 		free( t->bindargs );
 		free( t->bindlens );
 		free( t->bindfmts );
 		free( t->bindoids );
+		free( (void *)t->query );
 	}
 }
-
-
-
-unsigned long mysql_double_size = sizeof( double );
-unsigned long mysql_float_size = sizeof( float );
-unsigned long mysql_int_size = sizeof( int );
 
 
 
@@ -2825,6 +2976,10 @@ int transform_from_dsn(
 				//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( t == STREAM_SQL ) {
+			#if 0
+				// Way faster to use what you've already written..., but you can't use the whole thing...
+				// You can prepare it if stream_SQL is chosen...
+			#else
 				FDPRINTF( file->fd, "INSERT INTO " );
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, " (" );
@@ -2834,70 +2989,8 @@ int transform_from_dsn(
 				}
 				FDPRINTF( file->fd, ") VALUES (" );
 			}
+			#endif
 		}
-		else {
-		#ifdef BPGSQL_H
-			if ( t == STREAM_PGSQL ) {
-				// First (and preferably only once) generate the header keys
-				char argfmt[ 256 ];
-				char *ins = insfmt;
-				int ilen = sizeof( insfmt );
-				char *s = argfmt;
-				const char fmt[] = "INSERT INTO %s ( %s ) VALUES ( %s )";
-
-				// Initialize
-				memset( insfmt, 0, sizeof( insfmt ) );
-				memset( argfmt, 0, sizeof( argfmt ) );
-
-				// Create the header keys
-				for ( header_t **h = iconn->headers; h && *h; h++ ) {
-					int i = snprintf( ins, ilen, &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
-					ins += i, ilen -= i;
-				}
-
-				// Create the insert keys
-				for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
-					// TODO: You're going to need a way to track how big len is
-					bw = snprintf( s, l, &", $%d"[ (int)(i == 1) ], i );
-					l -= bw, s += bw;
-				}
-
-				// Finally, we create the final bind stmt
-				snprintf( ffmt, sizeof( ffmt ), fmt, oconn->tablename, insfmt, argfmt );
-			}
-		#endif
-		#ifdef BMYSQL_H
-			else if ( t == STREAM_MYSQL /* t == STREAM_SQLITE3 */ ) {
-				// First (and preferably only once) generate the header keys
-				char argfmt[ 256 ];
-				char *ins = insfmt;
-				int ilen = sizeof( insfmt );
-				char *s = argfmt;
-
-				// Initialize
-				memset( insfmt, 0, sizeof( insfmt ) );
-				memset( argfmt, 0, sizeof( argfmt ) );
-
-				// Create the header keys
-				for ( header_t **h = iconn->headers; h && *h; h++ ) {
-					int i = snprintf( ins, ilen, &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
-					ins += i, ilen -= i;
-				}
-
-				// Create the insert keys
-				for ( unsigned int bw = 0, i = 1, l = sizeof( argfmt ); i <= iconn->hlen && l; i++ ) {
-					// TODO: You're going to need a way to track how big len is
-					bw = snprintf( s, l, &",%s"[ (int)(i == 1) ], "?" );
-					l -= bw, s += bw;
-				}
-
-				// Finally, we create the final bind stmt
-				snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", oconn->tablename, insfmt, argfmt );
-				fprintf( stdout, "%s", ffmt );
-			}
-		#endif
-		} /* end for */
-
 
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
@@ -3260,7 +3353,7 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 		#else
 			// TODO: Statements are probably preferred, but its simpler to do it the other way
 			// Prepare the statement
-			if ( mysql_stmt_prepare( b->stmt, ffmt, strlen( ffmt ) ) != 0 ) {
+			if ( mysql_stmt_prepare( b->stmt, b->query, strlen( b->query ) ) != 0 ) {
 				const char fmt[] = "MySQL statement prepare failure: '%s'";
 				snprintf( err, errlen, fmt, mysql_stmt_error( b->stmt )  );
 				return 0;
@@ -3294,7 +3387,7 @@ printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typem
 			pgsql_t *b = (pgsql_t *)oconn->conn;
 			PGresult *r = PQexecParams(
 				b->conn,
-				ffmt,
+				b->query,
 				iconn->hlen,
 				b->bindoids,
 				(const char * const *)b->bindargs,
@@ -4103,21 +4196,21 @@ int main ( int argc, char *argv[] ) {
 	// Open the DSN first (regardless of type)
 	if ( !open_dsn( &input, query, err, sizeof( err ) ) ) {
 		close_dsn( &input );
-		table ? free( table ) : 0;
+		( table ) ? free( table ) : (void)0;
 		return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 	}
 
 	// Create the header_t here
 	if ( !headers_from_dsn( &input, err, sizeof( err ) ) ) {
 		close_dsn( &input );
-		table ? free( table ) : 0;
+		( table ) ? free( table ) : (void)0;
 		return ERRPRINTF( ERRCODE, "Header creation failed: %s.\n", err );
 	}
 
 	// Create the headers only
 	if ( headers_only ) {
 		close_dsn( &input );
-		table ? free( table ) : 0;
+		( table ) ? free( table ) : (void)0;
 		return cmd_headers( &input );	
 	}
 
@@ -4125,7 +4218,7 @@ int main ( int argc, char *argv[] ) {
 	if ( !scaffold_dsn( &config, &input, &output, table, err, sizeof( err ) ) ) {
 		close_dsn( &input );
 		close_dsn( &output );
-		table ? free( table ) : 0;
+		( table  )? free( table ) : (void)0;
 		return ERRPRINTF( ERRCODE, "%s", err );
 	}
 
