@@ -130,6 +130,9 @@
  #define WHERE() \
  	DPRINTF( "%s: [%s:%d]\n", __func__, __FILE__, __LINE__ )
 
+ #define WHEREF(...) \
+ 	DPRINTF( "%s: [%s:%d] ", __func__, __FILE__, __LINE__ ) && DPRINTF( __VA_ARGS__ ) && DPRINTF( "\n" )
+
 	/* Print the literal name of a type */
  #define N(A) #A
 #endif
@@ -1932,14 +1935,12 @@ return 1;
  *
  */
 int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
-	WHERE();
+	WHEREF( "Attempting to open connection indicated by '%s'", conn->connstr );
 	char query[ 2048 ];
 	memset( query, 0, sizeof( query ) );
 
 	// Handle opening the database first
 	if ( conn->type == DB_FILE ) {
-		DPRINTF( "Attempting to open file at '%s'\n", conn->connstr );
-
 		// An mmap() implementation for speedy reading and less refactoring
 		int fd;
 		struct stat sb;
@@ -1947,7 +1948,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 		// Create a file structure
 		if ( !( file = malloc( sizeof( file_t ) ) ) || !memset( file, 0, sizeof( file_t ) ) ) {
-			snprintf( err, errlen, "malloc() %s\n", strerror( errno ) );
+			snprintf( err, errlen, "malloc() %s", strerror( errno ) );
 			return 0;
 		}
 
@@ -1961,14 +1962,14 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 		// Initialize the stat buffer and check for the file
 		if ( memset( &sb, 0, sizeof( struct stat ) ) && stat( conn->connstr, &sb ) == -1 ) {
-			snprintf( err, errlen, "stat() %s\n", strerror( errno ) );
+			snprintf( err, errlen, "stat() %s", strerror( errno ) );
 			free( file );
 			return 0;
 		}
 
 		// Open the file
 		if ( ( file->fd = open( conn->connstr, O_RDONLY ) ) == -1 ) {
-			snprintf( err, errlen, "open() %s\n", strerror( errno ) );
+			snprintf( err, errlen, "open() %s", strerror( errno ) );
 			free( file );
 			return 0;
 		}
@@ -1977,7 +1978,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 		file->size = sb.st_size;
 		file->map = mmap( 0, file->size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
 		if ( file->map == MAP_FAILED ) {
-			snprintf( err, errlen, "mmap() %s\n", strerror( errno ) );
+			snprintf( err, errlen, "mmap() %s", strerror( errno ) );
 			free( file );
 			return 0;
 		}
@@ -2552,7 +2553,7 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 				// Anything else is a failure for now
 				else {
-					const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (Expected %s, got %s)\n";
+					const char fmt[] = "Type check for value at row %d, column '%s' (%d) failed. (Expected %s, got %s)";
 					snprintf( err, errlen, fmt, line + 1, col->k, ci + 1, itypes[ etype ], itypes[ col->type ] );
 					return 0;
 				}
@@ -2766,9 +2767,6 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 
 
-int somenum = 0;
-
-
 /**
  * transform_from_dsn( dsn_t * )
  * ===================
@@ -2895,7 +2893,7 @@ int transform_from_dsn(
 
 				// Finally, we create the final bind stmt
 				snprintf( ffmt, sizeof( ffmt ), "INSERT INTO %s ( %s ) VALUES ( %s )", oconn->tablename, insfmt, argfmt );
-				fprintf( stdout, "%s\n", ffmt );
+				fprintf( stdout, "%s", ffmt );
 			}
 		#endif
 		} /* end for */
@@ -3341,47 +3339,52 @@ printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typem
  *
  */
 void close_dsn( dsn_t *conn ) {
+	WHEREF( "Attempting to close %s at %p", conn->connstr, (void *)conn->conn );
 
-	DPRINTF( "Attempting to close connection at %p\n", (void *)conn->conn );
+	if ( conn->conn ) {
+		if ( conn->type == DB_FILE ) {
+			// Cast
+			file_t *file = (file_t *)conn->conn;
 
-	if ( conn->type == DB_FILE ) {
-		// Cast
-		file_t *file = (file_t *)conn->conn;
+			// Free this
+			if ( file->start && munmap( (void *)file->start, file->size ) == -1 ) {
+				fprintf( stderr, "munmap() %s", strerror( errno ) );
+			}
 
-		// Free this
-		if ( file->start && munmap( (void *)file->start, file->size ) == -1 ) {
-			fprintf( stderr, "munmap() %s\n", strerror( errno ) );
+			// Close if the file is not stdout or in
+			if ( file->fd > 2 && close( file->fd ) == -1 ) {
+				fprintf( stderr, "close() %s", strerror( errno ) );
+			}
+
+			free( file );
 		}
-
-		// Close if the file is not stdout or in
-		if ( file->fd > 2 && close( file->fd ) == -1 ) {
-			fprintf( stderr, "close() %s\n", strerror( errno ) );
+	#ifdef BSQLITE_H
+		else if ( conn->type == DB_SQLITE ) {
+			fprintf( stderr, "SQLite3 not done yet.\n" );
 		}
+	#endif
+	#ifdef BMYSQL_H
+		else if ( conn->type == DB_MYSQL ) {
+			mysql_t *db = ( mysql_t *)conn->conn;
+			mysql_free_result( db->res );
+			mysql_close( (MYSQL *)db->conn );
+			free( db );
+		}
+	#endif
+	#ifdef BPGSQL_H
+		else if ( conn->type == DB_POSTGRESQL ) {
+			pgsql_t *db = ( pgsql_t *)conn->conn;
+			PQclear( db->res );
+			PQfinish( (PGconn *)db->conn );
+			free( db );
+		}
+	#endif
+	}
 
-		free( file );
+	if ( conn->connstr ) {
+		free( conn->connstr );
 	}
-#ifdef BSQLITE_H
-	else if ( conn->type == DB_SQLITE )
-		fprintf( stderr, "SQLite3 not done yet.\n" );
-#endif
-#ifdef BMYSQL_H
-	else if ( conn->type == DB_MYSQL ) {
-		mysql_t *db = ( mysql_t *)conn->conn;
-		mysql_free_result( db->res );
-		mysql_close( (MYSQL *)db->conn );
-		free( db );
-	}
-#endif
-#ifdef BPGSQL_H
-	else if ( conn->type == DB_POSTGRESQL ) {
-		pgsql_t *db = ( pgsql_t *)conn->conn;
-		PQclear( db->res );
-		PQfinish( (PGconn *)db->conn );
-		free( db );
-	}
-#endif
 
-	free( conn->connstr );
 	conn->conn = NULL;
 }
 
@@ -3429,7 +3432,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 
 		// User called this wrong
 		else {
-			snprintf( err, errlen, "Argument supplied to --coerce is invalid.\n" );
+			snprintf( err, errlen, "Argument supplied to --coerce is invalid." );
 			return 0;
 		}
 
@@ -4088,30 +4091,43 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "No action specified, exiting.\n" );
 
 	// The dsn is always going to be the input
-	if ( !parse_dsn_info( &input, err, sizeof( err  ) ) )
+	if ( !parse_dsn_info( &input, err, sizeof( err  ) ) ) {
+		close_dsn( &input );
 		return ERRPRINTF( ERRCODE, "Input source is invalid: %s\n", err );
+	}
 
 	// If the user specified a table, fill out 
 	if ( table && strlen( table ) < sizeof( input.tablename ) )
 		snprintf( input.tablename, sizeof( input.tablename ), "%s", table );
 
 	// Open the DSN first (regardless of type)
-	if ( !open_dsn( &input, query, err, sizeof( err ) ) )
-		return ERRPRINTF( ERRCODE, "DSN open failed: %s.\n", err );
+	if ( !open_dsn( &input, query, err, sizeof( err ) ) ) {
+		close_dsn( &input );
+		table ? free( table ) : 0;
+		return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
+	}
 
 	// Create the header_t here
 	if ( !headers_from_dsn( &input, err, sizeof( err ) ) ) {
 		close_dsn( &input );
+		table ? free( table ) : 0;
 		return ERRPRINTF( ERRCODE, "Header creation failed: %s.\n", err );
 	}
 
 	// Create the headers only
-	if ( headers_only )
+	if ( headers_only ) {
+		close_dsn( &input );
+		table ? free( table ) : 0;
 		return cmd_headers( &input );	
+	}
 
 	// Scaffolding can fail
-	if ( !scaffold_dsn( &config, &input, &output, table, err, sizeof( err ) ) )
+	if ( !scaffold_dsn( &config, &input, &output, table, err, sizeof( err ) ) ) {
+		close_dsn( &input );
+		close_dsn( &output );
+		table ? free( table ) : 0;
 		return ERRPRINTF( ERRCODE, "%s", err );
+	}
 
 	// The input datasource has to be prepared too
 	if ( !prepare_dsn_for_read( &input, err, sizeof( err ) ) ) {
@@ -4129,6 +4145,8 @@ int main ( int argc, char *argv[] ) {
 
 	// Get the types of each thing in the column
 	if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
+		destroy_dsn_headers( &input );
+		close_dsn( &input );
 		return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 	}
 
@@ -4137,6 +4155,7 @@ int main ( int argc, char *argv[] ) {
 		if ( !schema_from_dsn( &input, &output, schema_fmt, MAX_STMT_SIZE, err, sizeof( err ) ) ) {
 			free( output.connstr );
 			destroy_dsn_headers( &input );
+			close_dsn( &output );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Schema build failed: %s\n", err );
 		}
@@ -4169,7 +4188,6 @@ int main ( int argc, char *argv[] ) {
 #if 1
 	#if 1
 		// Test and try to create if it does not exist
-fprintf( stderr, "WRITE PREP\n" );
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
 			//close_dsn( &output );
 			destroy_dsn_headers( &input );
