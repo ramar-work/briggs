@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0.1c
+VERSION = 1.0.1d
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
@@ -37,6 +37,7 @@ IFLAGS=-Iinclude
 
 # Control Postgres and other database engine support from here for now
 FFLAGS=-DBPGSQL_H -DBMYSQL_H
+#FFLAGS=-DBPGSQL_H -DBMYSQL_H -DBSQLITE_H
 #FFLAGS=-DBPGSQL_H
 
 # Lib support flags
@@ -56,18 +57,15 @@ OBJECTS = vendor/zwalker.o vendor/util.o
 #Phony targets 
 .PHONY: main clean debug leak run other
 
-tmp: dev
-	$(MAKE) schema
-
 # main - Default build, suitable for most people
 main: build
-main: 
+main:
 	@printf '' >/dev/null
 
 
 #
 debug: CFLAGS+=-DDEBUG_H -g
-debug: build
+debug: clean build
 debug:
 	@printf '' >/dev/null
 
@@ -129,7 +127,7 @@ clean:
 install:
 	-mkdir -p $(PREFIX)/bin/  $(PREFIX)/share/man/man1/
 	cp $(NAME) $(PREFIX)/bin/
-	cp $(NAME).1 $(PREFIX)/share/man/man1/
+	cp $(MANFILES) $(PREFIX)/share/man/man1/
 
 
 # doctest - Creates HTML documentation
@@ -175,11 +173,12 @@ dist-osx: $(DISTDIR).tar.gz
 # Create a package archive 
 $(DISTDIR).tar.gz: $(DISTDIR)
 	tar chof - $(DISTDIR) | gzip -9 -c > $@	
+	mv $(DISTDIR).tar.gz archives/
 	rm -rf $(DISTDIR)
 
 # Create a package directory
 $(DISTDIR): clean
-	-rm -f $(DISTDIR).tar.gz
+	-rm -f archives/$(DISTDIR).tar.gz
 	-rm -rf $(DISTDIR)
 	mkdir -p \
 		$(DISTDIR)/example \
@@ -199,7 +198,7 @@ $(DISTDIR): clean
 
 # Check that packaging worked (super useful for other distributions...) 
 distcheck:
-	gzip -cd $(DISTDIR).tar.gz | tar xvf -
+	gzip -cd archives/$(DISTDIR).tar.gz | tar xvf -
 	cd $(DISTDIR) && $(MAKE) local
 	cd $(DISTDIR) && $(MAKE) clean
 	rm -rf $(DISTDIR)
