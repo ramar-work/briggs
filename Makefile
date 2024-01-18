@@ -1,6 +1,6 @@
 #!/usr/bin/make
 NAME = briggs
-VERSION = 1.0.1e
+VERSION = 1.0.1f
 PREFIX=/usr/local
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
@@ -56,6 +56,10 @@ OBJECTS = vendor/zwalker.o vendor/util.o
 
 #Phony targets 
 .PHONY: main clean debug leak run other
+
+
+y: clean debug conversion
+
 
 # main - Default build, suitable for most people
 main: build
