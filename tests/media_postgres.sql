@@ -1,5 +1,7 @@
 DROP DATABASE IF EXISTS pg_briggs_media_tests;
+
 CREATE DATABASE pg_briggs_media_tests;
+
 \connect pg_briggs_media_tests;
 
 CREATE TABLE postgres_fancy_media (

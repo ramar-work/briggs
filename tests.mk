@@ -8,238 +8,125 @@ SRCPASS="schpass"
 # Destination user and password
 DESTUSER="root"
 DESTPASS=
+#WAIT=read; clear
+WAIT=
+S="SUCCESS"
+F="FAIL"
+SILENT=2>/dev/null
+SILENT=
+STATUS=
 
 
-# Some targets for command line testing
+
+# headers - Test the generation of headers from file, database table or SQL query
 headers:
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --headers  # Test a regular file
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --headers # Test a Postgres Connection
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --headers # Test a MySQL connection
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers; read  # Test a regular file
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --headers; read  # Test a regular file
+	$(EXECDIR)/briggs -d '#' -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers; read  # Test a regular file
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --headers; read # Test a Postgres Connection
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --headers; read # Test a MySQL connection
 
+
+
+# schema - Test the approximation of a database (or query) schema from file, database table or SQL query
 schema:
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --schema
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for postgres --schema
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for postgres --coerce blobv=bytea --schema
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for mysql --coerce blobv=BLOB --schema
+	# Should always fail because there is no table name
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --schema $(SILENT) && echo $(F) || echo $(S); $(WAIT)
+	# Test regular CSV
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for postgres --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -o "postgres://postgres@localhost/washdb.washburn" --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -o "postgres://bomb:giantbomb@localhost/washdb" -T washburn --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for mysql --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -o "mysql://root@localhost/washdb" -T washburn --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -o "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema $(SILENT) && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb" --schema && echo $(F) || echo $(S); $(WAIT)
+	# Test other delimited CSV
+	# Test MySQL input data source
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb" --table washburn --schema && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema --for postgres && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema --coerce "award_amount=integer" && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" -o "postgres://bomb:giantbomb@localhost/washdb" -T washburn --schema && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb" --schema && echo $(F) || echo $(S); $(WAIT)
+	# Test Postgres input data source
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb" --table washburn --schema && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --schema && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --schema --for postgres && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --schema --coerce "award_amount=integer" && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "postgres://bomb:giantbomb@localhost/washdb" -T washburn --schema && echo $(S) || echo $(F); $(WAIT)
 
 
-xx:
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --for mysql --schema
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --schema
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --schema
 
-non:
-	psql -U postgres < tests/washburn_postgres.sql
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "mysql://root@localhost/$(DBNAME).washburn" --convert
-	
+# conversion - Test capability of translating from one format to another (TODO: Get code of common validator programs vs the actual output)
+conversion: load_media_tests
+	# To XML from flat file 
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --xml | xmllint - && echo $(S) || echo $(F); $(WAIT)
+	# To JSON from flat file
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_postgres_small.csv -d '#' -T type_tests --json | jq && echo $(S) || echo $(F); $(WAIT)
+	# To Postgres from flat file (the load commands won't be failures, but load_media_tests ought to catch that first)
+	psql -U postgres -c 'DROP DATABASE IF EXISTS bixby';
+	psql -U postgres -c 'CREATE DATABASE bixby';
+	$(EXECDIR)/briggs --convert -d '#' \
+		-i $(EXECDIR)/tests/type_tests_postgres_small.csv \
+		-o "postgres://postgres@localhost/bixby.bixby_class"
+	psql --expanded -U postgres -d bixby -c 'select * from bixby_class'; # There should be at least 3 lines
+	psql -U postgres -c 'DROP DATABASE bixby';
+	# To MySQL from flat file
+	mysql -u root -e 'DROP DATABASE IF EXISTS bixby'
+	mysql -u root -e 'CREATE DATABASE bixby'
+	$(EXECDIR)/briggs --convert --coerce blobv=blob -d '#' \
+		-i $(EXECDIR)/tests/type_tests_postgres_small.csv \
+		-o "mysql://root@localhost/bixby.bixby_class"
+	mysql --vertical -u root -D bixby -e 'SELECT * FROM bixby_class'; # There should be at least 3 lines
+	mysql -u root -e 'DROP DATABASE bixby'
+	# To MySQL from MySQL
+	mysql -u root -e 'DROP DATABASE IF EXISTS bixby'
+	mysql -u root -e 'CREATE DATABASE bixby'
+	$(EXECDIR)/briggs --convert \
+		-i "mysql://root@localhost/mysql_briggs_media_tests.mysql_fancy_media" \
+		-o "mysql://root@localhost/bixby.bixby_class"
+	mysql --vertical -u root -D bixby -e 'SELECT * FROM bixby_class'; # There should be at least 3 lines
+	mysql -u root -e 'DROP DATABASE bixby'
+	# To Postgres from Postgres
+	psql -U postgres -c 'DROP DATABASE IF EXISTS bixby';
+	psql -U postgres -c 'CREATE DATABASE bixby';
+	$(EXECDIR)/briggs -i "postgres://postgres@localhost/pg_briggs_media_tests.postgres_fancy_media" \
+		-o "postgres://postgres@localhost/bixby.bixby_class" --convert
+	psql --expanded -U postgres -d bixby -c 'select * from bixby_class'; # There should be at least 3 lines
+	psql -U postgres -c 'DROP DATABASE bixby';
+	# To MySQL from Postgres
+	mysql -u root -e 'DROP DATABASE IF EXISTS bixby'
+	mysql -u root -e 'CREATE DATABASE bixby'
+	$(EXECDIR)/briggs --convert --coerce booleanv=char \
+		-i "postgres://postgres@localhost/pg_briggs_media_tests.postgres_fancy_media" \
+		-o "mysql://root@localhost/bixby.bixby_class"
+	mysql --vertical -u root -D bixby -e 'SELECT * FROM bixby_class';
+	mysql -u root -e 'DROP DATABASE bixby'
+	# To Postgres from MySQL 
+	psql -U postgres -c 'DROP DATABASE IF EXISTS bixby';
+	psql -U postgres -c 'CREATE DATABASE bixby';
+	$(EXECDIR)/briggs --convert --coerce timev=time,yearv=integer,textv=text,blobv=text \
+		-i "mysql://root@localhost/mysql_briggs_media_tests.mysql_fancy_media" \
+		-o "postgres://postgres@localhost/bixby.bixby_class"
+	psql --expanded -U postgres -d bixby -c 'select * from bixby_class';# There should be at least 3 lines
+	psql -U postgres -c 'DROP DATABASE bixby';
 
 
-# Test longer hostnames
-ncat_test0:
+
+# load_media_tests - Load all relevant media tests to database
+load_media_tests:
+	mysql -u root < tests/media_mysql.sql
+	postgres -U postgres < tests/media_postgres.sql
+
+
+
+# parsing - Test parsing of different data source names (really should only work with DEBUG_H) 
+# TODO: Need WAAAAAAAY more tests than this
+parsing:
 	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@hell.to.the.naw.com/washdb.washburn" -X
 	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@localhost/washdb.washburn" -X
 	$(EXECDIR)/briggs -i "postgresql://bomb:giantbomb@hell.to.the.naw.com/washdb.washburn?x=a&asdfsfd8lasdfas.asdfsafd=asdfsadfsasd8234324nn23" -X
 
 
-# Test #1
-ncat_test1: DBNAME=washdb_postgres_ncat_test_1
-ncat_test1:
-	mysql -u root < tests/washburn_mysql.sql
-	psql -U postgres -c 'DROP DATABASE IF EXISTS $(DBNAME)'
-	psql -U postgres -c 'CREATE DATABASE $(DBNAME)'
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" -o "postgres://postgres@localhost/$(DBNAME).washburn" --convert
-	psql -U postgres --dbname=$(DBNAME) -c 'select * from washburn';
-
-
-# Test #2
-ncat_test2: DBNAME=washdb_postgres_ncat_test_2
-ncat_test2:
-	psql -U postgres < tests/washburn_postgres.sql
-	mysql -u root -e 'DROP DATABASE IF EXISTS $(DBNAME)' 	
-	mysql -u root -e 'CREATE DATABASE $(DBNAME)' 	
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "mysql://root@localhost/$(DBNAME).washburn" --convert
-	mysql -u root --database=$(DBNAME) -e 'select * from washburn';
-
-
-# Test #3
-ncat_test3: DBNAME=washdb_postgres_ncat_test_3
-ncat_test3:
-	mysql -u root < tests/washburn_mysql.sql
-	mysql -u root -e 'DROP DATABASE IF EXISTS $(DBNAME)' 	
-	mysql -u root -e 'CREATE DATABASE $(DBNAME)' 	
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" -o "mysql://root@localhost/$(DBNAME).washburn" --convert
-	mysql -u root --database=$(DBNAME) -e 'select * from washburn';
-
-
-# Test #4
-ncat_test4: DBNAME=washdb_postgres_ncat_test_4
-ncat_test4:
-	psql -U postgres < tests/washburn_postgres.sql
-	psql -U postgres -c 'DROP DATABASE IF EXISTS $(DBNAME)'
-	psql -U postgres -c 'CREATE DATABASE $(DBNAME)'
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "postgres://postgres@localhost/$(DBNAME).washburn" --convert
-	psql -U postgres --dbname=$(DBNAME) -c 'select * from washburn';
-
-
-dump_ncat_test1: TABLE=washdb_postgres_ncat_test_1
-dump_ncat_test1:
-	psql -U postgres --dbname=$(TABLE) -c 'select * from washburn';
-
-
-dump_ncat_test2: TABLE=washdb_postgres_ncat_test_2
-dump_ncat_test2:
-	mysql -u root --database=$(TABLE) -e 'select * from washburn';
-
-
-
-mysql_mysql:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mysql_oracle:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-# Test #1
-mysql_postgres:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mysql_sqlite3:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://schdb.scholarships" --convert
-
-mysql_sqlserver:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mysql_mongodb:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mysql_db2:
-	$(EXECDIR)/briggs -i "mysql://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_mysql:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_oracle:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_postgres:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_sqlite3:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://schdb.scholarships" --convert
-
-oracle_sqlserver:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_mongodb:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-oracle_db2:
-	$(EXECDIR)/briggs -i "oracle://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-# Test #2
-postgres_mysql:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-postgres_oracle:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-postgres_postgres:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-postgres_sqlite3:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://schdb.scholarships" --convert
-
-postgres_sqlserver:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-postgres_mongodb:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-postgres_db2:
-	$(EXECDIR)/briggs -i "postgres://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_mysql:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_oracle:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_postgres:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_sqlite3:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "sqlite3://schdb.scholarships" --convert
-
-sqlite3_sqlserver:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_mongodb:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlite3_db2:
-	$(EXECDIR)/briggs -i "sqlite3://schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_mysql:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_oracle:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_postgres:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_sqlite3:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_sqlserver:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_mongodb:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-sqlserver_db2:
-	$(EXECDIR)/briggs -i "sqlserver://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_mysql:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_oracle:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_postgres:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_sqlite3:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_sqlserver:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_mongodb:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-mongodb_db2:
-	$(EXECDIR)/briggs -i "mongodb://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_mysql:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mysql://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_oracle:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "oracle://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_postgres:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "postgres://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_sqlite3:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlite3://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_sqlserver:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "sqlserver://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_mongodb:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "mongodb://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
-
-db2_db2:
-	$(EXECDIR)/briggs -i "db2://$(SRCUSER):$(SRCPASS)@localhost/schdb.scholarships" -o "db2://$(DESTUSER):$(DESTPASS)@localhost/schdb.scholarships" --convert
 
 .PHONY: headers schema

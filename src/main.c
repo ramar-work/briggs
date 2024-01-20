@@ -5,23 +5,36 @@
  *
  * Usage
  * -----
- * briggs can be used to turn CSV data into a SQL upload, a
- * C-style struct, JSON, XML and more.
+ * briggs can be used to turn CSV data or SQL query results 
+ * into: 
+ *
+ * - a SQL query or transaction 
+ * - a C-style struct
+ * - JSON
+ * - XML
+ * - Java classes, arrays or objects
+ * - Dart classes, arrays or objects
+ *
+ * briggs can also be used to copy records directly from one
+ * source into a live database connection.
  *
  * Options are as follows:
  *
  *
- * TODO
- * ----
- * - Handle unsigned characters, then it's easy to digest xls[x], etc
- * - Handle Unicode (uint32_t?)
- * - Give user the ability to generate values:
- * 	one flag ought to be used to generate some things
- * 	if I give it a file, use a single line
- * 	if I give it multiple values, use those
- * 	if I give it a string, then do yet something else...
- * 	briggs -t range=[ x, y, z ]
- * - Start testing on Windows
+ * TODO / Wishlist
+ * ---------------
+ * 
+ * - Read DIRECTLY from ods files
+ * - Read DIRECTLY from xls/xlsx files
+ * - Read from XML, JSON or Msgpack streams as if they were a 
+ *   CSV
+ * - Give Unicode another look 
+ * - Generate random values for a column
+ * - Add the --auto flag to automatically coerce types in cases
+ *   where needed.
+ * - Work on offset and count to give the ability to process only
+ *   a subset of rows WITHOUT having to write a custom query
+ * - Open the code to run on Windows
  * - Add ability to generate random test data
  * 	- Numbers
  * 	- Zips
@@ -50,9 +63,6 @@
 #include "../vendor/zwalker.h"
 #include "../vendor/util.h"
 
-/* Can compile this to be bigger if need be */
-#define MAX_STMT_SIZE 2048
-
 /* Optionally include support for MySQL */
 #ifdef BMYSQL_H
  #include <mysql/mysql.h>
@@ -67,6 +77,9 @@
 #ifdef BSQLITE_H
  #include <sqlite3.h>
 #endif
+
+/* Can compile this to be bigger if need be */
+#define MAX_STMT_SIZE 2048
 
 /* Terminating character in typemaps */
 #define TYPEMAP_TERM INT_MIN
@@ -122,7 +135,7 @@
  #define print_stream_type(A) 0
  #define print_date(A) 0
  #define WHERE() 0
- #define WHEREF( ... ) 0 
+ #define WPRINTF( ... ) 0 
 #else
 	/* Optionally print arguments */
  #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
@@ -131,7 +144,7 @@
  #define WHERE() \
  	DPRINTF( "%s: [%s:%d]\n", __func__, __FILE__, __LINE__ )
 
- #define WHEREF(...) \
+ #define WPRINTF(...) \
  	DPRINTF( "%s: [%s:%d] ", __func__, __FILE__, __LINE__ ) && DPRINTF( __VA_ARGS__ ) && DPRINTF( "\n" )
 
 	/* Print the literal name of a type */
@@ -852,7 +865,8 @@ case_t case_type = CASE_SNAKE;
 sqltype_t dbengine = SQL_SQLITE3;
 char *coercion = NULL;
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT";
-
+const char null_keyword[] = "NULL";
+const unsigned long null_keyword_length = sizeof( "NULL" ) - 1;
 
 
 // Convert word to snake_case
@@ -1956,7 +1970,7 @@ return 1;
  *
  */
 int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
-	WHEREF( "Attempting to open connection indicated by '%s'", conn->connstr );
+	WPRINTF( "Attempting to open connection indicated by '%s'", conn->connstr );
 	char query[ 2048 ];
 	memset( query, 0, sizeof( query ) );
 
@@ -2241,9 +2255,15 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 
 		// TODO: You CAN still make a schema with an empty query...
 		// But this is kind of tricky to allow.
-		if ( conn->hlen < 1 ) {
-			const char fmt[] = "No data was returned in the query.  Not attempting to generate headers.";
+		if ( !conn->hlen ) {
+			const char fmt[] = "No header data found, please double check the file or input query.";  
 			snprintf( err, errlen, fmt );
+			return 0;
+		}
+		else if ( conn->hlen < 2 ) {
+			const char fmt[] = "Array size is less than 2.  Does this look correct?: %s";  
+			header_t **header = conn->headers;
+			snprintf( err, errlen, fmt, (*header)->label );
 			return 0;
 		}
 	}
@@ -2351,7 +2371,7 @@ return 1;
 * TODO: This code is beyond terrible.  Please fix it...
 *
 */
-char * create_sql_insert_statement ( dsn_t *dc, dsn_t *sc, bindtype_t bindtype, char *err, int errlen ) {
+char * create_sql_insert_statement ( dsn_t *oconn, dsn_t *iconn, bindtype_t bindtype, char *err, int errlen ) {
 	int p = 0;
 	char *bindstmt = NULL;
 	char  buffer[ 512 ] = { 0 };
@@ -2376,7 +2396,7 @@ char * create_sql_insert_statement ( dsn_t *dc, dsn_t *sc, bindtype_t bindtype, 
 	}
 
 	// Write the "preamble"
-	p = snprintf( buffer, sizeof( buffer ), "INSERT INTO %s ( ", dc->tablename ); 
+	p = snprintf( buffer, sizeof( buffer ), "INSERT INTO %s ( ", oconn->tablename ); 
 	if ( p >= sizeof( buffer ) - 1 || buffer[p] != '\0' ) {
 		const char fmt[] = "%s: Truncation occurred writing MySQL bind statement";
 		snprintf( err, errlen, fmt, __func__ );
@@ -2388,11 +2408,11 @@ char * create_sql_insert_statement ( dsn_t *dc, dsn_t *sc, bindtype_t bindtype, 
 	memcpy( bindstmt, buffer, p );
 
 	// All column headers 
-	for ( header_t **h = sc->headers; h && *h; h++ ) {
+	for ( header_t **h = iconn->headers; h && *h; h++ ) {
 		int i = p;
 		int size = 0;
 		memset( buffer, 0, sizeof( buffer ) );
-		size = snprintf( buffer, sizeof( buffer ) - 1 , &",%s"[ ( *sc->headers == *h ) ], (*h)->label );
+		size = snprintf( buffer, sizeof( buffer ) - 1 , &",%s"[ ( *iconn->headers == *h ) ], (*h)->label );
 		p += size;
 		bindstmt = realloc( bindstmt, p );
 		memcpy( &bindstmt[ i ], buffer, size );	
@@ -2412,10 +2432,10 @@ char * create_sql_insert_statement ( dsn_t *dc, dsn_t *sc, bindtype_t bindtype, 
 	// Then each parameter 
 	// All column headers 
 	int column = 1;
-	for ( header_t **h = sc->headers; h && *h; h++, column++ ) {
+	for ( header_t **h = iconn->headers; h && *h; h++, column++ ) {
 		int i = p;
 		int size = 0;
-		int f = ( *sc->headers == *h ) ? 0 : 1;
+		int f = ( *iconn->headers == *h ) ? 0 : 1;
 		memset( buffer, 0, sizeof( buffer ) );
 
 		if ( f ) {
@@ -2502,22 +2522,37 @@ int prepare_dsn_for_read ( dsn_t *conn, char *err, int errlen ) {
  * Prepare DSN for writing.  
  *
  */
-int prepare_dsn_for_write ( dsn_t *dc, dsn_t *sc, char *err, int errlen ) {
+int prepare_dsn_for_write ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) {
 	WHERE();
 
-	if ( dc->type == DB_FILE ) {
+	if ( oconn->type == DB_FILE ) {
+		file_t *file = (file_t *)oconn->conn;
 		// Reading happens from the input source, so that is another story
+		if ( oconn->stream == STREAM_PRINTF || oconn->stream == STREAM_COMMA ) 
+			;
+		if ( oconn->stream == STREAM_CSTRUCT )
+			;
+		if ( oconn->stream == STREAM_CARRAY )
+			;
+		if ( oconn->stream == STREAM_JSON )
+			FDPRINTF( file->fd, "[" );
+		if ( oconn->stream == STREAM_XML ) {
+			char *treename = strlen( oconn->dbname ) ? oconn->dbname : "tree";
+			FDPRINTF( file->fd, "<" );
+			FDPRINTF( file->fd, treename );
+			FDPRINTF( file->fd, ">" );
+		}	
 	}
 
 
-	else if ( dc->type == DB_MYSQL ) {
-		WHEREF( "PREPARING MySQL DSN: %d columns\n", sc->hlen );
+	else if ( oconn->type == DB_MYSQL ) {
+		WPRINTF( "PREPARING MySQL DSN: %d columns\n", iconn->hlen );
 
 		// Deref and check that this is still here...
-		mysql_t *t = (mysql_t *)dc->conn;	
+		mysql_t *t = (mysql_t *)oconn->conn;	
 	
 		// Make the insert statement
-		if ( !( t->query = create_sql_insert_statement( dc, sc, BINDTYPE_ANON, err, errlen ) ) ) {
+		if ( !( t->query = create_sql_insert_statement( oconn, iconn, BINDTYPE_ANON, err, errlen ) ) ) {
 			const char fmt[] = "%s: %s";
 			snprintf( err, errlen, fmt, __func__,err );
 			return 0;
@@ -2526,45 +2561,45 @@ int prepare_dsn_for_write ( dsn_t *dc, dsn_t *sc, char *err, int errlen ) {
 		// Allocate statement and bind arguments structures
 		t->stmt = (void *)mysql_stmt_init( (MYSQL *)t->conn );
 
-		if ( !( t->bindargs = malloc( sizeof( MYSQL_BIND ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( MYSQL_BIND ) * sc->hlen ) ) {
+		if ( !( t->bindargs = malloc( sizeof( MYSQL_BIND ) * iconn->hlen ) ) || !memset( t->bindargs, 0, sizeof( MYSQL_BIND ) * iconn->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating MySQL bind structures: %s";
 			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
 			return 0;	
 		}
 	}
 
-	else if ( dc->type == DB_POSTGRESQL ) {
-		WHEREF( "PREPARING PostgreSQL DSN: %d columns\n", sc->hlen );
+	else if ( oconn->type == DB_POSTGRESQL ) {
+		WPRINTF( "PREPARING PostgreSQL DSN: %d columns\n", iconn->hlen );
 
 		// Der
-		pgsql_t *t = (pgsql_t *)dc->conn;	
+		pgsql_t *t = (pgsql_t *)oconn->conn;	
 
 		// Make the insert statement
-		if ( !( t->query = create_sql_insert_statement( dc, sc, BINDTYPE_NUMERIC, err, errlen ) ) ) {
+		if ( !( t->query = create_sql_insert_statement( oconn, iconn, BINDTYPE_NUMERIC, err, errlen ) ) ) {
 			const char fmt[] = "%s: %s";
 			snprintf( err, errlen, fmt, __func__,err );
 			return 0;
 		}
 
-		if ( !( t->bindargs = malloc( sizeof( char * ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( char * ) * sc->hlen ) ) {
+		if ( !( t->bindargs = malloc( sizeof( char * ) * iconn->hlen ) ) || !memset( t->bindargs, 0, sizeof( char * ) * iconn->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating Postgres bind structures: %s";
 			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
 			return 0;
 		}
 
-		if ( !( t->bindlens = malloc( sizeof( int ) * sc->hlen ) ) || !memset( t->bindargs, 0, sizeof( int ) * sc->hlen ) ) {
+		if ( !( t->bindlens = malloc( sizeof( int ) * iconn->hlen ) ) || !memset( t->bindargs, 0, sizeof( int ) * iconn->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating Postgres bind length structures: %s";
 			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
 			return 0;	
 		}
 
-		if ( !( t->bindoids = malloc( sizeof( char * ) * sc->hlen ) ) || !memset( t->bindoids, 0, sizeof( char * ) * sc->hlen ) ) {
+		if ( !( t->bindoids = malloc( sizeof( char * ) * iconn->hlen ) ) || !memset( t->bindoids, 0, sizeof( char * ) * iconn->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating Postgres bind types structures: %s";
 			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
 			return 0;
 		}
 
-		if ( !( t->bindfmts = malloc( sizeof( int ) * sc->hlen ) ) || !memset( t->bindfmts, 0, sizeof( int ) * sc->hlen ) ) {
+		if ( !( t->bindfmts = malloc( sizeof( int ) * iconn->hlen ) ) || !memset( t->bindfmts, 0, sizeof( int ) * iconn->hlen ) ) {
 			const char fmt[] = "%s: out of memory occurred allocating Postgres bind types structures: %s";
 			snprintf( err, errlen, fmt, __func__, strerror( errno ) );
 			return 0;
@@ -2579,11 +2614,28 @@ int prepare_dsn_for_write ( dsn_t *dc, dsn_t *sc, char *err, int errlen ) {
 void unprepare_dsn( dsn_t *conn ) {
 	// Rewinding the pointer to the beginning would be an ok idea. But unnecessary
 	if ( conn->type == DB_FILE ) {
+		WPRINTF( "UNPREPARING FILE DSN\n" );
 		file_t *file = (file_t *)conn->conn;
+		// Reading happens from the input source, so that is another story
+		if ( conn->stream == STREAM_PRINTF || conn->stream == STREAM_COMMA ) 
+			;
+		else if ( conn->stream == STREAM_CSTRUCT )
+			;
+		else if ( conn->stream == STREAM_CARRAY )
+			;
+		else if ( conn->stream == STREAM_JSON )
+			FDPRINTF( file->fd, "]" );
+		else if ( conn->stream == STREAM_XML ) {
+			char *treename = strlen( conn->dbname ) ? conn->dbname : "tree";
+			FDPRINTF( file->fd, "</" );
+			FDPRINTF( file->fd, treename );
+			FDPRINTF( file->fd, ">" );
+		}
+		
 	}
 
 	else if ( conn->type == DB_MYSQL ) {
-		WHEREF( "UNPREPARING MySQL DSN\n" );
+		WPRINTF( "UNPREPARING MySQL DSN\n" );
 		mysql_t *t = (mysql_t *)conn->conn;	
 		mysql_stmt_close( t->stmt );
 		free( t->bindargs );
@@ -2591,7 +2643,7 @@ void unprepare_dsn( dsn_t *conn ) {
 	}
 
 	else if ( conn->type == DB_POSTGRESQL ) {
-		WHEREF( "UNPREPARING Postgres DSN\n" );
+		WPRINTF( "UNPREPARING Postgres DSN\n" );
 		pgsql_t *t = (pgsql_t *)conn->conn;	
 		free( t->bindargs );
 		free( t->bindlens );
@@ -2928,7 +2980,6 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 int transform_from_dsn(
 	dsn_t *iconn,
 	dsn_t *oconn,
-	stream_t t,
 	int count,
 	int offset,
 	char *err,
@@ -2937,16 +2988,11 @@ int transform_from_dsn(
 
 	// Define
 	WHERE();
-	int odv = 0;
 	char insfmt[ 256 ];
 	memset( insfmt, 0, sizeof( insfmt ) );
 
-//print_dsn( iconn ), getchar();
-
 	// Define any db specific stuff
 	int ri = 0;
-
-	// Debug printing other things COULD help here
 
 	// Loop through all rows
 	for ( row_t **row = iconn->rows; row && *row; row++, ri++ ) {
@@ -2962,20 +3008,21 @@ int transform_from_dsn(
 			file_t *file = (file_t *)oconn->conn;
 			( FF.prefix ) ? FDPRINTF( file->fd, FF.prefix ) : 0;
 
-			if ( t == STREAM_PRINTF || t == STREAM_COMMA ) ;
-			else if ( t == STREAM_CSTRUCT )
-				FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" );
-			else if ( t == STREAM_CARRAY )
-				FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDPRINTF( file->fd, "{" );
-			else if ( t == STREAM_JSON )
-				FDPRINTF( file->fd, ( odv ) ? "," : " " ), FDNPRINTF( file->fd, "{\n", ( FF.newline ) ? 2 : 1 );
-			else if ( t == STREAM_XML ) {
+			if ( oconn->stream == STREAM_PRINTF || oconn->stream == STREAM_COMMA ) 
+				;
+			else if ( oconn->stream == STREAM_CSTRUCT )
+				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
+			else if ( oconn->stream == STREAM_CARRAY )
+				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
+			else if ( oconn->stream == STREAM_JSON )
+				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
+			else if ( oconn->stream == STREAM_XML ) {
 				FDPRINTF( file->fd, "<" );
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, ">" );
 				//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
-			else if ( t == STREAM_SQL ) {
+			else if ( oconn->stream == STREAM_SQL ) {
 			#if 0
 				// Way faster to use what you've already written..., but you can't use the whole thing...
 				// You can prepare it if stream_SQL is chosen...
@@ -2996,7 +3043,7 @@ int transform_from_dsn(
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
 			int first = *col == *((*row)->columns);
 			header_t *st = iconn->headers[ ci ];
-			if ( t == STREAM_PRINTF ) {
+			if ( oconn->stream == STREAM_PRINTF ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, " => " );
@@ -3025,7 +3072,7 @@ int transform_from_dsn(
 				}
 				FDPRINTF( file->fd, "\n" );
 			}
-			else if ( t == STREAM_XML ) {
+			else if ( oconn->stream == STREAM_XML ) {
 				file_t *file = (file_t *)oconn->conn;
 				//FDPRINTF( file->fd, "\t<" );
 				FDPRINTF( file->fd, "<" );
@@ -3037,13 +3084,13 @@ int transform_from_dsn(
 				//FDNPRINTF( file->fd, ">\n", ( FF.newline ) ? 2 : 1 );
 				FDPRINTF( file->fd, ">" );
 			}
-			else if ( t == STREAM_CARRAY ) {
+			else if ( oconn->stream == STREAM_CARRAY ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, &", \""[ first ] );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				FDPRINTF( file->fd, "\"" );
 			}
-			else if ( t == STREAM_COMMA ) {
+			else if ( oconn->stream == STREAM_COMMA ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, &",\""[ first ] );
 				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
@@ -3054,12 +3101,14 @@ int transform_from_dsn(
 			#endif
 				FDPRINTF( file->fd, "\"" );
 			}
-			else if ( t == STREAM_JSON ) {
+			else if ( oconn->stream == STREAM_JSON ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, &",\""[ first ] );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, "\": " );
 				if ( (*col)->type == T_NULL )
+					FDPRINTF( file->fd, "null" );
+				else if ( !(*col)->len && (*col)->type != T_STRING && (*col)->type != T_CHAR )
 					FDPRINTF( file->fd, "null" );
 				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Tt1", *(*col)->v, 3 ) )
 					FDPRINTF( file->fd, "true" );
@@ -3083,7 +3132,7 @@ int transform_from_dsn(
 				}
 				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
-			else if ( t == STREAM_CSTRUCT ) {
+			else if ( oconn->stream == STREAM_CSTRUCT ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, &TAB[9-1] );
 				if ( !(*col)->len ) {
@@ -3125,7 +3174,7 @@ int transform_from_dsn(
 				}
 				FDPRINTF( file->fd, "\n" );
 			}
-			else if ( t == STREAM_SQL ) {
+			else if ( oconn->stream == STREAM_SQL ) {
 				file_t *file = (file_t *)oconn->conn;
 				( first ) ? 0 : FDPRINTF( file->fd, "," );
 
@@ -3160,7 +3209,7 @@ int transform_from_dsn(
 #endif
 			}
 		#ifdef BMYSQL_H
-			else if ( t == STREAM_MYSQL ) {
+			else if ( oconn->stream == STREAM_MYSQL ) {
 #if 0
 FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col)->len ), FDPRINTF ( 2, "\n" );
 #endif
@@ -3172,6 +3221,14 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 				bind->length = &(*col)->len;
 				//bind->buffer_type = iconn->headers[ ci ]->ptype->ntype; 
 				bind->buffer_type = MYSQL_TYPE_STRING;
+
+DPRINTF( "Length of value for %s is: %ld\n", (*col)->k, (*col)->len );
+				if ( !(*col)->len && ( (*col)->type == T_INTEGER || (*col)->type == T_DOUBLE || (*col)->type == T_BOOLEAN ) ) {
+					//bind->buffer = (char *)null_keyword;
+					bind->buffer_type = MYSQL_TYPE_NULL;
+					//bind->length = (unsigned long *)&null_keyword_length;
+					//bind->buffer_length = 4;
+				}
 
 #if 0
 				//bind->buffer_length = (*col)->len;
@@ -3238,7 +3295,7 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 			}
 		#endif
 		#ifdef BPGSQL_H
-			else if ( t == STREAM_PGSQL ) {
+			else if ( oconn->stream == STREAM_PGSQL ) {
 			#ifdef DEBUG_H
 				DPRINTF( "Binding value %p of length %ld at %d\n", (*col)->v, (*col)->len, ci );
 			#endif
@@ -3247,8 +3304,14 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col)->len ), FDPRINTF ( 2, "\n" );
 #endif
 
+DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->type ], (*col)->len  );
 				// Bind and prepare an insert?
-				if ( (*col)->type != T_BINARY ) {
+				if ( !(*col)->len && (*col)->type != T_STRING && (*col)->type != T_BINARY && (*col)->type != T_CHAR ) {
+					b->bindlens[ ci ] = 0;
+					b->bindargs[ ci ] = NULL; //(char *)null_keyword; 
+					b->bindfmts[ ci ] = 0;
+				}
+				else if ( (*col)->type != T_BINARY ) {
 					char *v = NULL;
 					if ( !( v = malloc( (*col)->len + 1 ) ) || !memset( v, 0, (*col)->len + 1 ) ) {
 						const char fmt[] = "Out of memory when binding value at column %s for Postgres";
@@ -3305,7 +3368,7 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 			}
 		#endif
 		#if 0
-			else if ( t == STREAM_SQLITE ) {
+			else if ( oconn->stream == STREAM_SQLITE ) {
 			}
 		#endif
 		} // end for
@@ -3313,19 +3376,19 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 		if ( oconn->type == DB_FILE ) {
 			file_t *file = (file_t *)oconn->conn;
 			// End the string
-			if ( t == STREAM_PRINTF )
+			if ( oconn->stream == STREAM_PRINTF )
 				;//p_default( 0, ib->k, ib->v );
-			else if ( t == STREAM_COMMA )
+			else if ( oconn->stream == STREAM_COMMA )
 				;//fprintf( oconn->output, " },\n" );
-			else if ( t == STREAM_CSTRUCT )
+			else if ( oconn->stream == STREAM_CSTRUCT )
 				FDPRINTF( file->fd, "}" );
-			else if ( t == STREAM_CARRAY )
+			else if ( oconn->stream == STREAM_CARRAY )
 				FDPRINTF( file->fd, " }" );
-			else if ( t == STREAM_SQL )
+			else if ( oconn->stream == STREAM_SQL )
 				FDPRINTF( file->fd, " );" );
-			else if ( t == STREAM_JSON )
-				FDNPRINTF( file->fd, "},", 2 ); // count will depend on where in the stream
-			else if ( t == STREAM_XML ) {
+			else if ( oconn->stream == STREAM_JSON )
+				FDPRINTF( file->fd, "}" ); // count will depend on where in the stream
+			else if ( oconn->stream == STREAM_XML ) {
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, ">" );
@@ -3333,7 +3396,7 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 		}
 
 	#ifdef BMYSQL_H
-		else if ( t == STREAM_MYSQL ) {
+		else if ( oconn->stream == STREAM_MYSQL ) {
 			mysql_t *b = (mysql_t *)oconn->conn;
 		#if 0
 			int status = 0;
@@ -3371,19 +3434,20 @@ FDPRINTF ( 2, (*col)->k ), FDPRINTF ( 2, " = " ), FDNPRINTF( 2, (*col)->v, (*col
 				return 0;
 			}
 
-printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typemap == mysql_map );
-
+			//printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typemap == mysql_map );
 			if ( mysql_stmt_execute( b->stmt ) != 0 ) {
 				const char fmt[] = "MySQL statement exec failure: '%s'";
 				snprintf( err, errlen, fmt, mysql_stmt_error( b->stmt ) );
 				return 0;
 			}
+
+			WPRINTF( "MySQL commit successful.\n" );
 		#endif
 		}
 	#endif
 
 	#ifdef BPGSQL_H
-		else if ( t == STREAM_PGSQL ) {
+		else if ( oconn->stream == STREAM_PGSQL ) {
 			pgsql_t *b = (pgsql_t *)oconn->conn;
 			PGresult *r = PQexecParams(
 				b->conn,
@@ -3402,7 +3466,7 @@ printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typem
 				return 0;
 			}
 
-			DPRINTF( "Commit successful, freeing duplicated values\n" );
+			WPRINTF( "Commit successful, freeing duplicated values\n" );
 			PQclear( r );
 
 			// Free all of the allocated values here
@@ -3411,12 +3475,14 @@ printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typem
 		}
 	#endif
 
+	#if 0
 		//Suffix
 		if ( oconn->type == DB_FILE ) {
 			file_t *file = (file_t *)oconn->conn;
 			( FF.suffix ) ? FDPRINTF( file->fd, FF.suffix ) : 0;
 			//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 		}
+	#endif
 	}
 
 	return 1;
@@ -3432,7 +3498,7 @@ printf( "%p ?= %p %d\n", (void *)oconn->typemap, (void *)mysql_map, oconn->typem
  *
  */
 void close_dsn( dsn_t *conn ) {
-	WHEREF( "Attempting to close %s at %p", conn->connstr, (void *)conn->conn );
+	WPRINTF( "Attempting to close %s at %p", conn->connstr, (void *)conn->conn );
 
 	if ( conn->conn ) {
 		if ( conn->type == DB_FILE ) {
@@ -3775,7 +3841,7 @@ int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err,
 		// Output source is going to be stdout
 		oc->type = DB_FILE;
 		oc->connstr = strdup( "/dev/stdout" );
-		oc->stream = STREAM_PRINTF;
+		//oc->stream = STREAM_PRINTF;
 		oc->typemap = default_map;
 
 		if ( tname ) {
@@ -3882,18 +3948,22 @@ int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err,
  *
  */
 int cmd_headers ( dsn_t *conn ) {
-	for ( header_t **s = conn->headers; s && *s; s++ )
+	for ( header_t **s = conn->headers; s && *s; s++ ) {
 		printf( "%s\n", (*s)->label );
-
-	// Free everything
+	}
 	destroy_dsn_headers( conn );
-	close_dsn( conn );
-	return 0;
+	return 1;
 }
 
 
 
-//Options
+/**
+ * int help() 
+ *
+ * Help message.  Can turn this into an actual function
+ * and leave the `struct help` at the top of this file.
+ *
+ */
 int help () {
 	const char *fmt = "%-2s%s --%-24s%-30s\n";
 	struct help { const char *sarg, *larg, *desc; } msgs[] = {
@@ -3955,7 +4025,12 @@ int help () {
 
 
 
-
+/**
+ * config_t config
+ *
+ * The options in the config.
+ *
+ */
 static config_t config = {
 	.wstream = 0,	// wstream - A chosen stream
 	.wdeclaration = 0,	// wdeclaration - Dump a class or struct declaration only 
@@ -4005,6 +4080,7 @@ int main ( int argc, char *argv[] ) {
 	// This should already bee set to NULL, but...
 	input.connstr = NULL;
 	output.connstr = NULL;
+	output.stream = STREAM_PRINTF;
 
 	// Evaluate help or missing options
 	if ( argc < 2 || !strcmp( *argv, "-h" ) || !strcmp( *argv, "--help" ) ) {
@@ -4012,6 +4088,8 @@ int main ( int argc, char *argv[] ) {
 	}
 
 	for ( ++argv; *argv; ) {
+
+		// TODO: If possible, macro the strcmps & combine the flag condition.  Extra info can be passed into whatever function this is.
 		if ( !strcmp( *argv, "--no-unsigned" ) )
 			no_unsigned = 1;
 		else if ( !strcmp( *argv, "--add-datestamps" ) )
@@ -4021,11 +4099,11 @@ int main ( int argc, char *argv[] ) {
 		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
 			newline = 0;
 		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
-			stream_fmt = STREAM_JSON, convert = 1;
+			output.stream = STREAM_JSON, convert = 1;
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
-			stream_fmt = STREAM_XML, convert = 1;
+			output.stream = STREAM_XML, convert = 1;
 		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) )
-			stream_fmt = STREAM_SQL, convert = 1;
+			output.stream = STREAM_SQL, convert = 1;
 		else if ( !strcmp( *argv, "--camel-case" ) )
 			case_type = CASE_CAMEL;
 		else if ( !strcmp( *argv, "-S" ) || !strcmp( *argv, "--schema" ) )
@@ -4085,7 +4163,7 @@ int main ( int argc, char *argv[] ) {
 			convert = 1;
 			if ( !dupval( *( ++argv ), &streamtype ) )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --FF." );
-			else if ( ( stream_fmt = check_for_valid_stream( streamtype ) ) == -1 ) {
+			else if ( ( output.stream = check_for_valid_stream( streamtype ) ) == -1 ) {
 				return ERRPRINTF( ERRCODE, "Invalid format '%s' requested.\n", streamtype );
 			}
 		}
@@ -4132,6 +4210,7 @@ int main ( int argc, char *argv[] ) {
 			if ( ! *( ++argv ) )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output-delimiter." );
 			else {
+				// TODO: Highly consider moving this
 				od = strdup( *argv );
 				char *a = memchr( od, ',', strlen( od ) );
 				if ( !a )
@@ -4161,18 +4240,36 @@ int main ( int argc, char *argv[] ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output." );
 			}
 		}
-		else if ( !strcmp( *argv, "-X" ) || !strcmp( *argv, "--dumpdsn" ) ) {
-			dump_parsed_dsn = 1;
-		}
-		else if ( !strcmp( *argv, "-y" ) || !strcmp( *argv, "--stats" ) ) {
+		else if ( !strcmp( *argv, "-y" ) || !strcmp( *argv, "--stats" ) )
 			show_stats = 1;
-		}
+	#ifdef DEBUG_H
+		else if ( !strcmp( *argv, "-X" ) || !strcmp( *argv, "--dumpdsn" ) ) 
+			dump_parsed_dsn = 1;
+	#endif
 		else {
 			fprintf( stderr, "Got unknown argument: %s\n", *argv );
 			return help();
 		}
 		argv++;
 	}
+
+	#ifdef DEBUG_H
+	// We keep this for testing
+	if ( dump_parsed_dsn ) {
+		if ( !parse_dsn_info( &input, err, sizeof( err ) ) ) {
+			close_dsn( &input );
+			return ERRPRINTF( ERRCODE, "Input source is invalid: %s\n", err );
+		}
+
+		if ( !parse_dsn_info( &output, err, sizeof( err ) ) ) {
+			close_dsn( &output );
+			return ERRPRINTF( ERRCODE, "Output source is invalid: %s\n", err );
+		}
+
+		close_dsn( &input ), close_dsn( &output );
+	}
+	#endif
+
 
 	// Start the timer here
 	if ( show_stats )
@@ -4204,14 +4301,15 @@ int main ( int argc, char *argv[] ) {
 	if ( !headers_from_dsn( &input, err, sizeof( err ) ) ) {
 		close_dsn( &input );
 		( table ) ? free( table ) : (void)0;
+		destroy_dsn_headers( &input );
 		return ERRPRINTF( ERRCODE, "Header creation failed: %s.\n", err );
 	}
 
 	// Create the headers only
 	if ( headers_only ) {
+		cmd_headers( &input );
 		close_dsn( &input );
-		( table ) ? free( table ) : (void)0;
-		return cmd_headers( &input );	
+		return 0;
 	}
 
 	// Scaffolding can fail
@@ -4270,11 +4368,11 @@ int main ( int argc, char *argv[] ) {
 	else if ( convert ) {
 
 		// Check the stream
-		if ( !stream_fmt ) {
+		if ( !output.stream ) {
 			if ( output.type == DB_MYSQL )
-				stream_fmt = STREAM_MYSQL;
+				output.stream = STREAM_MYSQL;
 			else if ( output.type == DB_POSTGRESQL ) {
-				stream_fmt = STREAM_PGSQL;
+				output.stream = STREAM_PGSQL;
 			}
 		}
 
@@ -4309,13 +4407,14 @@ int main ( int argc, char *argv[] ) {
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Prepare output DSN failed: %s\n", err );
 		}	
-
 #if 0
 fprintf( stderr, "IN:\n" ),
 print_dsn( &input ), 
 fprintf( stderr, "\nOUT:\n" ),
 print_dsn( &output );
 #endif
+
+		// Need to write a "pre" node in some cases
 
 		// Control the streaming / buffering from here
 		for ( int i = 0; i < 1; i++ ) {
@@ -4334,7 +4433,7 @@ print_dsn( &output );
 			#endif
 
 			// Do the transport (buffering can be added pretty soon)
-			if ( !transform_from_dsn( &input, &output, stream_fmt, 0, 0, err, sizeof(err) ) ) {
+			if ( !transform_from_dsn( &input, &output, 0, 0, err, sizeof(err) ) ) {
 				fprintf( stderr, "Failed to transform records from data source: %s\n", err );
 				destroy_dsn_headers( &input );
 				close_dsn( &input );
