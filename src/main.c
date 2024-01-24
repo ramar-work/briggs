@@ -2553,8 +2553,6 @@ int prepare_dsn_for_write ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) 
 	
 		// Make the insert statement
 		if ( !( t->query = create_sql_insert_statement( oconn, iconn, BINDTYPE_ANON, err, errlen ) ) ) {
-			const char fmt[] = "%s: %s";
-			snprintf( err, errlen, fmt, __func__,err );
 			return 0;
 		}
 
@@ -2576,8 +2574,6 @@ int prepare_dsn_for_write ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) 
 
 		// Make the insert statement
 		if ( !( t->query = create_sql_insert_statement( oconn, iconn, BINDTYPE_NUMERIC, err, errlen ) ) ) {
-			const char fmt[] = "%s: %s";
-			snprintf( err, errlen, fmt, __func__,err );
 			return 0;
 		}
 
@@ -3616,6 +3612,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		int count = 0;
 		unsigned int rowlen = 0;
 		unsigned int dlen = strlen( delset );
+		unsigned char *s = NULL;
 		file_t *file = NULL;
 
 		// Catch any silly errors that may have been made on the way back here
@@ -3626,7 +3623,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 		}
 
 		// Find the end of the first row
-		for ( unsigned char *s = file->map; ( *s != '\n' && *s != '\r' ); s++ ) {
+		for ( s = file->map; ( *s && *s != '\n' && *s != '\r' ); s++ ) {
 			rowlen++;
 		}
 
@@ -3637,8 +3634,15 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			return 0;
 		}
 
-		// Initialize buffer
-		memset( &p, 0, sizeof( zw_t ) );
+		// Check that we have more than 2 lines (so we don't overrun the extract buffer)
+		if ( s ) {
+			rowlen++, memset( &p, 0, sizeof( zw_t ) );
+		}
+		else {
+			// No terminating \r or \n SHOULDN'T be a problem.  But I'll need to test it...
+			// I'll need to also add \0 to the (del)imiter (set)
+		}
+
 
 		// Move through the rest of the entries in the row and approximate types
 		for ( int i = 0; memwalk( &p, file->map, (unsigned char *)delset, rowlen, dlen ); i++ ) {
@@ -3733,7 +3737,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 				st->ptype = nm, st->type = nm->basetype;
 			else {
 				// Different output type, and no coercion, so find the closest match
-DPRINTF( "BASE TYPE IS %d %s\n", nm->basetype, itypes[ nm->basetype ] );
+				DPRINTF( "BASE TYPE IS %d %s\n", nm->basetype, itypes[ nm->basetype ] );
 				if ( !( am = get_typemap_by_btype( oconn->typemap, nm->basetype ) ) ) {
 					const char fmt[] = "MySQL: Failed to find matching type "
 						"for column '%s', type '%s' for supported %s types ";
@@ -4338,13 +4342,13 @@ int main ( int argc, char *argv[] ) {
 	if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
 		destroy_dsn_headers( &input );
 		close_dsn( &input );
+		close_dsn( &output );
 		return ERRPRINTF( ERRCODE, "typeget failed: %s\n", err );
 	}
 
 	// Create a schema
 	if ( schema ) {
 		if ( !schema_from_dsn( &input, &output, schema_fmt, MAX_STMT_SIZE, err, sizeof( err ) ) ) {
-			free( output.connstr );
 			destroy_dsn_headers( &input );
 			close_dsn( &output );
 			close_dsn( &input );
@@ -4354,8 +4358,8 @@ int main ( int argc, char *argv[] ) {
 		// Dump said schema
 		fprintf( stdout, "%s", schema_fmt );
 
-		// Destroy the output string
-		free( output.connstr );
+		// Close the output source here
+		close_dsn( &output );
 	}
 
 #if 0
