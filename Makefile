@@ -58,9 +58,6 @@ OBJECTS = vendor/zwalker.o vendor/util.o
 .PHONY: main clean debug leak run other
 
 
-y: clean debug conversion
-
-
 # main - Default build, suitable for most people
 main: build
 main:
@@ -141,7 +138,7 @@ doctest:
 
 # mantest - Creates man page style documentation
 mantest:
-	man -l briggs.1
+	man -l man/man1/briggs.1
 	
 
 # pkg - Create a package of the latest version of 'master'
@@ -208,6 +205,11 @@ distcheck:
 	rm -rf $(DISTDIR)
 	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
 
+
+# Generate documentation for testing
+testdoc:
+	markdown README.md > /tmp/index.html
+	chromium /tmp/index.html &
 
 # Include some test cases
 include tests.mk

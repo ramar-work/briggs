@@ -56,13 +56,17 @@ schema:
 	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" -o "postgres://bomb:giantbomb@localhost/washdb" -T washburn --schema && echo $(S) || echo $(F); $(WAIT)
 
 
-
 # conversion - Test capability of translating from one format to another (TODO: Get code of common validator programs vs the actual output)
-conversion: load_media_tests
+#conversion: load_media_tests
+conversion:
 	# To XML from flat file 
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv -T type_tests --xml | xmllint - && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -n -i $(EXECDIR)/tests/type_tests.csv -T type_tests --xml | xmllint - && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -n -i $(EXECDIR)/tests/available_scholarships.csv -d ';' -T type_tests --xml | xmllint - && echo $(S) || echo $(F); $(WAIT)
 	# To JSON from flat file
 	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_postgres_small.csv -d '#' -T type_tests --json | jq && echo $(S) || echo $(F); $(WAIT)
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/available_scholarships.csv -d ';' -T type_tests --json | jq && echo $(S) || echo $(F); $(WAIT)
+
+boom:
 	# To Postgres from flat file (the load commands won't be failures, but load_media_tests ought to catch that first)
 	psql -U postgres -c 'DROP DATABASE IF EXISTS bixby';
 	psql -U postgres -c 'CREATE DATABASE bixby';

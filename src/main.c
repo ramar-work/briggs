@@ -192,13 +192,14 @@ typedef struct format_t {
 	int newline;
 	int spaced;
 	int ccase;
+	int stricttypes;
 	char *prefix;
 	char *suffix;
 	char *leftdelim;
 	char *rightdelim;
 } format_t;
 
-static format_t FF = { 1, 1, 0, 0, NULL, NULL, "'", "'" };
+static format_t FF = { 1, 0, 0, 0, 0, NULL, NULL, "'", "'" };
 
 
 /**
@@ -833,7 +834,6 @@ char *table = NULL;
 char *stream_chars = NULL;
 char *root = "root";
 char *streamtype = NULL;
-char *ld = "'", *rd = "'", *od = "'";
 struct rep { char o, r; } ; //Ghetto replacement scheme...
 struct rep **reps = NULL;
 int create_new_dsn = 0;
@@ -2541,6 +2541,7 @@ int prepare_dsn_for_write ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) 
 			FDPRINTF( file->fd, "<" );
 			FDPRINTF( file->fd, treename );
 			FDPRINTF( file->fd, ">" );
+			FF.newline ? FDPRINTF( file->fd, "\n" ) : 0;
 		}	
 	}
 
@@ -3010,12 +3011,17 @@ int transform_from_dsn(
 				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
 			else if ( oconn->stream == STREAM_CARRAY )
 				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
-			else if ( oconn->stream == STREAM_JSON )
+			else if ( oconn->stream == STREAM_JSON ) {
 				FDPRINTF( file->fd, &",{"[!( offset || !first )] );
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+			}
 			else if ( oconn->stream == STREAM_XML ) {
+				FF.pretty ? FDPRINTF( file->fd, "\t" ) : 0;
 				FDPRINTF( file->fd, "<" );
+				// TODO: Should this be auto-inferred?
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, ">" );
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 				//( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( oconn->stream == STREAM_SQL ) {
@@ -3070,15 +3076,34 @@ int transform_from_dsn(
 			}
 			else if ( oconn->stream == STREAM_XML ) {
 				file_t *file = (file_t *)oconn->conn;
-				//FDPRINTF( file->fd, "\t<" );
+				unsigned char *v = (*col)->v;
+				unsigned long len = (*col)->len;
+				( FF.pretty ) ? FDPRINTF( file->fd, "\t\t" ) : 0;
 				FDPRINTF( file->fd, "<" );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, ">" );
-				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+				//TODO: Like JSON quote substitution, this could be incredibly slow
+				//TODO: We'll just be blank if there are no values, but do we want this?
+				for ( unsigned char *c = NULL; len; len--, v++ ) {
+					if ( !( c = memchr( "<>&\"'", *v, 5 ) ) )
+						FDNPRINTF( file->fd, v, 1 );
+					else if ( *c == '<' )
+						FDPRINTF( file->fd, "&lt;" );
+					else if ( *c == '>' )
+						FDPRINTF( file->fd, "&gt;" );
+					else if ( *c == '&' )
+						FDPRINTF( file->fd, "&amp;" );
+					else if ( *c == '"' )
+						FDPRINTF( file->fd, "&quot;" );
+					else if ( *c == '\'' ) {
+						FDPRINTF( file->fd, "&apos;" );
+					}	
+				}
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, (*col)->k );
 				//FDNPRINTF( file->fd, ">\n", ( FF.newline ) ? 2 : 1 );
 				FDPRINTF( file->fd, ">" );
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 			else if ( oconn->stream == STREAM_CARRAY ) {
 				file_t *file = (file_t *)oconn->conn;
@@ -3102,9 +3127,7 @@ int transform_from_dsn(
 				FDPRINTF( file->fd, &",\""[ first ] );
 				FDPRINTF( file->fd, (*col)->k );
 				FDPRINTF( file->fd, "\": " );
-				if ( (*col)->type == T_NULL )
-					FDPRINTF( file->fd, "null" );
-				else if ( !(*col)->len && (*col)->type != T_STRING && (*col)->type != T_CHAR )
+				if ( (*col)->type == T_NULL || ( !(*col)->len && (*col)->type != T_STRING && (*col)->type != T_CHAR ) )
 					FDPRINTF( file->fd, "null" );
 				else if ( (*col)->type == T_BOOLEAN && (*col)->len && memchr( "Tt1", *(*col)->v, 3 ) )
 					FDPRINTF( file->fd, "true" );
@@ -3116,14 +3139,18 @@ int transform_from_dsn(
 				else if ( (*col)->type == T_BINARY ) /* TODO: Write unicode sequences out */
 					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
 				#endif
-			#if 0
-				else if ( (*col)->type == T_DATE ) {
-					// Try a custom date format?
-				}
-			#endif
 				else {
 					FDPRINTF( file->fd, "\"" );
-					FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					if ( !memchr( (*col)->v, '"', (*col)->len ) )
+						FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+					else {
+						unsigned char *v = (*col)->v;
+						unsigned long len = (*col)->len;	
+						for ( ; len; len--, v++ ) {
+							// TODO: This could be VERY slow, maybe better to write the blocks at one time?
+							( *v == '"' ) ? FDPRINTF( file->fd, "\\\"" ) : FDNPRINTF( file->fd, v, 1 );
+						}
+					}
 					FDPRINTF( file->fd, "\"" );
 				}
 				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
@@ -3382,12 +3409,16 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 				FDPRINTF( file->fd, " }" );
 			else if ( oconn->stream == STREAM_SQL )
 				FDPRINTF( file->fd, " );" );
-			else if ( oconn->stream == STREAM_JSON )
+			else if ( oconn->stream == STREAM_JSON ) {
 				FDPRINTF( file->fd, "}" ); // count will depend on where in the stream
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
+			}
 			else if ( oconn->stream == STREAM_XML ) {
+				FF.pretty ? FDPRINTF( file->fd, "\t" ) : 0;
 				FDPRINTF( file->fd, "</" );
 				FDPRINTF( file->fd, oconn->tablename );
 				FDPRINTF( file->fd, ">" );
+				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
 		}
 
@@ -3972,7 +4003,7 @@ int help () {
 	const char *fmt = "%-2s%s --%-24s%-30s\n";
 	struct help { const char *sarg, *larg, *desc; } msgs[] = {
 		{ "-i", "input <arg>", "Specify an input datasource (required)"  },
-		{ "", "create", "If an output source does not exist, create it"  },
+		{ ""  , "create",      "If an output source does not exist, create it"  },
 		{ "-o", "output <arg>","Specify an output datasource (optional, default is stdout)"  },
 		{ "-c", "convert",     "Converts input data to another format or into a datasource" },
 		{ "-H", "headers",     "Displays headers of input datasource and stop"  },
@@ -3986,7 +4017,7 @@ int help () {
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter when generating serialized output" },
 	#if 1
 		{ "-t", "typesafe",    "Enforce and/or enable typesafety" },
-		{ "-C", "coerce",    "Specify a type for a column" },
+		{ "-C", "coerce",      "Specify a type for a column" },
 	#endif
 		{ "-f", "format <arg>","Specify a format to convert to" },
 		{ "-j", "json",        "Convert into JSON (short for --convert --format \"json\")" },
@@ -4002,20 +4033,20 @@ int help () {
 #if 0
 		{ "",   "snake-case",  "Use camel case for class properties or struct labels" },
 #endif
-		{ "-n", "no-newline",  "Do not generate a newline after each row." },
-		{ "",   "id <arg>",      "Add and specify a unique ID column named <arg>."  },
+		{ "-n", "newline",     "Generate a newline after each row." },
+		{ "",   "id <arg>",    "Add and specify a unique ID column named <arg>."  },
 		{ "",   "add-datestamps","Add columns for date created and date updated"  },
-		{ "-a", "ascii",      "Remove any characters that aren't ASCII and reproduce"  },
+		{ "-a", "ascii",       "Remove any characters that aren't ASCII and reproduce"  },
 		{ "",   "no-unsigned", "Remove any unsigned character sequences."  },
-		{ "-T", "table <arg>",   "Use the specified table when connecting to a database for source data"  },
-		{ "-Q", "query <arg>",   "Use this query to filter data from datasource"  },
-		{ "-y", "stats",     "Dump stats at the end of an operation"  },
+		{ "-T", "table <arg>", "Use the specified table when connecting to a database for source data"  },
+		{ "-Q", "query <arg>", "Use this query to filter data from datasource"  },
+		{ "-y", "stats",       "Dump stats at the end of an operation"  },
 #if 0
 		{ "-D", "datasource <arg>",   "Use the specified connection string to connect to a database for source data"  },
 		{ "-L", "limit <arg>",   "Limit the result count to <arg>"  },
 		{ "",   "buffer-size <arg>",  "Process only this many rows at a time when reading source data"  },
 #endif
-		{ "-X", "dumpdsn",       "Dump the DSN only. (DEBUG)" },
+		{ "-X", "dumpdsn",     "Dump the DSN only. (DEBUG)" },
 		{ "-h", "help",        "Show help." },
 	};
 
@@ -4098,10 +4129,8 @@ int main ( int argc, char *argv[] ) {
 			no_unsigned = 1;
 		else if ( !strcmp( *argv, "--add-datestamps" ) )
 			want_datestamps = 1;
-		else if ( !strcmp( *argv, "-t" ) || !strcmp( *argv, "--typesafe" ) )
-			typesafe = 1;
-		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--no-newline" ) )
-			newline = 0;
+		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--newline" ) )
+			FF.newline = 1;
 		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
 			output.stream = STREAM_JSON, convert = 1;
 		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
@@ -4166,7 +4195,7 @@ int main ( int argc, char *argv[] ) {
 		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
 			convert = 1;
 			if ( !dupval( *( ++argv ), &streamtype ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --FF." );
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --format." );
 			else if ( ( output.stream = check_for_valid_stream( streamtype ) ) == -1 ) {
 				return ERRPRINTF( ERRCODE, "Invalid format '%s' requested.\n", streamtype );
 			}
@@ -4181,15 +4210,15 @@ int main ( int argc, char *argv[] ) {
 			}
 #endif
 		}
+#if 0
 		else if ( !strcmp( *argv, "--struct" ) ) {
 			structdata = 1;
 			serialize = 1;
-#if 0
 			if ( !dupval( *( ++argv ), &input.connstr ) ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --struct." );
 			}
-#endif
 		}
+#endif
 		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
 			if ( !dupval( *(++argv), &prefix ) )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
@@ -4215,14 +4244,14 @@ int main ( int argc, char *argv[] ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output-delimiter." );
 			else {
 				// TODO: Highly consider moving this
-				od = strdup( *argv );
-				char *a = memchr( od, ',', strlen( od ) );
+				// od = strdup( *argv );
+				char *a = memchr( *argv, ',', strlen( *argv ) );
 				if ( !a )
-					ld = od, rd = od;
+					FF.leftdelim = *argv, FF.rightdelim = *argv;
 				else {
 					*a = '\0';
-					ld = od;
-					rd = ++a;
+					FF.leftdelim = *argv;
+					FF.rightdelim = ++a;
 				}
 			}
 		}
