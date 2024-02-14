@@ -1,13 +1,14 @@
 /* ------------------------------------------------------- *
  * briggs.c
  * ========
+ *
  * A tool for converting CSV sheets into other data formats.
+ *
  *
  * Usage
  * -----
  * briggs can be used to turn CSV data or SQL query results 
  * into: 
- *
  * - a SQL query or transaction 
  * - a C-style struct
  * - JSON
@@ -18,12 +19,13 @@
  * briggs can also be used to copy records directly from one
  * source into a live database connection.
  *
- * Options are as follows:
- *
  *
  * TODO / Wishlist
  * ---------------
- * 
+ * - Bring back struct creation
+ * - Refactor main() into better modules
+ *   - Functions should be used for specific functionality 
+ *     (like convert or schema) 
  * - Read DIRECTLY from ods files
  * - Read DIRECTLY from xls/xlsx files
  * - Read from XML, JSON or Msgpack streams as if they were a 
@@ -36,14 +38,14 @@
  *   a subset of rows WITHOUT having to write a custom query
  * - Open the code to run on Windows
  * - Add ability to generate random test data
- * 	- Numbers
- * 	- Zips
- * 	- Addresses
- * 	- Names
- * 	- Words
- * 	- Paragraphs
- * 	- URLs
- * 	- Images (probably from a directory is the most useful)
+ * 	 - Numbers
+ * 	 - Zips
+ * 	 - Addresses
+ * 	 - Names
+ * 	 - Words
+ * 	 - Paragraphs
+ * 	 - URLs
+ * 	 - Images (probably from a directory is the most useful)
  *
  * ------------------------------------------------------- */
 #define _POSIX_C_SOURCE 200809L
@@ -119,6 +121,12 @@
 #define CALLOC_NEW_FAILS(O,S) \
 	!( O = malloc( sizeof( S ) ) ) || !memset( O, 0, sizeof( S ) )
 
+/* Evaluate arguments */
+#define EVALARG(x, SHORT, LONG) ( !strcmp( x, SHORT ) || !strcmp( x, LONG ) )
+
+/* Save arguments */
+#define SAVEARG(x,v) ( v = *( ++x ) )
+
 /* Try to include rudimentary newline support */
 #ifdef WIN32
  #define NEWLINE "\r\n"
@@ -136,6 +144,7 @@
  #define print_date(A) 0
  #define WHERE() 0
  #define WPRINTF( ... ) 0 
+ #define DEVAL( ... ) 0 
 #else
 	/* Optionally print arguments */
  #define DPRINTF( ... ) fprintf( stderr, __VA_ARGS__ )
@@ -149,6 +158,9 @@
 
 	/* Print the literal name of a type */
  #define N(A) #A
+
+	/* Run whatever code is inside of this define */
+ #define DEVAL( ... ) __VA_ARGS__ 
 #endif
 
 
@@ -214,35 +226,6 @@ typedef struct streamtype_t {
 } streamtype_t;
 
 
-streamtype_t streams[] = {
-#if 0
-  { "none", STREAM_NONE }
-, { "none", STREAM_PRINTF }
-#endif
-  { "json", STREAM_JSON }
-, { "xml", STREAM_XML }
-, { "sql", STREAM_SQL }
-, { "struct", STREAM_CSTRUCT }
-, { "csv", STREAM_COMMA }
-, { "array", STREAM_CARRAY }
-, { "class", STREAM_JCLASS }
-#ifdef BSQLITE_H
-, { "sqlite3", STREAM_SQLITE }
-#endif
-#ifdef BPGSQL_H
-, { "postgres", STREAM_PGSQL }
-#endif
-#ifdef BMYSQL_H
-, { "mysql", STREAM_MYSQL }
-#endif
-#if 0
-, { "none", STREAM_CUSTOM }
-#endif
-, { NULL, 0 }
-};
-
-
-
 /**
  * case_t
  *
@@ -254,7 +237,6 @@ typedef enum case_t {
 	CASE_SNAKE,
 	CASE_CAMEL
 } case_t;
-
 
 
 /**
@@ -275,6 +257,12 @@ typedef enum type_t {
 } type_t;
 
 
+/**
+ * typedef struct date_t 
+ *
+ * Stream dates to this for easy transfer across databases.
+ *
+ */
 typedef struct date_t {
 	unsigned short year;
 	unsigned char month;
@@ -287,24 +275,6 @@ typedef struct date_t {
 } date_t;
 
 
-typedef struct timezone_t {
-	int a;
-} timezone_t;
-
-
-static const char * itypes[] = {
-	[T_NULL] = "T_NULL",
-	[T_CHAR] = "T_CHAR",
-	[T_STRING] = "T_STRING",
-	[T_INTEGER] = "T_INTEGER",
-	[T_DOUBLE] = "T_DOUBLE",
-	[T_BOOLEAN] = "T_BOOLEAN",
-	[T_BINARY] = "T_BINARY",
-	[T_DATE] = "T_DATE",
-};
-
-
-
 /**
  * sqldef_t
  *
@@ -315,7 +285,6 @@ typedef struct sqldef_t {
 	const char *id_fmt;
 	const char *coldefs[8];
 } sqldef_t;
-
 
 
 /**
@@ -338,7 +307,6 @@ typedef enum sqltype_t {
 	SQL_MSSQLSRV,
 #endif
 } sqltype_t;
-
 
 
 /**
@@ -364,7 +332,6 @@ typedef enum {
 } dbtype_t;
 
 
-
 /**
  * typemap_t
  *
@@ -379,8 +346,6 @@ typedef struct typemap_t {
 	unsigned long size;
 	char preferred;
 } typemap_t;
-
-
 
 
 /**
@@ -399,7 +364,12 @@ typedef struct file_t {
 } file_t;
 
 
-
+/**
+ * typedef struct mysql_t 
+ *
+ * Collection of common MySQL structures.
+ *
+ */
 typedef struct mysql_t {
 	MYSQL *conn;
 	MYSQL_STMT *stmt;
@@ -409,7 +379,12 @@ typedef struct mysql_t {
 } mysql_t;
 
 
-
+/**
+ * typedef struct pgsql_t 
+ *
+ * Collection of common PostgreSQL structures.
+ *
+ */
 typedef struct pgsql_t {
 	PGconn *conn;
 	PGresult *res;
@@ -422,7 +397,22 @@ typedef struct pgsql_t {
 } pgsql_t;
 
 
+#if 0
+// TODO: If we ever add the SQLite backend support...
+typedef struct sqlite3_t {
+	sqlite3 *conn;
+	sqlite3_stmt *stmt;
+} sqlite3_t;
+#endif
 
+
+/**
+ * typedef enum bindtype_t
+ *
+ * Different database engines use different methods of binding
+ * arguments.  Collect those here.
+ *
+ */
 typedef enum {
 	BINDTYPE_NONE,
 	BINDTYPE_ALPHA,
@@ -430,22 +420,6 @@ typedef enum {
 	BINDTYPE_ANON,
 	BINDTYPE_AT	
 } bindtype_t;
-
-
-const char * bindtypes[] = {
-	NULL,
-	":%s",	
-	"$%d",	
-	"?",	
-	"@%s",	
-};
-
-#if 0
-typedef struct sqlite3_t {
-	sqlite3 *conn;
-	sqlite3_stmt *stmt;
-} sqlite3_t;
-#endif
 
 
 /**
@@ -530,8 +504,6 @@ typedef struct row_t {
 } row_t;
 
 
-
-
 /**
  * dsn_t
  *
@@ -569,9 +541,10 @@ typedef struct dsn_t {
 
 
 /**
- * function_t
+ * typedef struct function_t 
  *
- * ...
+ * Data structure to contain common functions for different 
+ * data source types.
  *
  */
 typedef struct function_t {
@@ -586,12 +559,24 @@ typedef struct function_t {
 } function_t;
 
 
+/**
+ * typedef struct coerce_t 
+ *
+ * Little structure to contain coerced arguments and their types.
+ *
+ */
 typedef struct coerce_t {
 	const char name[ 128 ];
 	const char typename[ 64 ];
 } coerce_t;
 
 
+/**
+ * typedef struct config_t 
+ *
+ * User arguments and preferred options.
+ *
+ */
 typedef struct config_t {
 
 	stream_t wstream;	// wstream - A chosen stream
@@ -606,20 +591,73 @@ typedef struct config_t {
 	char wdatestamps;
 	char wnounsigned;
 	char wspcase;
-	char wid;   // Use a unique ID when reading from a datasource
 	char wstats;   // Use the stats
-	
+	char *wid;   // Use a unique ID when reading from a datasource
 	char *wcutcols;  // The user wants to cut columns
 	char *widname;  // The unique ID column name
 	char *wcoerce;  // The user wants to override certain types
+	char *wautocast;  // The user wants to override certain types according to one specific one
 	char *wquery;	// A custom query from the user
 	char *wprefix;
 	char *wsuffix; 
 	char *wtable; 
+	char *wstype; 
+	sqltype_t wdbengine; 
+#ifdef DEBUG_H
+	char wdumpdsn;
+#endif
 
 } config_t;
 
 
+/* --Data */
+streamtype_t streams[] = {
+#if 0
+  { "none", STREAM_NONE }
+, { "none", STREAM_PRINTF }
+#endif
+  { "json", STREAM_JSON }
+, { "xml", STREAM_XML }
+, { "sql", STREAM_SQL }
+, { "struct", STREAM_CSTRUCT }
+, { "csv", STREAM_COMMA }
+, { "array", STREAM_CARRAY }
+, { "class", STREAM_JCLASS }
+#ifdef BSQLITE_H
+, { "sqlite3", STREAM_SQLITE }
+#endif
+#ifdef BPGSQL_H
+, { "postgres", STREAM_PGSQL }
+#endif
+#ifdef BMYSQL_H
+, { "mysql", STREAM_MYSQL }
+#endif
+#if 0
+, { "none", STREAM_CUSTOM }
+#endif
+, { NULL, 0 }
+};
+
+
+static const char * itypes[] = {
+	[T_NULL] = "T_NULL",
+	[T_CHAR] = "T_CHAR",
+	[T_STRING] = "T_STRING",
+	[T_INTEGER] = "T_INTEGER",
+	[T_DOUBLE] = "T_DOUBLE",
+	[T_BOOLEAN] = "T_BOOLEAN",
+	[T_BINARY] = "T_BINARY",
+	[T_DATE] = "T_DATE",
+};
+
+
+const char * bindtypes[] = {
+	NULL,
+	":%s",	
+	"$%d",	
+	"?",	
+	"@%s",	
+};
 
 
 // This is for default types.  A map IS a lot of overhead...
@@ -660,60 +698,6 @@ static const char * dbtypes[] = {
 	[DB_POSTGRESQL] = "Postgres",
 };
 
-
-static const char * get_conn_type( dbtype_t t ) {
-	return ( t >= 0 && t < sizeof( dbtypes ) / sizeof( char * ) ) ? dbtypes[ t ] : NULL; 
-}
-
-#define get_btypename( T ) get_typename( T, default_map )
-
-
-static const char * get_typename ( type_t t, const typemap_t *types ) {
-	for ( const typemap_t *f = types; f->ntype != TYPEMAP_TERM; f++ ) {
-		if ( f->ntype == t ) return f->name;
-	}
-	return NULL;  
-}
-
-
-typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) {
-	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		if ( t->ntype == type ) return (typemap_t *)t;
-	}
-	return NULL;
-}
-
-
-typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
-	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->name ); 
-		if ( !strcasecmp( name, t->name ) ) {
-			return (typemap_t *)t;
-		}
-	}
-	return NULL;
-}
-
-
-typemap_t * get_typemap_by_etype ( const typemap_t *types, int type ) {
-	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		if ( t->ntype == type ) return (typemap_t *)t;
-	}
-	return NULL;
-}
-
-
-// Use this to look for matches by basetype
-typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
-	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-	#ifdef DEBUG_H
-		DPRINTF( "%s: Checking types: %s (%s) %d ?= %d\n", __func__, t->name, t->libname, t->basetype, btype );
-		//fprintf( stderr, "TYPESTUFF %s %s %d != %d\n", t->typename, t->libtypename, t->basetype, btype );
-	#endif
-		if ( btype == t->basetype && t->preferred ) return (typemap_t *)t;
-	}
-	return NULL;
-}
 
 /* TODO: This is pretty bad, but I don't see a great way to lay these out right now */
 /* Postgres specific support */
@@ -807,26 +791,34 @@ static const typemap_t mysql_map[] = {
 #endif
 
 
-// Forward declarations for different output formats
-void p_default( int, column_t * );
-void p_xml( int, column_t * );
-void p_comma( int, column_t * );
-void p_cstruct( int, column_t * );
-void p_carray( int, column_t * );
-void p_sql( int, column_t * );
-void p_json( int, column_t * );
-
 
 // Global variables to ease testing
 char delset[ 8 ] = { 13 /*'\r'*/, 10 /*'\n'*/, 0, 0, 0, 0, 0, 0 };
+const char ucases[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
+const char lcases[] = "abcdefghijklmnopqrstuvwxyz_";
+const char exchrs[] = "~`!@#$%^&*()-_+={}[]|:;\"'<>,.?/";
+
+// TODO: Move these into config_t
+struct rep { char o, r; } ; //Ghetto replacement scheme...
+struct rep **reps = NULL;
+int no_unsigned = 0;
+
+// TODO: Specify a delimiter
+char *DELIM = ",";
+
+// TODO: Really need to get rid of this completely.
+char *no_header = "nothing";
+
+// TODO: This should be set from the command line as well.
+case_t case_type = CASE_SNAKE;
+
+#if 0
 const char *STDIN = "/dev/stdin";
 const char *STDOUT = "/dev/stdout";
-char *no_header = "nothing";
 char *output_file = NULL;
 char *FFILE = NULL;
 char *OUTPUT = NULL;
 char *INPUT = NULL;
-char *DELIM = ",";
 char *prefix = NULL;
 char *suffix = NULL;
 char *datasource = NULL;
@@ -834,8 +826,6 @@ char *table = NULL;
 char *stream_chars = NULL;
 char *root = "root";
 char *streamtype = NULL;
-struct rep { char o, r; } ; //Ghetto replacement scheme...
-struct rep **reps = NULL;
 int create_new_dsn = 0;
 int limit = 0;
 int dump_parsed_dsn = 0;
@@ -847,13 +837,9 @@ int typesafe = 0;
 int schema = 0;
 int serialize = 0;
 int hlen = 0;
-int no_unsigned = 0;
 int adv = 0;
 int show_stats = 0;
 int stream_fmt = STREAM_PRINTF;
-const char ucases[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
-const char lcases[] = "abcdefghijklmnopqrstuvwxyz_";
-const char exchrs[] = "~`!@#$%^&*()-_+={}[]|:;\"'<>,.?/";
 type_t **gtypes = NULL;
 int want_id = 0;
 char *id_name = "id";
@@ -861,15 +847,92 @@ int want_datestamps = 0;
 char *datestamp_name = "date";
 int structdata=0;
 int classdata=0;
-case_t case_type = CASE_SNAKE;
 sqltype_t dbengine = SQL_SQLITE3;
 char *coercion = NULL;
+char *autocast = NULL;
 char sqlite_primary_id[] = "id INTEGER PRIMARY KEY AUTOINCREMENT";
 const char null_keyword[] = "NULL";
 const unsigned long null_keyword_length = sizeof( "NULL" ) - 1;
+#endif
+
+/**
+ * static const char * get_conn_type( dbtype_t t ) 
+ *
+ * Get the name of a connection type.
+ *
+ */
+static const char * get_conn_type( dbtype_t t ) {
+	return ( t >= 0 && t < sizeof( dbtypes ) / sizeof( char * ) ) ? dbtypes[ t ] : NULL; 
+}
 
 
-// Convert word to snake_case
+/**
+ * typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) 
+ *
+ * Get the matching native typemap via the native type integer.
+ *
+ * NOTE: The common SQL database engines use a number to correspond
+ * to a certain type.  Postgres, for instance, uses hard-coded "OIDs"
+ * (which are just integers) to point to different types.
+ *
+ */
+typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) {
+	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
+		if ( t->ntype == type ) return (typemap_t *)t;
+	}
+	return NULL;
+}
+
+
+/**
+ * typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) 
+ *
+ * Get the matching typemap from the name of a particular type 
+ * (like varchar, blob, etc)
+ *
+ */
+typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
+	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
+		DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->name ); 
+		if ( !strcasecmp( name, t->name ) ) {
+			return (typemap_t *)t;
+		}
+	}
+	return NULL;
+}
+
+
+/**
+ * typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) 
+ *
+ * Get the matching typemap from the simplest possible matching type.
+ *
+ * NOTE: briggs only handles six actual types when looking at data
+ * in a spreadsheet or file.  It attempts to map these sensibly to
+ * more complicated types in a database engine.
+ *
+ * See the typemap_t arrays defined above for a practical application
+ * of this concept.
+ *
+ */
+typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
+	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
+	#ifdef DEBUG_H
+		DPRINTF( "%s: Checking types: %s (%s) %d ?= %d\n", __func__, t->name, t->libname, t->basetype, btype );
+		//fprintf( stderr, "TYPESTUFF %s %s %d != %d\n", t->typename, t->libtypename, t->basetype, btype );
+	#endif
+		if ( btype == t->basetype && t->preferred ) return (typemap_t *)t;
+	}
+	return NULL;
+}
+
+
+/**
+ * static void snakecase ( char **k ) 
+ *
+ * Convert a word to `snake_case`
+ *
+ */
 static void snakecase ( char **k ) {
 	char *nk = *k;
 	while ( *nk ) {
@@ -886,8 +949,12 @@ static void snakecase ( char **k ) {
 }
 
 
-
-// Convert word to camelCase
+/**
+ * static void camelcase ( char **k ) 
+ *
+ * Convert a word to `camelCase`.
+ *
+ */
 static void camelcase ( char **k ) {
 	char *nk = *k;
 	char *ok = *k;
@@ -934,8 +1001,12 @@ static void camelcase ( char **k ) {
 }
 
 
-
-// Duplicate a value
+/**
+ * static char *dupval ( char *val, char **setval ) 
+ *
+ * Duplicate a string.
+ *
+ */
 static char *dupval ( char *val, char **setval ) {
 	if ( !val )
 		return NULL;
@@ -951,9 +1022,16 @@ static char *dupval ( char *val, char **setval ) {
 }
 
 
-
-// Trim and copy a string, optionally using snake_case
-// TODO: Strictly, this isn't acting on anything that would be dependent on a char *definition, butthis should really be rewritten to return an unsigned char *
+/**
+ * static char * copy( char *src, int size, int *ns, case_t t ) 
+ *
+ * Trim and copy a string and use casing rules.
+ *
+ * TODO: Strictly, this isn't acting on anything that would be 
+ * dependent on a char *definition, but this should really be 
+ * rewritten to return an unsigned char *.
+ *
+ */
 static char * copy( char *src, int size, int *ns, case_t t ) {
 	char *a = NULL;
 	char *b = NULL;
@@ -977,9 +1055,12 @@ static char * copy( char *src, int size, int *ns, case_t t ) {
 }
 
 
-
-
-// Check the type of a value in a field
+/**
+ * static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) 
+ *
+ * Checks the  type of value in a field.
+ *
+ */
 static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 	type_t t = T_INTEGER;
 
@@ -1058,20 +1139,12 @@ static type_t get_type( unsigned char *v, type_t deftype, unsigned int len ) {
 }
 
 
-
-// Free headers allocated previously
-void free_headers ( char **headers ) {
-	char **h = headers;
-	while ( *h ) {
-		free( *h );
-		h++;
-	}
-	free( headers );
-}
-
-
-
-// Get a value from a column
+/**
+ * void extract_value_from_column ( char *src, char **dest, int size ) 
+ *
+ * Get a value from a column
+ *
+ */
 void extract_value_from_column ( char *src, char **dest, int size ) {
 	if ( !reps && !no_unsigned )
 		memcpy( *dest, src, size );
@@ -1122,8 +1195,12 @@ void extract_value_from_column ( char *src, char **dest, int size ) {
 }
 
 
-
-//check for a valid stream
+/**
+ * int check_for_valid_stream ( char *st ) 
+ *
+ * Checks to see that the user is requesting a valid stream type.
+ *
+ */
 int check_for_valid_stream ( char *st ) {
 	for ( streamtype_t *s = streams; s->type; s++ ) {
 		if ( !strcmp( s->type, st ) ) {
@@ -1134,36 +1211,12 @@ int check_for_valid_stream ( char *st ) {
 }
 
 
-
-
-// Extract one row only
-static unsigned char * extract_row( void *buf, int buflen, unsigned int *newlen ) {
-	// Extract just the first row of real values
-	unsigned char *str = NULL;
-	unsigned char *start = NULL;
-	int slen = 0;
-
-	// Intended for use with
-	if ( !( start = memchr( buf, '\n', buflen ) ) ) {
-		return NULL;
-	}
-
-	// Increment until I find the next row (assuming that the file is line based)
-	for ( unsigned char *s = ++start; ( *s != '\n' && *s != '\r' ); s++, slen++ );
-
-	// Allocate for the portion we want
-	if ( !( str = malloc( ++slen + 1 ) ) || !memset( str, 0, slen + 1 ) ) {
-		return NULL;
-	}
-
-	memcpy( str, start, slen );
-	*newlen = slen;
-	return str;
-}
-
-
-
-// A function to safely copy a string with an optional delimiter
+/**
+ * int safecpypos( const char *src, char *dest, char *delim, int maxlen ) 
+ *
+ * A function to safely copy a string with an optional delimiter.
+ *
+ */
 int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 
 	unsigned int len = maxlen;
@@ -1201,8 +1254,10 @@ int safecpypos( const char *src, char *dest, char *delim, int maxlen ) {
 }
 
 
-/*
- * Copy to a number safely.
+/**
+ * int usafecpynumeric( unsigned char *numtext, long l ) 
+ *
+ * Copy to a number safely from char *.
  *
  */
 int safecpynumeric( char *numtext ) {
@@ -1214,8 +1269,10 @@ int safecpynumeric( char *numtext ) {
 }
 
 
-/*
- * Copy to a number safely from unsigned character block.
+/**
+ * int usafecpynumeric( unsigned char *numtext, long l ) 
+ *
+ * Copy to a number safely from unsigned char *.
  *
  */
 int usafecpynumeric( unsigned char *numtext, long l ) {
@@ -1239,11 +1296,14 @@ int usafecpynumeric( unsigned char *numtext, long l ) {
 	return num;
 }
 
-/*
- * Parse DSN info the above structure
+
+/**
+ * int parse_dsn_info( dsn_t *conn, char *err, int errlen ) 
  *
- * We only support URI styles for consistency.
+ * Parse data source string into a dsn_t.
  *
+ * NOTE: We only support URI styles for consistency.
+ * 
  * NOTE: Postgres seems to include support for connecting to multiple hosts
  * This doesn't make sense to support here...
  *
@@ -1534,91 +1594,12 @@ int parse_dsn_info( dsn_t *conn, char *err, int errlen ) {
 
 
 
-
-#ifdef DEBUG_H
-
-void print_date( date_t *date ) {
-	fprintf( stderr, "Y: %d, M: %d, D: %d, H: %d, m: %d, s:%d\n", 
-		date->year, date->month, date->day, date->hour, date->minute, date->second 
-	);
-}
-
-// Dump the DSN
-void print_dsn ( dsn_t *conninfo ) {
-	fprintf( stderr, "dsn->connstr:    '%s'\n", conninfo->connstr );
-	fprintf( stderr, "dsn->type:       %s\n",   dbtypes[ conninfo->type ] );
-	fprintf( stderr, "dsn->username:   '%s'\n", conninfo->username );
-	fprintf( stderr, "dsn->password:   '%s'\n", conninfo->password );
-	fprintf( stderr, "dsn->hostname:   '%s'\n", conninfo->hostname );
-	fprintf( stderr, "dsn->dbname:     '%s'\n", conninfo->dbname );
-	fprintf( stderr, "dsn->tablename:  '%s'\n", conninfo->tablename );
-	//fprintf( stderr, "dsn->socketpath: '%s'\n", conninfo->socketpath );
-	fprintf( stderr, "dsn->port:       %d\n", conninfo->port );
-	fprintf( stderr, "dsn->conn:       %p\n", conninfo->conn );
-	fprintf( stderr, "dsn->options:    '%s'\n", conninfo->connoptions );
-	fprintf( stderr, "dsn->typemap:    '%p' ", (void *)conninfo->typemap );
-
-	if ( conninfo->typemap == default_map )
-		fprintf( stderr, "(default)" );
-	else if ( conninfo->typemap == sqlite3_map )
-		fprintf( stderr, "(SQLite)" );
-	else if ( conninfo->typemap == mysql_map )
-		fprintf( stderr, "(MySQL)" );
-	else if ( conninfo->typemap == pgsql_map ) {
-		fprintf( stderr, "(PostgreSQL)" );
-	}
-	fprintf( stderr, "\n" );
-
-	//if headers have been initialized show me that
-	fprintf( stderr, "dsn->headers:    %p\n", (void *)conninfo->headers );
-	if ( conninfo->headers ) {
-		fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n", "label", "C", "N", "B", "P" );
-		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
-			fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n",
-				(*h)->label,
-				(*h)->ctype ? (*h)->ctype->name : "(nil)",
-				(*h)->ntype ? (*h)->ntype->name : "(nil)",
-				(*h)->ptype ? itypes[ (*h)->ptype->basetype ] : "(nil)",
-				(*h)->ptype ? (*h)->ptype->name : "(nil)"
-			);
-		}
-	}
-}
-
-
-// Dump any headers
-void print_headers( dsn_t *t ) {
-	for ( header_t **s = t->headers; s && *s; s++ ) {
-		printf( "%s %d\n", (*s)->label, (*s)->type );
-	}
-}
-
-
-void print_stream_type( stream_t t ) {
-	if ( t == STREAM_NONE ) printf( "STREAM_NONE\n" );
-	else if ( t == STREAM_PRINTF ) printf( "STREAM_PRINTF\n" );
-	else if ( t == STREAM_JSON ) printf( "STREAM_JSON\n" );
-	else if ( t == STREAM_XML ) printf( "STREAM_XML\n" );
-	else if ( t == STREAM_SQL ) printf( "STREAM_SQL\n" );
-	else if ( t == STREAM_CSTRUCT ) printf( "STREAM_CSTRUCT\n" );
-	else if ( t == STREAM_COMMA ) printf( "STREAM_COMMA\n" );
-	else if ( t == STREAM_CARRAY ) printf( "STREAM_CARRAY\n" );
-	else if ( t == STREAM_JCLASS ) printf( "STREAM_JCLASS\n" );
-#ifdef BPGSQL_H
-	else if ( t == STREAM_PGSQL ) printf( "STREAM_PGSQL\n" );
-#endif
-#ifdef BMYSQL_H
-	else if ( t == STREAM_MYSQL ) printf( "STREAM_MYSQL\n" );
-#endif
-	else if ( t == STREAM_CUSTOM ) {
-		printf( "STREAM_CUSTOM\n" );
-	}
-}
-#endif
-
-
-
-
+/**
+ * void destroy_dsn_headers ( dsn_t *t ) 
+ *
+ * Free all header data allocated when interacting with a data source.
+ *
+ */
 void destroy_dsn_headers ( dsn_t *t ) {
 	for ( header_t **s = t->headers; s && *s; s++ ) {
 		free( *s );
@@ -1627,8 +1608,12 @@ void destroy_dsn_headers ( dsn_t *t ) {
 }
 
 
-
-// Destroy all records
+/**
+ * void destroy_dsn_rows ( dsn_t *t ) 
+ *
+ * Free all rows allocated when interacting with a data source.
+ *
+ */
 void destroy_dsn_rows ( dsn_t *t ) {
 	WHERE();
 	for ( row_t **r = t->rows; r && *r; r++ ) {
@@ -1641,8 +1626,7 @@ void destroy_dsn_rows ( dsn_t *t ) {
 
 
 /**
- * schema_from_dsn( dsn_t * )
- * ===================
+ * int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err, int errlen ) 
  *
  * Close a data source.
  *
@@ -1734,11 +1718,8 @@ int schema_from_dsn( dsn_t *iconn, dsn_t *oconn, char *fm, int fmtlen, char *err
 }
 
 
-
-
 /**
- * test_dsn( dsn_t * )
- * ===================
+ * int test_dsn (dsn_t *conn, char *err, int errlen) 
  *
  * Test a data source for existence.
  *
@@ -1778,8 +1759,7 @@ int test_dsn (dsn_t *conn, char *err, int errlen) {
 
 
 /**
- * create_dsn( dsn_t * )
- * ===================
+ * int create_dsn ( dsn_t *, dsn_t *, char *, int )
  *
  * Create a data source.  (A file, database if SQLite3 or
  * a table if a super heavy weight database.)
@@ -1957,19 +1937,17 @@ int modify_pgconnstr ( char *connstr, int fmtlen ) {
 		}
 	#endif
 	}
-return 1;
+	return 1;
 }
 
 
-
 /**
- * open_dsn( dsn_t * )
- * ===================
+ * int open_dsn ( dsn_t *conn, config_t *conf, const char *qopt, char *err, int errlen ) 
  *
- * Open and manage a data source.
+ * Open a manage a data source.
  *
  */
-int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
+int open_dsn ( dsn_t *conn, config_t *conf, const char *qopt, char *err, int errlen ) {
 	WPRINTF( "Attempting to open connection indicated by '%s'", conn->connstr );
 	char query[ 2048 ];
 	memset( query, 0, sizeof( query ) );
@@ -1977,7 +1955,6 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 	// Handle opening the database first
 	if ( conn->type == DB_FILE ) {
 		// An mmap() implementation for speedy reading and less refactoring
-		int fd;
 		struct stat sb;
 		file_t *file = NULL;
 
@@ -2026,7 +2003,7 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 
 
 	// Stop if no table name was specified
-	if ( !table && ( !( *conn->tablename ) || strlen( conn->tablename ) < 1 ) ) {
+	if ( !conf->wtable && ( !( *conn->tablename ) || strlen( conn->tablename ) < 1 ) ) {
 		snprintf( err, errlen, "No table name specified for source data." );
 		return 0;
 	}
@@ -2150,9 +2127,12 @@ int open_dsn ( dsn_t *conn, const char *qopt, char *err, int errlen ) {
 }
 
 
-
-
-//
+/**
+ * static const char * find_ctype ( coerce_t **list, const char *name ) 
+ *
+ * Locate a specific coerced type.
+ *
+ */
 static const char * find_ctype ( coerce_t **list, const char *name ) {
 	for ( coerce_t **x = list; x && *x; x++ ) {
 		if ( !strcasecmp( (*x)->name, name ) ) return (*x)->typename;
@@ -2162,10 +2142,9 @@ static const char * find_ctype ( coerce_t **list, const char *name ) {
 
 
 /**
- * create_coerced_type( const char *name, const char *typename )
- * ===========================
+ * static coerce_t * create_ctype( const char *src, int len ) 
  *
- * Create an entry
+ * Add a coercion type to a specific column.
  *
  */
 static coerce_t * create_ctype( const char *src, int len ) {
@@ -2198,23 +2177,13 @@ fprintf( stderr, "\n" );
 }
 
 
-
 /**
  * headers_from_dsn( dsn_t * )
- * ===========================
  *
- * Get the headers from a data source.
+ * Print the headers from a data source.
  *
  */
-int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
-
-	// Define
-	int fcount = 0;
-	char *str = NULL;
-	char *ename = NULL;
-	coerce_t **ctypes = NULL;
-	int ctypeslen = 0;
-	const typemap_t *cdefs = NULL;
+int headers_from_dsn ( dsn_t *conn, config_t *conf, char *err, int errlen ) {
 
 	// Empty condition to assist with compiling out code
 	if ( conn->type == DB_FILE ) {
@@ -2332,11 +2301,10 @@ int headers_from_dsn ( dsn_t *conn, char *err, int errlen ) {
 
 
 
-
-
+#if 0
+// TODO: This is coming back, just not right now...
 /**
  * struct_from_dsn( dsn_t * )
- * ===========================
  *
  * Create a struct from data source.
  *
@@ -2358,19 +2326,15 @@ for ( header_t **s = conn->headers; s && *s; s++ ) {
 
 return 1;
 }
+#endif
 
 
 /**
-* create_sql_insert_stmt
-* ===========================
-*
-* Create an SQL insert statement suitable for a specific type of 
-* engine.  
-* 
-* TODO: Create a bindtype_t for { ALPHA, NUM, QUESTION_MARK }
-* TODO: This code is beyond terrible.  Please fix it...
-*
-*/
+ * char * create_sql_insert_statement ( dsn_t *oconn, dsn_t *iconn, bindtype_t bindtype, char *err, int errlen ) 
+ *
+ * Create an SQL insert statement suitable for a specific type of database engine.
+ *
+ */
 char * create_sql_insert_statement ( dsn_t *oconn, dsn_t *iconn, bindtype_t bindtype, char *err, int errlen ) {
 	int p = 0;
 	char *bindstmt = NULL;
@@ -2475,11 +2439,8 @@ char * create_sql_insert_statement ( dsn_t *oconn, dsn_t *iconn, bindtype_t bind
 }
 
 
-
-
 /**
- * prepare_dsn( dsn_t * )
- * ===========================
+ * int prepare_dsn_for_read ( dsn_t *conn, char *err, int errlen ) 
  *
  * Prepare DSN for reading.  If we processed a limit, that would
  * really be the only way to make this work sensibly with SQL.
@@ -2517,7 +2478,6 @@ int prepare_dsn_for_read ( dsn_t *conn, char *err, int errlen ) {
 
 /**
  * int prepare_dsn_for_write ( dsn_t *, dsn_t *, char *, int) 
- * ===========================
  *
  * Prepare DSN for writing.  
  *
@@ -2607,7 +2567,12 @@ int prepare_dsn_for_write ( dsn_t *oconn, dsn_t *iconn, char *err, int errlen ) 
 }
 
 
-// Destory structures
+/**
+ * void unprepare_dsn( dsn_t *conn ) 
+ *
+ * "Unmount" different data sources (e.g. closing a database or something)
+ *
+ */
 void unprepare_dsn( dsn_t *conn ) {
 	// Rewinding the pointer to the beginning would be an ok idea. But unnecessary
 	if ( conn->type == DB_FILE ) {
@@ -2654,7 +2619,6 @@ void unprepare_dsn( dsn_t *conn ) {
 
 /**
  * records_from_dsn( dsn_t * )
- * ===========================
  *
  * Extract records from a data source.
  *
@@ -2969,7 +2933,6 @@ int records_from_dsn( dsn_t *conn, int count, int offset, char *err, int errlen 
 
 /**
  * transform_from_dsn( dsn_t * )
- * ===================
  *
  * "Transform" the records into whatever output format you're looking for.
  *
@@ -3044,7 +3007,6 @@ int transform_from_dsn(
 		// Loop through each column
 		for ( column_t **col = (*row)->columns; col && *col; col++, ci++ ) {
 			int first = *col == *((*row)->columns);
-			header_t *st = iconn->headers[ ci ];
 			if ( oconn->stream == STREAM_PRINTF ) {
 				file_t *file = (file_t *)oconn->conn;
 				FDPRINTF( file->fd, (*col)->k );
@@ -3586,15 +3548,12 @@ void close_dsn( dsn_t *conn ) {
  */
 int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen ) {
 	// Define
-	int fcount = 0;
 	char *ename = NULL;
 	coerce_t **ctypes = NULL;
-	const typemap_t *cdefs = NULL;
 
 	// Evaluate the coercion string if one is available
 	// The type that is saved will be the coerced one
 	if ( ov ) {
-		int i = 0;
 		int ctypeslen = 0;
 
 		// Multiple coerced types
@@ -3681,7 +3640,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			char *t = NULL;
 			const char *ctype = NULL;
 			int len = 0;
-			typemap_t *nm = NULL, *cm = NULL, *am = NULL;
+			typemap_t *cm = NULL;
 
 			// Check if any of these are looking for a coerced type
 			if ( ov && ( ctype = find_ctype( ctypes, st->label ) ) ) {
@@ -3852,24 +3811,18 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	for ( coerce_t **x = ctypes; x && *x; x++ ) free( *x );
 	free( ctypes );
 
-print_dsn( iconn );
+//print_dsn( iconn );
 	return 1;
 }
 
 
-
 /**
- * scaffold_dsn( dsn_t *, dsn_t *, const char * )
- * ==============================================
+ * int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *err, int errlen  ) 
  *
  * This is intended to fill out a dsn_t manually when we already have an input 
- * source.
  *
  */
-int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err, int errlen  ) {
-
-	// Define stuffs
-	char *t = NULL;
+int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *err, int errlen  ) {
 
 	// No connection string was specified, so we can make a few assumptions.
 	if ( !oc->connstr ) {
@@ -3879,12 +3832,12 @@ int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err,
 		//oc->stream = STREAM_PRINTF;
 		oc->typemap = default_map;
 
-		if ( tname ) {
-			if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
-				snprintf( err, errlen, "Table name '%s' is too long for buffer.", tname );
+		if ( conf->wtable ) {
+			if ( strlen( conf->wtable ) >= sizeof( oc->tablename ) ) {
+				snprintf( err, errlen, "Table name '%s' is too long for buffer.", conf->wtable );
 				return 0;
 			}
-			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
+			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", conf->wtable );
 		}
 		else if ( strlen( ic->tablename ) > 0 ) {
 			snprintf( oc->tablename, sizeof( oc->tablename ), "%s", ic->tablename );
@@ -3892,7 +3845,7 @@ int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err,
 
 		// I'll need a table name depending on other options
 	#if 0
-		if ( config->wschema && !config->tname && !strlen( ic->tablename ) ) {
+		if ( config->wschema && !config->conf->wtable && !strlen( ic->tablename ) ) {
 			snprintf( err, errlen, "Wanted --schema, but table name is invalid or unspecified." );
 			return 0;
 		}
@@ -3924,12 +3877,12 @@ int scaffold_dsn ( config_t *conf, dsn_t *ic, dsn_t *oc, char *tname, char *err,
 
 
 	// A cli table name takes highest priority
-	if ( tname /* config->tname */ ) {
-		if ( strlen( tname ) >= sizeof( oc->tablename ) ) {
-			snprintf( err, errlen, "Table name '%s' is too long for buffer.", tname );
+	if ( conf->wtable /* config->conf->wtable */ ) {
+		if ( strlen( conf->wtable ) >= sizeof( oc->tablename ) ) {
+			snprintf( err, errlen, "Table name '%s' is too long for buffer.", conf->wtable );
 			return 0;
 		}
-		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", tname );
+		snprintf( oc->tablename, sizeof( oc->tablename ), "%s", conf->wtable );
 	}
 
 	// Copy the ic->tn to the oc->tn
@@ -4046,6 +3999,7 @@ int help () {
 		{ "-L", "limit <arg>",   "Limit the result count to <arg>"  },
 		{ "",   "buffer-size <arg>",  "Process only this many rows at a time when reading source data"  },
 #endif
+		{ "-A", "auto",        "Set a default coercion for a specific type (e.g. blob=text)" },
 		{ "-X", "dumpdsn",     "Dump the DSN only. (DEBUG)" },
 		{ "-h", "help",        "Show help." },
 	};
@@ -4094,12 +4048,144 @@ static config_t config = {
 
 
 
+#ifdef DEBUG_H
+/**
+ * void print_date( date_t *date ) 
+ *
+ * Print a somewhat formatted date.
+ *
+ */
+void print_date( date_t *date ) {
+	fprintf( stderr, "Y: %d, M: %d, D: %d, H: %d, m: %d, s:%d\n", 
+		date->year, date->month, date->day, date->hour, date->minute, date->second 
+	);
+}
+
+/**
+ * void print_dsn ( dsn_t *conninfo ) 
+ *
+ * Dump the datasource info.
+ *
+ */
+void print_dsn ( dsn_t *conninfo ) {
+	fprintf( stderr, "%-20s= %s\n", "connstr", conninfo->connstr );
+	fprintf( stderr, "%-20s= %s\n", "dbtype",   dbtypes[ conninfo->type ] );
+	fprintf( stderr, "%-20s= %s\n", "username", conninfo->username );
+	fprintf( stderr, "%-20s= %s\n", "password", conninfo->password );
+	fprintf( stderr, "%-20s= %s\n", "hostname", conninfo->hostname );
+	fprintf( stderr, "%-20s= %s\n", "dbname", conninfo->dbname );
+	fprintf( stderr, "%-20s= %s\n", "tablename", conninfo->tablename );
+	fprintf( stderr, "%-20s= %d\n", "port", conninfo->port );
+	fprintf( stderr, "%-20s= %p\n", "conn", conninfo->conn );
+	fprintf( stderr, "%-20s= %s\n", "connoptions", conninfo->connoptions );
+	fprintf( stderr, "%-20s= %p\n", "typemap", (void *)conninfo->typemap );
+
+	if ( conninfo->typemap == default_map )
+		fprintf( stderr, "(default)\n" );
+	else if ( conninfo->typemap == sqlite3_map )
+		fprintf( stderr, "(SQLite)\n" );
+	else if ( conninfo->typemap == mysql_map )
+		fprintf( stderr, "(MySQL)\n" );
+	else if ( conninfo->typemap == pgsql_map ) {
+		fprintf( stderr, "(PostgreSQL)\n" );
+	}
+
+	//if headers have been initialized show me that
+	fprintf( stderr, "%-20s= %p\n", "headers", (void *)conninfo->headers );
+	if ( conninfo->headers ) {
+		fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n", "label", "C", "N", "B", "P" );
+		for ( header_t **h = conninfo->headers; h && *h; h++ ) {
+			fprintf( stderr, "  %-20s [%s, %s, %s, %s]\n",
+				(*h)->label,
+				(*h)->ctype ? (*h)->ctype->name : "(nil)",
+				(*h)->ntype ? (*h)->ntype->name : "(nil)",
+				(*h)->ptype ? itypes[ (*h)->ptype->basetype ] : "(nil)",
+				(*h)->ptype ? (*h)->ptype->name : "(nil)"
+			);
+		}
+	}
+}
+
+
+/**
+ * void print_headers( dsn_t *t ) 
+ *
+ * Dump all of the headers in a datasource.
+ *
+ */
+void print_headers( dsn_t *t ) {
+	for ( header_t **s = t->headers; s && *s; s++ ) {
+		printf( "%s %d\n", (*s)->label, (*s)->type );
+	}
+}
+
+
+/**
+ * void print_stream_type( stream_t t ) 
+ *
+ * Dump all of the different stream types.
+ *
+ */
+void print_stream_type( stream_t t ) {
+	if ( t == STREAM_NONE ) printf( "STREAM_NONE\n" );
+	else if ( t == STREAM_PRINTF ) printf( "STREAM_PRINTF\n" );
+	else if ( t == STREAM_JSON ) printf( "STREAM_JSON\n" );
+	else if ( t == STREAM_XML ) printf( "STREAM_XML\n" );
+	else if ( t == STREAM_SQL ) printf( "STREAM_SQL\n" );
+	else if ( t == STREAM_CSTRUCT ) printf( "STREAM_CSTRUCT\n" );
+	else if ( t == STREAM_COMMA ) printf( "STREAM_COMMA\n" );
+	else if ( t == STREAM_CARRAY ) printf( "STREAM_CARRAY\n" );
+	else if ( t == STREAM_JCLASS ) printf( "STREAM_JCLASS\n" );
+#ifdef BPGSQL_H
+	else if ( t == STREAM_PGSQL ) printf( "STREAM_PGSQL\n" );
+#endif
+#ifdef BMYSQL_H
+	else if ( t == STREAM_MYSQL ) printf( "STREAM_MYSQL\n" );
+#endif
+	else if ( t == STREAM_CUSTOM ) {
+		printf( "STREAM_CUSTOM\n" );
+	}
+}
+
+
+/**
+ * void print_config( config_t *config ) 
+ *
+ * Dump the given configuration.
+ *
+ */
+void print_config( config_t *config ) {
+	fprintf( stderr, "%-20s= %d\n", "wstream", config->wstream );
+	fprintf( stderr, "%-20s= %d\n", "wdeclaration", config->wdeclaration );
+	fprintf( stderr, "%-20s= %d\n", "wschema", config->wschema );
+	fprintf( stderr, "%-20s= %d\n", "wheaders", config->wheaders );
+	fprintf( stderr, "%-20s= %d\n", "wconvert", config->wconvert );
+	fprintf( stderr, "%-20s= %d\n", "wclass", config->wclass );
+	fprintf( stderr, "%-20s= %d\n", "wstruct", config->wstruct );
+	fprintf( stderr, "%-20s= %d\n", "wtypesafe", config->wtypesafe );
+	fprintf( stderr, "%-20s= %d\n", "wnewline", config->wnewline );
+	fprintf( stderr, "%-20s= %d\n", "wdatestamps", config->wdatestamps );
+	fprintf( stderr, "%-20s= %d\n", "wnounsigned", config->wnounsigned );
+	fprintf( stderr, "%-20s= %d\n", "wspcase", config->wspcase );
+	fprintf( stderr, "%-20s= %s\n", "wid", config->wid );
+	fprintf( stderr, "%-20s= %d\n", "wstats", config->wstats );
+	fprintf( stderr, "%-20s= %s\n", "wcutcols", config->wcutcols );
+	fprintf( stderr, "%-20s= %s\n", "widname", config->widname );
+	fprintf( stderr, "%-20s= %s\n", "wcoerce", config->wcoerce );
+	fprintf( stderr, "%-20s= %s\n", "wquery", config->wquery );
+	fprintf( stderr, "%-20s= %s\n", "wprefix", config->wprefix );
+	fprintf( stderr, "%-20s= %s\n", "wsuffix", config->wsuffix ); 
+	fprintf( stderr, "%-20s= %s\n", "wtable", config->wtable ); 
+}
+
+#endif
+
+
 int main ( int argc, char *argv[] ) {
 	SHOW_COMPILE_DATE();
 
 	// Define an input source, and an output source
 	char err[ ERRLEN ];
-	char *query = NULL;
 	dsn_t input, output;
 	char schema_fmt[ MAX_STMT_SIZE ];
 	struct timespec stimer, etimer;
@@ -4126,108 +4212,52 @@ int main ( int argc, char *argv[] ) {
 
 		// TODO: If possible, macro the strcmps & combine the flag condition.  Extra info can be passed into whatever function this is.
 		if ( !strcmp( *argv, "--no-unsigned" ) )
-			no_unsigned = 1;
+			config.wnounsigned = 1;
 		else if ( !strcmp( *argv, "--add-datestamps" ) )
-			want_datestamps = 1;
-		else if ( !strcmp( *argv, "-n" ) || !strcmp( *argv, "--newline" ) )
-			FF.newline = 1;
-		else if ( !strcmp( *argv, "-j" ) || !strcmp( *argv, "--json" ) )
-			output.stream = STREAM_JSON, convert = 1;
-		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--xml" ) )
-			output.stream = STREAM_XML, convert = 1;
-		else if ( !strcmp( *argv, "-q" ) || !strcmp( *argv, "--sql" ) )
-			output.stream = STREAM_SQL, convert = 1;
+			config.wdatestamps = 1;
+		else if ( EVALARG( *argv, "-n", "--newline" ) )
+			config.wnewline = 1;
+		else if ( EVALARG( *argv, "-j", "--json" ) )
+			config.wconvert = 1, output.stream = STREAM_JSON;
+		else if ( EVALARG( *argv, "-x", "--xml" ) )
+			config.wconvert = 1, output.stream = STREAM_XML; 
+		else if ( EVALARG( *argv, "-q", "--sql" ) )
+			config.wconvert = 1, output.stream = STREAM_SQL;
 		else if ( !strcmp( *argv, "--camel-case" ) )
-			case_type = CASE_CAMEL;
-		else if ( !strcmp( *argv, "-S" ) || !strcmp( *argv, "--schema" ) )
-			schema = 1;
-		else if ( !strcmp( *argv, "-H" ) || !strcmp( *argv, "--headers" ) )
-			headers_only = 1;
-		else if ( !strcmp( *argv, "-c" ) || !strcmp( *argv, "--convert" ) )
-			convert = 1;
-		else if ( !strcmp( *argv, "-C" ) || !strcmp( *argv, "--coerce" ) ) {
-			if ( !dupval( *( ++argv ), &coercion ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
-			}
-		}
-		else if ( !strcmp( *argv, "--id" ) ) {
-			want_id = 1;
-			if ( !dupval( *( ++argv ), &id_name ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
-			}
-		}
-		else if ( !strcmp( *argv, "--for" ) ) {
-			if ( output.connstr )
-				return ERRPRINTF( ERRCODE, "%s\n", "Can't specify both --for & --output" );
-
-			if ( *( ++argv ) == NULL )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
-
-			if ( !strcasecmp( *argv, "sqlite3" ) ) {
-				dbengine = SQL_SQLITE3;
-				output.connstr = strdup( "sqlite3://" );
-			}
-		#ifdef BPGSQL_H
-			else if ( !strcasecmp( *argv, "postgres" ) ) {
-				dbengine = SQL_POSTGRES;
-				output.connstr = strdup( "postgres://" );
-			}
-		#endif
-		#ifdef BMYSQL_H
-			else if ( !strcasecmp( *argv, "mysql" ) ) {
-				dbengine = SQL_MYSQL;
-				output.connstr = strdup( "mysql://" );
-			}
-		#endif
-		#if 0
-			else if ( !strcasecmp( *argv, "mssql" ) )
-				dbengine = SQL_MSSQLSRV;
-			else if ( !strcasecmp( *argv, "oracle" ) ) {
-				dbengine = SQL_ORACLE;
-				return ERRPRINTF( ERRCODE, "Oracle SQL dialect is currently unsupported, sorry...\n" );
-			}
-		#endif
-			else {
-				return ERRPRINTF( ERRCODE, "Argument specified '%s' for flag --for is an invalid option.", *argv );
-			}
-
-		}
-		else if ( !strcmp( *argv, "-f" ) || !strcmp( *argv, "--format" ) ) {
-			convert = 1;
-			if ( !dupval( *( ++argv ), &streamtype ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --format." );
-			else if ( ( output.stream = check_for_valid_stream( streamtype ) ) == -1 ) {
-				return ERRPRINTF( ERRCODE, "Invalid format '%s' requested.\n", streamtype );
-			}
-		}
-		else if ( !strcmp( *argv, "--class" ) ) {
-			classdata = 1;
-			serialize = 1;
-			case_type = CASE_CAMEL;
-#if 0
-			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --class." );
-			}
-#endif
-		}
-#if 0
-		else if ( !strcmp( *argv, "--struct" ) ) {
-			structdata = 1;
-			serialize = 1;
-			if ( !dupval( *( ++argv ), &input.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --struct." );
-			}
-		}
-#endif
-		else if ( !strcmp( *argv, "-p" ) || !strcmp( *argv, "--prefix" ) ) {
-			if ( !dupval( *(++argv), &prefix ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
-		}
-		else if ( !strcmp( *argv, "-x" ) || !strcmp( *argv, "--suffix" ) ) {
-			if ( !dupval( *(++argv), &suffix ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --suffix." );
-		}
-		else if ( !strcmp( *argv, "-d" ) || !strcmp( *argv, "--delimiter" ) ) {
+			config.wspcase = CASE_CAMEL;
+		else if ( EVALARG( *argv, "-S", "--schema" ) )
+			config.wschema = 1;
+		else if ( EVALARG( *argv, "-H", "--headers" ) )
+			config.wheaders = 1;
+		else if ( EVALARG( *argv, "-c", "--convert" ) )
+			config.wconvert = 1;
+		else if ( !strcmp( *argv, "--class" ) )
+			config.wclass = 1, config.wspcase = CASE_CAMEL;
+		else if ( EVALARG( *argv, "-y", "--stats" ) )
+			config.wstats = 1;
+		else if ( DEVAL( EVALARG( *argv, "-X", "--dumpdsn" ) ) ) 
+			config.wdumpdsn = 1;
+		else if ( EVALARG( *argv, "-C", "--coerce" ) && !SAVEARG( argv, config.wcoerce ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
+		else if ( EVALARG( *argv, "-A", "--auto" ) && !SAVEARG( argv, config.wautocast ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --auto." );
+		else if ( !strcmp( *argv, "--id" ) && !SAVEARG( argv, config.wid ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --id." );
+		else if ( EVALARG( *argv, "-f", "--format" ) && !SAVEARG( argv, config.wstype ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --format." );
+		else if ( EVALARG( *argv, "-p", "--prefix" ) && !SAVEARG( argv, config.wprefix ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --prefix." );
+		else if ( EVALARG( *argv, "-x", "--suffix" ) && !SAVEARG( argv, config.wsuffix ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --suffix." );
+		else if ( EVALARG( *argv, "-T", "--table" ) && !SAVEARG( argv, config.wtable ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --table." );
+		else if ( EVALARG( *argv, "-Q", "--query" ) && !SAVEARG( argv, config.wquery ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --query." );
+		else if ( EVALARG( *argv, "-i", "--input" ) && !SAVEARG( argv, input.connstr ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
+		else if ( EVALARG( *argv, "-o", "--output" ) && !SAVEARG( argv, output.connstr ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output." );
+		else if ( EVALARG( *argv, "-d", "--delimiter" ) ) {
 			char *del = *(++argv);
 			if ( !del )
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
@@ -4237,7 +4267,7 @@ int main ( int argc, char *argv[] ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --delimiter." );
 			}
 		}
-		else if ( !strcmp( *argv, "-u" ) || !strcmp( *argv, "--output-delimiter" ) ) {
+		else if ( EVALARG( *argv, "-u", "--output-delimiter" ) ) {
 			//Output delimters can be just about anything,
 			//so we don't worry about '-' or '--' in the statement
 			if ( ! *( ++argv ) )
@@ -4255,40 +4285,76 @@ int main ( int argc, char *argv[] ) {
 				}
 			}
 		}
-		else if ( !strcmp( *argv, "-T" ) || !strcmp( *argv, "--table" ) ) {
-			if ( !dupval( *(++argv), &table ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --table." );
+		else if ( !strcmp( *argv, "--for" ) ) {
+			if ( output.connstr )
+				return ERRPRINTF( ERRCODE, "%s\n", "Can't specify both --for & --output" );
+
+			if ( *( ++argv ) == NULL )
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
+
+			if ( !strcasecmp( *argv, "sqlite3" ) )
+				config.wdbengine = SQL_SQLITE3, output.connstr = strdup( "sqlite3://" );
+		#ifdef BPGSQL_H
+			else if ( !strcasecmp( *argv, "postgres" ) )
+				config.wdbengine = SQL_POSTGRES, output.connstr = strdup( "postgres://" );
+		#endif
+		#ifdef BMYSQL_H
+			else if ( !strcasecmp( *argv, "mysql" ) )
+				config.wdbengine = SQL_MYSQL, output.connstr = strdup( "mysql://" );
+		#endif
+		#if 0
+			else if ( !strcasecmp( *argv, "mssql" ) )
+				config.wdbengine = SQL_MSSQLSRV;
+			else if ( !strcasecmp( *argv, "oracle" ) ) {
+				config.wdbengine = SQL_ORACLE;
+				return ERRPRINTF( ERRCODE, "Oracle SQL dialect is currently unsupported, sorry...\n" );
+			}
+		#endif
+			else {
+				return ERRPRINTF( ERRCODE, "Argument specified '%s' for flag --for is an invalid option.", *argv );
+			}
+
 		}
-		else if ( !strcmp( *argv, "-Q" ) || !strcmp( *argv, "--query" ) ) {
-			if ( !dupval( *(++argv), &query ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --query." );
-		}
-		else if ( !strcmp( *argv, "-i" ) || !strcmp( *argv, "--input" ) ) {
-			if ( !dupval( *( ++argv ), &input.connstr ) )
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --input." );
-		}
-		else if ( !strcmp( *argv, "-o" ) || !strcmp( *argv, "--output" ) ) {
-			char *arg = *( ++argv );
-			if ( !arg || !dupval( arg, &output.connstr ) ) {
-				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --output." );
+#if 0
+		else if ( !strcmp( *argv, "--struct" ) ) {
+			structdata = 1;
+			serialize = 1;
+			if ( !dupval( *( ++argv ), &input.connstr ) ) {
+				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --struct." );
 			}
 		}
-		else if ( !strcmp( *argv, "-y" ) || !strcmp( *argv, "--stats" ) )
-			show_stats = 1;
-	#ifdef DEBUG_H
-		else if ( !strcmp( *argv, "-X" ) || !strcmp( *argv, "--dumpdsn" ) ) 
-			dump_parsed_dsn = 1;
-	#endif
-		else {
+#endif
+		else if ( *(*argv) == '-' ) {
 			fprintf( stderr, "Got unknown argument: %s\n", *argv );
 			return help();
 		}
+
 		argv++;
+		// Could evaluate again here...
 	}
 
-	#ifdef DEBUG_H
+#ifdef DEBUG_H
+	fprintf( stderr, "[ INPUT ]\n" ), print_dsn( &input );	
+	fprintf( stderr, "[ OUTPUT ]\n" ), print_dsn( &output );	
+	fprintf( stderr, "[ CONFIG ]\n" ), print_config( &config );	
+#endif
+
+	// Do some basic checks on given options
+	if ( config.wstype && check_for_valid_stream( config.wstype ) == -1 ) {
+		return ERRPRINTF( ERRCODE, "Selected stream '%s' is invalid.", config.wstype );
+	}
+
+	// The datasource names are dynamically allocated right now.
+	// Stick to that until we can get back to it...
+	// TODO: Connection strings should be statically allocated
+	if ( input.connstr )
+		input.connstr = strdup( input.connstr );
+	if ( output.connstr )
+		output.connstr = strdup( output.connstr );
+
+#ifdef DEBUG_H
 	// We keep this for testing
-	if ( dump_parsed_dsn ) {
+	if ( config.wdumpdsn ) {
 		if ( !parse_dsn_info( &input, err, sizeof( err ) ) ) {
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Input source is invalid: %s\n", err );
@@ -4301,16 +4367,15 @@ int main ( int argc, char *argv[] ) {
 
 		close_dsn( &input ), close_dsn( &output );
 	}
-	#endif
-
+#endif
 
 	// Start the timer here
-	if ( show_stats )
+	if ( config.wstats )
 		clock_gettime( CLOCK_REALTIME, &stimer );
 
 	// If the user didn't actually specify an action, we should close and tell them that
 	// what they did is useless.
-	if ( !convert && !schema && !headers_only )
+	if ( !config.wconvert && !config.wschema && !config.wheaders )
 		return ERRPRINTF( ERRCODE, "No action specified, exiting.\n" );
 
 	// The dsn is always going to be the input
@@ -4320,36 +4385,33 @@ int main ( int argc, char *argv[] ) {
 	}
 
 	// If the user specified a table, fill out 
-	if ( table && strlen( table ) < sizeof( input.tablename ) )
-		snprintf( input.tablename, sizeof( input.tablename ), "%s", table );
+	if ( config.wtable && strlen( config.wtable ) < sizeof( input.tablename ) )
+		snprintf( input.tablename, sizeof( input.tablename ), "%s", config.wtable );
 
 	// Open the DSN first (regardless of type)
-	if ( !open_dsn( &input, query, err, sizeof( err ) ) ) {
+	if ( !open_dsn( &input, &config, config.wquery, err, sizeof( err ) ) ) {
 		close_dsn( &input );
-		( table ) ? free( table ) : (void)0;
 		return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 	}
 
 	// Create the header_t here
-	if ( !headers_from_dsn( &input, err, sizeof( err ) ) ) {
+	if ( !headers_from_dsn( &input, &config, err, sizeof( err ) ) ) {
 		close_dsn( &input );
-		( table ) ? free( table ) : (void)0;
 		destroy_dsn_headers( &input );
 		return ERRPRINTF( ERRCODE, "Header creation failed: %s.\n", err );
 	}
 
 	// Create the headers only
-	if ( headers_only ) {
+	if ( config.wheaders ) {
 		cmd_headers( &input );
 		close_dsn( &input );
 		return 0;
 	}
 
 	// Scaffolding can fail
-	if ( !scaffold_dsn( &config, &input, &output, table, err, sizeof( err ) ) ) {
+	if ( !scaffold_dsn( &config, &input, &output, err, sizeof( err ) ) ) {
 		close_dsn( &input );
 		close_dsn( &output );
-		( table  )? free( table ) : (void)0;
 		return ERRPRINTF( ERRCODE, "%s", err );
 	}
 
@@ -4368,7 +4430,7 @@ int main ( int argc, char *argv[] ) {
 	}
 
 	// Get the types of each thing in the column
-	if ( !types_from_dsn( &input, &output, coercion, err, sizeof( err ) ) ) {
+	if ( !types_from_dsn( &input, &output, config.wcoerce, err, sizeof( err ) ) ) {
 		destroy_dsn_headers( &input );
 		close_dsn( &input );
 		close_dsn( &output );
@@ -4376,7 +4438,7 @@ int main ( int argc, char *argv[] ) {
 	}
 
 	// Create a schema
-	if ( schema ) {
+	if ( config.wschema ) {
 		if ( !schema_from_dsn( &input, &output, schema_fmt, MAX_STMT_SIZE, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &output );
@@ -4391,15 +4453,7 @@ int main ( int argc, char *argv[] ) {
 		close_dsn( &output );
 	}
 
-#if 0
-	else if ( classdata || structdata ) {
-		DPRINTF( "classdata || structdata only was called...\n" );
-		//if ( !struct_f( FFILE, DELIM ) ) return 1;
-	}
-#endif
-
-	else if ( convert ) {
-
+	else if ( config.wconvert ) {
 		// Check the stream
 		if ( !output.stream ) {
 			if ( output.type == DB_MYSQL )
@@ -4411,6 +4465,7 @@ int main ( int argc, char *argv[] ) {
 
 #if 1
 	#if 1
+//print_dsn( &output ); getchar();
 		// Test and try to create if it does not exist
 		if ( !test_dsn( &output, err, sizeof( err ) ) && !create_dsn( &input, &output, err, sizeof( err ) ) ) {
 			//close_dsn( &output );
@@ -4428,7 +4483,7 @@ int main ( int argc, char *argv[] ) {
 #endif
 
 		// Open the output dsn
-		if ( !open_dsn( &output, query, err, sizeof( err ) ) ) {
+		if ( !open_dsn( &output, &config, NULL, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
@@ -4440,6 +4495,7 @@ int main ( int argc, char *argv[] ) {
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Prepare output DSN failed: %s\n", err );
 		}	
+
 #if 0
 fprintf( stderr, "IN:\n" ),
 print_dsn( &input ), 
@@ -4484,7 +4540,7 @@ print_dsn( &output );
 	}
 
 	// Show the stats if we did that
-	if ( show_stats ) {
+	if ( config.wstats ) {
 		clock_gettime( CLOCK_REALTIME, &etimer );
 		fprintf( stdout, "%d record(s) copied...\n", input.rlen );
 		fprintf( stdout, "Time elapsed: %ld.%ld\n",

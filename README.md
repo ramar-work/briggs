@@ -1,12 +1,12 @@
 briggs
 ======
-Briggs is a simple C program for converting test data between many popular
+`briggs` is a simple command-line program for converting test data between many popular
 formats, such as:
 
 - JSON
 - CSV
 - XML
-- C/C++ structures
+- C/C++ & Java structures
 - SQL
 - and hopefully many more... 
 
@@ -18,14 +18,35 @@ Let's go champ...
 Installation
 ------------
 
-### 3-step install
+To get `briggs` working, you'll need at a minimum:
+
+- OpenSSL
+
+If you want MySQL, Postgres or Oracle support you'll need to add those libraries to your system or request that they be compiled in if building `briggs` from source.
+
+Keep reading for instructions on how to build.
+
+
+### Yum-Based Distributions (Red Hat, Oracle, Fedora, etc.)
+
+yum install postgresql
+
+
+### Apt-Based Distributions
+
+postgresql
+
+
+### Building from Source
+
+#### 3-step install
 
 On Unix-like systems (e.g. not Windows) `make && make install` should be all 
 that's needed to run on your system.  Windows users can get up and running fairly
 easily via Cygwin.  
 
 Provided you have wget or curl on your system, run the following three commands
-to get briggs built and installed on your system.
+to get `briggs` built and installed on your system.
 
 <pre>
 $ wget https://github.com/zaiah-dj/briggs/archive/master.zip
@@ -33,37 +54,49 @@ $ unzip master.zip && cd briggs-master/ && make
 $ sudo make install 
 </pre>
 
-briggs can be compiled with either `gcc` or `clang`.  Because of its simplicity,
-briggs is currently not using Autotools (`configure && make`).  So to build with
-`clang` instead, just use `make clang` instead of `make`.
-
 
 
 Usage
 -----
-Options for running briggs are as follows.
+Options for running `briggs` are as follows.
 
 <pre>
--c, --convert &lt;arg&gt;          Convert a supplied CSV file &lt;arg&gt; to another format
--e, --headers &lt;arg&gt;          Only display the headers in &lt;arg&gt;
--d, --delimiter &lt;arg&gt;        Specify a delimiter           
--r, --root &lt;arg&gt;             Specify a $root name for certain types of structures.
-                                   (Example using XML: &lt;$root&gt; &lt;key1&gt;&lt;/key1&gt; &lt;/$root&gt;)
--u, --output-delimiter &lt;arg&gt; Specify an output delimiter for strings
-                                   (NOTE: VERY useful for SQL)
--f, --format &lt;arg&gt;           Specify a format to convert to
--j, --json                         Convert into JSON.            
--x, --xml                          Convert into XML.             
--q, --sql                          Convert into general SQL INSERT statement.
--p, --prefix &lt;arg&gt;           Specify a prefix              
--s, --suffix &lt;arg&gt;           Specify a suffix              
--n, --no-newline                   Do not generate a newline after each row.
-    --no-unsigned                  Remove any unsigned character sequences.
--h, --help                         Show help.                    
+-i, --input &lt;arg&gt;             Specify an input datasource (required)
+    --create                  If an output source does not exist, create it
+-o, --output &lt;arg&gt;            Specify an output datasource (optional, default is stdout)
+-c, --convert                 Converts input data to another format or into a datasource
+-H, --headers                 Displays headers of input datasource and stop
+-S, --schema                  Generates an SQL schema using headers of input datasource
+-d, --delimiter &lt;arg&gt;         Specify a delimiter when using a file as input datasource
+-u, --output-delimiter &lt;arg&gt;  Specify an output delimiter when generating serialized output
+-t, --typesafe                Enforce and/or enable typesafety
+-C, --coerce                  Specify a type for a column   
+-f, --format &lt;arg&gt;            Specify a format to convert to
+-j, --json                    Convert into JSON (short for --convert --format "json")
+-x, --xml                     Convert into XML (short for --convert --format "xml")
+-q, --sql                     Convert into general SQL INSERT statement.
+-p, --prefix &lt;arg&gt;            Specify a prefix              
+-s, --suffix &lt;arg&gt;            Specify a suffix              
+    --class &lt;arg&gt;             Generate a Java-like class using headers of input datasource
+    --struct &lt;arg&gt;            Generate a C-style struct using headers of input datasource
+    --for &lt;arg&gt;               Use &lt;arg&gt; as the backend when generating a schema
+                              (See `man briggs` for available backends)
+    --camel-case              Use camel case for class properties or struct labels
+-n, --no-newline              Do not generate a newline after each row.
+    --id &lt;arg&gt;                Add and specify a unique ID column named &lt;arg&gt;.
+    --add-datestamps          Add columns for date created and date updated
+-a, --ascii                   Remove any characters that aren't ASCII and reproduce
+    --no-unsigned             Remove any unsigned character sequences.
+-T, --table &lt;arg&gt;             Use the specified table when connecting to a database for source data
+-Q, --query &lt;arg&gt;             Use this query to filter data from datasource
+-y, --stats                   Dump stats at the end of an operation
+-X, --dumpdsn                 Dump the DSN only. (DEBUG)    
+-h, --help                    Show help.                    
 </pre>
 
 
-### Quickstart
+Quickstart
+----------
 
 The repository ships with a few test files in the test/ folder. 
 Let's start off with the file called `test/inventory.csv`.  Running 
@@ -81,7 +114,7 @@ briggs -c test/inventory.csv -j
 
 Will yield a list resembling the following:
 <pre>
- {
+[{
 	 "inv_cost": "0.99"
 	,"inv_qty": "-1"
 	,"inv_item": "2020-11-04-Sunrise.mp3"
@@ -96,9 +129,10 @@ Will yield a list resembling the following:
 	,"inv_description": "Mr. Doctor – Scapes (MP3 encoded)"
 }
 /* this list continues... */
+}]
 </pre>
 
-If we take a peek at that file, we'll see that briggs is automatically 
+If we take a peek at that file, we'll see that `briggs` is automatically 
 using the first line of data as key names. 
 
 <pre>
@@ -108,7 +142,7 @@ inv_cost,inv_qty,inv_item,inv_image,inv_description
 
 If we would like to see those in one column, or just need to see what the
 key names will look like in a data structure, we can use the following to
-see what briggs made of the file's headers:
+see what `briggs` made of the file's headers:
 
 <pre>
 inv_cost
@@ -153,7 +187,7 @@ CREATE TABLE inventory (
 );
 </pre>
 
-Second, let briggs handle the conversion and place the insert 
+Second, let `briggs` handle the conversion and place the insert 
 statement into a file called inventory.sql.
 <pre>
 briggs -c test/inventory.csv -f sql --root inventory > inventory.sql
@@ -171,10 +205,10 @@ INSERT INTO inventory ( inv_cost,inv_qty,inv_item,inv_image,inv_description ) VA
 </pre>
 
 Notice how we used the `--root` option to specify the name of the table.  If we 
-didn't use it, briggs would have used the word 'root' as our assumed table name. 
+didn't use it, `briggs` would have used the word 'root' as our assumed table name. 
 
 It's worth noting that for options in which a named data structure will make 
-sense, briggs will rely on the root flag.  So, for example, if we wanted a C 
+sense, `briggs` will rely on the root flag.  So, for example, if we wanted a C 
 structure with a particular variable name, the --root option would be used to 
 specify that name.  Obviously, for certain formats this won't apply.
 
@@ -182,7 +216,7 @@ specify that name.  Obviously, for certain formats this won't apply.
 ### Slightly Advanced
 
 Let's take another example, using an Oracle database for storage.  By default,
-briggs will output SQL insert code with a single-quote delimiter for strings.  
+`briggs` will output SQL insert code with a single-quote delimiter for strings.  
 So what if we encounter a string like the third line below in one of our data 
 files? (Leading spaces have been added for clarity.)
 
@@ -264,12 +298,12 @@ string, that may contain strange characters like the ones in our test file.
 The idea is similar to a heredoc for those familiar with Bash or PHP.  You can
 read more about the 'q' mechanism <a href="https://docs.oracle.com/cd/B19306_01/server.102/b14200/sql_elements003.htm#sthref344">here</a>.
 
-To make use of things like this, briggs comes with an `--output-delimiter` option 
+To make use of things like this, `briggs` comes with an `--output-delimiter` option 
 (or `-u` for short) to change the default string enclosure.  It is invoked when 
 converting to SQL and used as a delimiter when not specifying a particular format.
 
 So, with no format specified, we'll get something like the following when running
-briggs with that flag:
+`briggs` with that flag:
 <pre>
 //Command
 briggs -c test/oracle.csv -u "q'[,]'"
@@ -327,12 +361,15 @@ INSERT INTO root ( record,address,city,state,zip,description ) VALUES
 
 
 
-### Rationale
+Rationale
+---------
 
 One of the reasons for writing this tool was a need to stay away from in-depth
 `sed` & `awk` incantations.  In theory, they can solve just about any problem 
-one would encounter when dealing with ASCII text.  In practice, it always takes
-too many lines and far too much thought to get at a quick solution.
+one would encounter when dealing with ASCII text.  In practice (for me anyway), 
+it always takes too many lines and far too much thought to get at a quick solution.
+
+
 
 
 
@@ -340,10 +377,10 @@ Help & Comments
 ---------------
 This is open-source software, and a project currently in beta.
 
-If it is not already a bit obvious, briggs was named in honor of New York's
+`briggs` was named in honor of New York's
 Shannon Briggs -- notorious for his vicious (and hilarious) trolling of 
 Vladimir Klitschko before the pair's promised title fight.
 
-Please submit a pull request, or just email me directly at 
-ramar@collinsdesign.net if you're having issues using briggs.
+Please submit a pull request, a comment here on Github, or just email me 
+directly at ramar@ramar.work if you're having issues using it.
 

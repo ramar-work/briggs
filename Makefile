@@ -1,20 +1,22 @@
 #!/usr/bin/make
+# Makefile.  Generated from Makefile.in by configure.
 NAME = briggs
-VERSION = 1.0.1f
-PREFIX=/usr/local
+PACKAGE="briggs"
+VERSION="1.0.1c"
+TARNAME="briggs"
+DISTDIR="$(TARNAME)-$(VERSION)"
+PREFIX="/usr/local"
+EXEC_PREFIX="${prefix}"
+BINDIR="${exec_prefix}/bin"
+SRCDIR="."
+VPATH="."
 DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
-TOPFILES = \
-	configure \
-	install-sh \
+FILES = \
 	Makefile \
-	Makefile.in \
-	README.md \
+	briggs.1 \
+	main.c \
 	tests.mk
-SRCFILES = \
-	src/main.c
-MANFILES = \
-	man/man1/briggs.1
 
 # Add MySQL
 MYSQL_IFLAGS=-Iinclude
@@ -37,7 +39,6 @@ IFLAGS=-Iinclude
 
 # Control Postgres and other database engine support from here for now
 FFLAGS=-DBPGSQL_H -DBMYSQL_H
-#FFLAGS=-DBPGSQL_H -DBMYSQL_H -DBSQLITE_H
 #FFLAGS=-DBPGSQL_H
 
 # Lib support flags
@@ -54,36 +55,30 @@ CC = gcc
 OBJECTS = vendor/zwalker.o vendor/util.o
 
 
-#Phony targets 
-.PHONY: main clean debug leak run other
-
+# Any local targets go here first...
+include local.mk
 
 # main - Default build, suitable for most people
 main: build
-main:
+main: 
 	@printf '' >/dev/null
-
 
 #
-debug: CFLAGS+=-DDEBUG_H -g
-debug: clean build
+debug: CFLAGS+=-DDEBUG_H
+debug: build
 debug:
 	@printf '' >/dev/null
-
 
 # main - Default build, suitable for most people
 local: build-local
 local: 
 	@printf '' >/dev/null
 
-
 #
 local-debug: CFLAGS+=-DDEBUG_H
 local-debug: build-local
 local-debug:
 	@printf '' >/dev/null
-
-
 
 # clang - Default build using clang, suitable for most people
 clang: CFLAGS=$(CLANGFLAGS)
@@ -92,65 +87,52 @@ clang: build
 clang: 
 	@printf '' >/dev/null
 
-
-
 # dev - Development target, using clang and asan for bulletproof-ness
-dev: CFLAGS=$(CLANGFLAGS) -g -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H -Wno-unused
+dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
 dev: CC=clang 
 dev: build
 dev: 
 	@printf '' >/dev/null
-
 
 # build - Build dependent objects
 # mariadb_config --include --libs
 build: $(OBJECTS)
 	$(CC) $(CFLAGS) $(FFLAGS) src/main.c -o $(NAME) $(OBJECTS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -lpq -ldl -lgnutls
 
-
+#
 build-local: $(OBJECTS)
 	$(CC) $(CFLAGS) $(FFLAGS) src/main.c -o $(NAME) $(OBJECTS) $(MYLIBS) $(PGLIBS) $(IFLAGS) -lz -lm -lpthread -ldl -lgnutls
 
-
-#$(CC) $(CFLAGS) $(FFLAGS) main.c -o $(NAME) $(OBJECTS) $(PGLIBS) $(MYLIBS) $(IFLAGS) -lssl -lcrypto -lz -lm -lpthread -ldl -lgnutls
-
-
+# 
 %.o: %.c 
 	$(CC) -c -o $@ $< $(CFLAGS)
-
 
 # clean - Clean up everything here
 clean:
 	-rm -f *.o vendor/*.o $(NAME)
 
-
 # install - Installs briggs to $PREFIX/bin
 install:
 	-mkdir -p $(PREFIX)/bin/  $(PREFIX)/share/man/man1/
 	cp $(NAME) $(PREFIX)/bin/
-	cp $(MANFILES) $(PREFIX)/share/man/man1/
-
+	cp $(NAME).1 $(PREFIX)/share/man/man1/
 
 # doctest - Creates HTML documentation
 doctest:
 	markdown -S README.md > $(DOCFILE)
 
-
 # mantest - Creates man page style documentation
 mantest:
-	man -l man/man1/briggs.1
-	
+	man -l briggs.1
 
 # pkg - Create a package of the latest version of 'master'
 pkg: TARGET=master
 pkg:
 	git archive --format tar $(TARGET) | gzip > $(NAME)-$(TARGET).tar.gz
 
-
 # pkgdev - Create a package of the latest version of 'dev'
 pkgdev:
 	git archive --format tar dev | gzip > $(NAME)-dev.tar.gz
-
 
 # list - list all the targets and what they do
 list:
@@ -161,36 +143,30 @@ list:
 # Create a package (in a different way)
 dist: $(DISTDIR).tar.gz
 
-
+# Create a package for Linux
 dist-linux: $(DISTDIR).tar.gz
 
+# Create a package for Windows 
+#dist-win: $(DISTDIR).tar.gz
 
-dist-win: $(DISTDIR).tar.gz
-
-
+# Create a package for Mac OS
 dist-osx: $(DISTDIR).tar.gz
-
 
 # Create a package archive 
 $(DISTDIR).tar.gz: $(DISTDIR)
 	tar chof - $(DISTDIR) | gzip -9 -c > $@	
-	mv $(DISTDIR).tar.gz archives/
 	rm -rf $(DISTDIR)
 
 # Create a package directory
 $(DISTDIR): clean
-	-rm -f archives/$(DISTDIR).tar.gz
-	-rm -rf $(DISTDIR)
+	rm -f $(DISTDIR).tar.gz
+	rm -rf $(DISTDIR)
 	mkdir -p \
 		$(DISTDIR)/example \
 		$(DISTDIR)/include \
 		$(DISTDIR)/lib \
-		$(DISTDIR)/man \
-		$(DISTDIR)/src \
 		$(DISTDIR)/vendor
-	cp $(TOPFILES) $(DISTDIR)/
-	cp -Lr src/* $(DISTDIR)/src/
-	cp -Lr man/* $(DISTDIR)/man/
+	cp $(FILES) $(DISTDIR)/
 	cp -Lr example/* $(DISTDIR)/example/
 	cp -Lr include/* $(DISTDIR)/include/
 	-cp lib/* $(DISTDIR)/lib/
@@ -199,17 +175,21 @@ $(DISTDIR): clean
 
 # Check that packaging worked (super useful for other distributions...) 
 distcheck:
-	gzip -cd archives/$(DISTDIR).tar.gz | tar xvf -
+	gzip -cd $(DISTDIR).tar.gz | tar xvf -
 	cd $(DISTDIR) && $(MAKE) local
 	cd $(DISTDIR) && $(MAKE) clean
 	rm -rf $(DISTDIR)
 	@echo "*** package $(DISTDIR).tar.gz is ready for distribution."
 
+# Regenerate the Makefile
+Makefile: Makefile.in config.status
+	./config.status $@
 
-# Generate documentation for testing
-testdoc:
-	markdown README.md > /tmp/index.html
-	chromium /tmp/index.html &
+# Regenerate config.status
+config.status: configure
+	./config.status --recheck
 
 # Include some test cases
 include tests.mk
+
+.PHONY: main clean debug dist distcheck install uninstall 

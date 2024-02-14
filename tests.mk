@@ -17,14 +17,23 @@ SILENT=
 STATUS=
 
 
+# Define a function to dump the invocation and run the command
+define TEST 
+	printf "Calling test: \"$(1)\" => "
+	$(1) 2>/dev/null
+endef
+
+
 
 # headers - Test the generation of headers from file, database table or SQL query
 headers:
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers; read  # Test a regular file
-	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --headers; read  # Test a regular file
-	$(EXECDIR)/briggs -d '#' -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers; read  # Test a regular file
-	$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --headers; read # Test a Postgres Connection
-	$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --headers; read # Test a MySQL connection
+	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers && echo 'Success!' || echo 'Failed!' 
+
+#	-@$(call TEST,$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers) && echo 'Success!' || echo 'Failed!' 
+#	-@$(call TEST,$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests.csv --headers) && echo 'Success!' || echo 'Failed!' 
+#	-@$(call TEST,$(EXECDIR)/briggs -d '#' -i $(EXECDIR)/tests/type_tests_hash_delimited.csv --headers) && echo 'Success!' || echo 'Failed!' 
+#	-@$(call TEST,$(EXECDIR)/briggs -i "postgres://bomb:giantbomb@localhost/washdb.washburn" --headers) && echo 'Success!' || echo 'Failed!' 
+#	-@$(call TEST,$(EXECDIR)/briggs -i "mysql://bomb:giantbomb@localhost/washdb.washburn" --headers) && echo 'Success!' || echo 'Failed!' 
 
 
 
@@ -65,6 +74,14 @@ conversion:
 	# To JSON from flat file
 	$(EXECDIR)/briggs -i $(EXECDIR)/tests/type_tests_postgres_small.csv -d '#' -T type_tests --json | jq && echo $(S) || echo $(F); $(WAIT)
 	$(EXECDIR)/briggs -i $(EXECDIR)/tests/available_scholarships.csv -d ';' -T type_tests --json | jq && echo $(S) || echo $(F); $(WAIT)
+
+	briggs -i "mysql://ncat:HbkCg0p83&dw@reporting.datacookbook.com:3306/itdb_production.object_functional_area_memberships" 
+	--convert --coerce functional_area_description=text --sql --for postgres
+
+xboom:
+	$(EXECDIR)/briggs --convert --coerce timev=time,yearv=integer,textv=text,blobv=text \
+		-i "mysql://root@localhost/mysql_briggs_media_tests.mysql_fancy_media" \
+		--convert --sql --for postgres
 
 boom:
 	# To Postgres from flat file (the load commands won't be failures, but load_media_tests ought to catch that first)
