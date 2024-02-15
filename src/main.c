@@ -32,7 +32,7 @@
  *   CSV
  * - Give Unicode another look 
  * - Generate random values for a column
- * - Add the --auto flag to automatically coerce types in cases
+ * ~ Add the --auto flag to automatically coerce types in cases
  *   where needed.
  * - Work on offset and count to give the ability to process only
  *   a subset of rows WITHOUT having to write a custom query
@@ -142,6 +142,7 @@
  #define print_headers(A) 0
  #define print_stream_type(A) 0
  #define print_date(A) 0
+ #define print_ctypes(A) 0
  #define WHERE() 0
  #define WPRINTF( ... ) 0 
  #define DEVAL( ... ) 0 
@@ -563,11 +564,13 @@ typedef struct function_t {
  * typedef struct coerce_t 
  *
  * Little structure to contain coerced arguments and their types.
+ * 
+ * NOTE: There is some wasted space, but this is so much simpler...
  *
  */
 typedef struct coerce_t {
-	const char name[ 128 ];
-	const char typename[ 64 ];
+	const char misc[ 128 ];
+	const char typename[ 128 ];
 } coerce_t;
 
 
@@ -855,6 +858,18 @@ const char null_keyword[] = "NULL";
 const unsigned long null_keyword_length = sizeof( "NULL" ) - 1;
 #endif
 
+/* Might need to do forward declarations... */
+#ifdef DEBUG_H
+void print_date( date_t * );
+void print_dsn ( dsn_t * );
+void print_headers( dsn_t * );
+void print_stream_type( stream_t );
+void print_config( config_t * );
+void print_ctypes( coerce_t ** );
+#endif
+
+void free_ctypes( coerce_t **ctypes );
+
 /**
  * static const char * get_conn_type( dbtype_t t ) 
  *
@@ -893,7 +908,7 @@ typemap_t * get_typemap_by_ntype ( const typemap_t *types, int type ) {
  */
 typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-		DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->name ); 
+		//DPRINTF( "%s: Checking types: %s ?= %s\n", __func__, name, t->name ); 
 		if ( !strcasecmp( name, t->name ) ) {
 			return (typemap_t *)t;
 		}
@@ -917,10 +932,8 @@ typemap_t * get_typemap_by_nname ( const typemap_t *types, const char *name ) {
  */
 typemap_t * get_typemap_by_btype ( const typemap_t *types, int btype ) {
 	for ( const typemap_t *t = types; t->ntype != TYPEMAP_TERM; t++ ) {
-	#ifdef DEBUG_H
-		DPRINTF( "%s: Checking types: %s (%s) %d ?= %d\n", __func__, t->name, t->libname, t->basetype, btype );
+		//DPRINTF( "%s: Checking types: %s (%s) %d ?= %d\n", __func__, t->name, t->libname, t->basetype, btype );
 		//fprintf( stderr, "TYPESTUFF %s %s %d != %d\n", t->typename, t->libtypename, t->basetype, btype );
-	#endif
 		if ( btype == t->basetype && t->preferred ) return (typemap_t *)t;
 	}
 	return NULL;
@@ -1792,12 +1805,15 @@ int create_dsn ( dsn_t *ic, dsn_t *oc, char *err, int errlen ) {
 #if 1
 	// TODO: Some engines can't run with a semicolon
 	for ( char *s = schema_fmt; *s; s++ ) {
+		// TODO: Try `if ( *s == ';' && *s = '\0' ) break`
 		if ( *s == ';' ) {
 			*s = '\0';	
 			break;
 		}
 	}
-	fprintf( stdout, "SCHEMA => %s\n", schema_fmt );
+
+fprintf( stdout, "SCHEMA => %s\n", schema_fmt );
+print_dsn( oc );
 #endif
 
 	// SQLite: create table (db ought to be created when you open it)
@@ -2135,45 +2151,128 @@ int open_dsn ( dsn_t *conn, config_t *conf, const char *qopt, char *err, int err
  */
 static const char * find_ctype ( coerce_t **list, const char *name ) {
 	for ( coerce_t **x = list; x && *x; x++ ) {
-		if ( !strcasecmp( (*x)->name, name ) ) return (*x)->typename;
+		if ( !strcasecmp( (*x)->misc, name ) ) return (*x)->typename;
 	}
 	return NULL;
 }
 
 
 /**
- * static coerce_t * create_ctype( const char *src, int len ) 
+ * static const char * find_atype ( coerce_t **list, const char *name ) 
  *
- * Add a coercion type to a specific column.
+ * Locate a specific coerced type.
  *
  */
-static coerce_t * create_ctype( const char *src, int len ) {
+static const char * find_atype ( coerce_t **list, const char *typename ) {
+	for ( coerce_t **x = list; x && *x; x++ ) {
+		if ( !strcasecmp( (*x)->misc, typename ) ) return (*x)->typename;
+	}
+	return NULL;
+}
 
-	coerce_t *t = NULL;
+
+
+/**
+ * coerce_t * create_ctypes( const char *src, char *err, int errlen ) 
+ *
+ * Create a key-value list of column names and their "coerced" type matches.
+ *
+ */
+coerce_t ** create_ctypes( const char *src, dsn_t *iconn, dsn_t *oconn, char *err, int errlen ) {
+
+	// Define stuff
+	coerce_t **ctypes = NULL;
+	int ctypeslen = 0;
 	zw_t pp = { 0 };
+	const char *fmt = ( !iconn ) ? "--coerce" : "--auto";
 
-	// Stop if there are too many
-	if ( memchrocc( src, '=', len ) > 1 )
+	// No matter who is calling, `oconn` is always needed
+	if ( !oconn ) {
+		fprintf( stderr, "NO OUPTUT CONNECTION GIVEN TO %s", __func__ );
 		return NULL;
+	}
 
-	// Try allocation
-	if ( !( t = malloc( sizeof( coerce_t ) ) ) || !memset( t, 0, sizeof( coerce_t ) ) )
-		return NULL;
+	// Loop through however many may exist
+	for ( coerce_t *t = NULL; strwalk( &pp, src, "," ); t = NULL ) {
+		if ( pp.size - 1 ) {
+			zw_t px = { 0 };
+			unsigned char *n = NULL; 
+			char p[ 256 ] = { 0 };
+			int len = pp.size - 1;
 
-	for ( int i = 0; memwalk( &pp, (unsigned char *)src, (unsigned char *)"=", len, 1 ); i++ ) {
-#if 0
-fprintf( stderr, "COERCION MULT: " ),
-write( 2, &src[ pp.pos ], pp.size - 1 ),
-fprintf( stderr, "\n" );
-#endif
-		if ( i == 0 )
-			memcpy( ( char *)t->name, &src[ pp.pos ], pp.size - 1 );
-		else {
-			memcpy( (char *)t->typename, &src[ pp.pos ], pp.size - 1 );
+			// Copy to new buffer or fail
+			if ( ( pp.size - 1 ) < sizeof( p ) ) {
+				n = trim( (unsigned char *)&src[ pp.pos ], " ", pp.size - 1, &len );
+				memcpy( p, n, len );
+			}
+			else {
+				memcpy( p, &src[ pp.pos ], 32 );
+				memcpy( &p[ 32 ], "...", 3 );
+				snprintf( err, errlen, "Argument given to %s will truncate: '%s'", fmt, p );
+				return NULL;
+			}
+		
+			// Stop if there are too many
+			if ( memchrocc( p, '=', strlen( p ) ) != 1 ) {
+				snprintf( err, errlen, "Argument given to %s is misformatted: '%s'", fmt, p );
+				return NULL;
+			}
+
+			// Catch allocation failures
+			if ( !( t = malloc( sizeof( coerce_t ) ) ) || !memset( t, 0, sizeof( coerce_t ) ) ) {
+				snprintf( err, errlen, "Allocation failed(): %s\n", strerror( errno ) );
+				return NULL;
+			}
+
+			// Then break the type and thing 
+			for ( int i = 0; strwalk( &px, p, "=" ); i++ ) {
+				// Define more
+				int len = 0;
+				char b[ 128 ] = { 0 };
+				unsigned char *n = NULL;
+				typemap_t *tmap = NULL;
+
+				// Check for zero-length or overflow and copy to buffer
+				if ( ( px.size - 1 ) < 1 ) {
+					// This is a format error
+					snprintf( err, errlen, "Got zero-length argument at %s", fmt );
+					return NULL;
+				}
+				else if ( ( px.size - 1 ) > sizeof( b ) ) {
+					snprintf( err, errlen, "Argument given to %s will truncate: '%s'", fmt, p );
+					return NULL;
+				}
+				else {
+					n = trim( (unsigned char *)&p[ px.pos ], " ", px.size - 1, &len );
+					memcpy( b, n, len );
+				}	
+
+				// Get the key
+				if ( i )
+					snprintf( (char *)t->typename, sizeof( t->typename ), "%s", b );
+				else {
+					// No input means that this first key is a column label
+					if ( !iconn )
+						snprintf( (char *)t->misc, sizeof( t->misc ), "%s", b );
+					else {
+						// Check that the input type is even supported
+						if ( !( tmap = get_typemap_by_nname( iconn->typemap, b ) ) ) {
+							free( t );
+							snprintf( err, errlen, "Type '%s' not found in argument at %s", b, fmt );
+							return NULL;	
+						}
+
+						snprintf( (char *)t->misc, sizeof( t->misc ), "%s", tmap->name );
+					}
+				}
+			}
+
+			// Add this to the list...
+			add_item( &ctypes, t, coerce_t *, &ctypeslen );
 		}
 	}
 
-	return t;
+	return ctypes;
 }
 
 
@@ -3438,6 +3537,11 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 	#ifdef BPGSQL_H
 		else if ( oconn->stream == STREAM_PGSQL ) {
 			pgsql_t *b = (pgsql_t *)oconn->conn;
+
+
+fprintf( stderr, "QUERY:\n" );
+write( 2, b->query, strlen( b->query ) );
+
 			PGresult *r = PQexecParams(
 				b->conn,
 				b->query,
@@ -3480,10 +3584,9 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 
 
 /**
- * close_dsn( dsn_t * )
- * ===================
+ * close_dsn( dsn_t *conn )
  *
- * Close a data source.
+ * Closes a data source: `conn`.
  *
  */
 void close_dsn( dsn_t *conn ) {
@@ -3537,22 +3640,30 @@ void close_dsn( dsn_t *conn ) {
 }
 
 
-
-
 /**
- * types_from_dsn( dsn_t * )
- * ===========================
+ * int types_from_dsn( dsn_t * iconn, dsn_t *oconn, config_t *conf, char *err, int errlen ) 
  *
- * Checks that we can support all of the types specified by a query
+ * Checks that we can support all of the types specified by a query.
  *
  */
-int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen ) {
+int types_from_dsn( dsn_t * iconn, dsn_t *oconn, config_t *conf, char *err, int errlen ) {
 	// Define
 	char *ename = NULL;
 	coerce_t **ctypes = NULL;
+	coerce_t **atypes = NULL;
 
-	// Evaluate the coercion string if one is available
-	// The type that is saved will be the coerced one
+	// Create a map of what a specific type should ALWAYS map to
+	if ( conf->wautocast && !( atypes = create_ctypes( conf->wautocast, iconn, oconn, err, errlen ) ) )
+		return 0;
+
+	// Create a map of what individual columsn should map to
+	if ( conf->wcoerce && !( ctypes = create_ctypes( conf->wcoerce, NULL, oconn, err, errlen ) ) )
+		return 0;
+
+	fprintf( stderr, "AUTOCASTED TYPES\n" ), print_ctypes( atypes ), fprintf( stderr, "\n" );
+	fprintf( stderr, "COERCED TYPES\n" ), print_ctypes( ctypes ), fprintf( stderr, "\n" );
+
+#if 0
 	if ( ov ) {
 		int ctypeslen = 0;
 
@@ -3595,6 +3706,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			}
 		}
 	}
+#endif
 
 	//
 	if ( iconn->type == DB_FILE ) {
@@ -3643,13 +3755,16 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			typemap_t *cm = NULL;
 
 			// Check if any of these are looking for a coerced type
-			if ( ov && ( ctype = find_ctype( ctypes, st->label ) ) ) {
+			if ( ctypes && ( ctype = find_ctype( ctypes, st->label ) ) ) {
 				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctype ) ) ) {
 					// TODO: Complete this message
 					const char fmt[] = "FILE: Failed to find desired type '%s' at column '%s'";
 					snprintf( err, errlen, fmt, ctype, st->label );
 					return 0;
 				}
+			}
+			else if ( atypes ) {
+
 			}
 
 			// TODO: Assuming a blank value is a string might not always be the best move
@@ -3690,6 +3805,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 #ifdef BMYSQL_H
 	else if ( iconn->type == DB_MYSQL ) {
 		mysql_t *b = (mysql_t *)iconn->conn;
+		const char eng[] = "MySQL";
 
 		for ( int i = 0, fcount = mysql_field_count( b->conn ); i < fcount; i++ ) {
 			MYSQL_FIELD *f = mysql_fetch_field_direct( b->res, i );
@@ -3702,20 +3818,31 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			// TODO: If unsupported, it probably should be null and I either 
 			// coerce or guess instead of just dying...
 			if ( !( nm = get_typemap_by_ntype( iconn->typemap, f->type ) ) ) {
-				snprintf( err, errlen, "Unsupported MySQL type received: %d", f->type );
+				snprintf( err, errlen, "Unsupported %s type received: %d", eng, f->type );
 				return 0;
 			}
 
-			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctypename = find_ctype( ctypes, name ) ) ) {
-				// Find the forced/coerced type or die trying
-				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctypename ) ) ) {
-					const char fmt[] = "MySQL: Failed to find desired type '%s' "
-						"for column '%s' for supported %s types ";
-					snprintf( err, errlen, fmt, ctypename, name, ename );
+			// Check if there are any matching coerced types for this column
+			if ( ctypes && ( ctypename = find_ctype( ctypes, name ) ) ) {
+				cm = get_typemap_by_nname( oconn->typemap, ctypename );
+				if ( !cm ) {
+					const char fmt[] = "%s: Failed to find desired type '%s' for column '%s' for supported %s types ";
+					snprintf( err, errlen, fmt, eng, ctypename, name, ename );
 					return 0;
 				}
 			}
+			// Check if any --auto rules have been declared 
+			else if ( atypes && ( ctypename = find_atype( atypes, nm->name ) ) ) {
+				cm = get_typemap_by_nname( oconn->typemap, ctypename );
+				if ( !cm ) {
+					const char fmt[] = "%s: Auto conversion to type '%s' failed for column '%s'";
+					snprintf( err, errlen, fmt, eng, ctypename, name );
+					return 0;
+				}
+			}
+
+			// This can still be useful...
+			FPRINTF( "Got coerced type %s for column '%s'\n", ctypename, name );
 
 			// Set the native type always
 			st->ntype = nm;
@@ -3729,9 +3856,9 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 				// Different output type, and no coercion, so find the closest match
 				DPRINTF( "BASE TYPE IS %d %s\n", nm->basetype, itypes[ nm->basetype ] );
 				if ( !( am = get_typemap_by_btype( oconn->typemap, nm->basetype ) ) ) {
-					const char fmt[] = "MySQL: Failed to find matching type "
+					const char fmt[] = "%s: Failed to find matching type "
 						"for column '%s', type '%s' for supported %s types ";
-					snprintf( err, errlen, fmt, name, "x", "x" );
+					snprintf( err, errlen, fmt, eng, name, "x", "x" );
 					return 0;
 				}
 				st->ptype = am;
@@ -3751,6 +3878,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 #ifdef BPGSQL_H
 	else if ( iconn->type == DB_POSTGRESQL ) {
 		pgsql_t *b = (pgsql_t *)iconn->conn;
+		const char eng[] = "PostgreSQL";
 		for ( int i = 0, fcount = PQnfields( b->res ); i < fcount; i++ ) {
 			header_t *st = iconn->headers[ i ];
 			const char *name = PQfname( b->res, i );
@@ -3762,20 +3890,32 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			// TODO: If unsupported, it probably should be null and I either 
 			// coerce or guess instead of just dying...
 			if ( !( nm = get_typemap_by_ntype( iconn->typemap, pgtype ) ) ) {
-				snprintf( err, errlen, "Unsupported Postgres type received: %d", pgtype );
+				snprintf( err, errlen, "Unsupported %s type received: %d", eng, pgtype );
 				return 0;
 			}
 
-			// If the user asked for a coerced type, add it here
-			if ( ov && ( ctypename = find_ctype( ctypes, name ) ) ) {
-				// Find the forced/coerced type or die trying
-				if ( !( cm = get_typemap_by_nname( oconn->typemap, ctypename ) ) ) {
-					const char fmt[] = "Postgres: Failed to find desired tye '%s' "
-						"for column '%s' for supported %s types ";
-					snprintf( err, errlen, fmt, ctypename, name, ename );
+			// Check if there are any matching coerced types for this column
+			if ( ctypes && ( ctypename = find_ctype( ctypes, name ) ) ) {
+				cm = get_typemap_by_nname( oconn->typemap, ctypename );
+				if ( !cm ) {
+					const char fmt[] = "%s: Failed to find desired type '%s' for column '%s' for supported %s types ";
+					snprintf( err, errlen, fmt, eng, ctypename, name, ename );
 					return 0;
 				}
 			}
+			// Check if any --auto rules have been declared 
+			else if ( atypes && ( ctypename = find_atype( atypes, nm->name ) ) ) {
+				cm = get_typemap_by_nname( oconn->typemap, ctypename );
+				if ( !cm ) {
+					const char fmt[] = "%s: Auto conversion to type '%s' failed for column '%s'";
+					snprintf( err, errlen, fmt, eng, ctypename, name );
+					return 0;
+				}
+			}
+
+			// This can still be useful...
+			FPRINTF( "Got coerced type %s for column '%s'\n", ctypename, name );
+
 
 			// Set the native type always
 			st->ntype = nm;
@@ -3788,9 +3928,9 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 			else {
 				// Different output type, and no coercion, so find the closest match
 				if ( !( am = get_typemap_by_btype( oconn->typemap, nm->basetype ) ) ) {
-					const char fmt[] = "Postgres: Failed to find matching type "
+					const char fmt[] = "%s: Failed to find matching type "
 						"for column '%s', type '%s' in supported %s types ";
-					snprintf( err, errlen, fmt, name, nm->name, get_conn_type( oconn->type ) );
+					snprintf( err, errlen, fmt, eng, name, nm->name, get_conn_type( oconn->type ) );
 					return 0;
 				}
 				st->ptype = am;
@@ -3808,10 +3948,7 @@ int types_from_dsn( dsn_t * iconn, dsn_t *oconn, char *ov, char *err, int errlen
 	}
 #endif
 
-	for ( coerce_t **x = ctypes; x && *x; x++ ) free( *x );
-	free( ctypes );
-
-//print_dsn( iconn );
+	free_ctypes( atypes ), free_ctypes( ctypes );
 	return 1;
 }
 
@@ -3942,6 +4079,22 @@ int cmd_headers ( dsn_t *conn ) {
 	destroy_dsn_headers( conn );
 	return 1;
 }
+
+
+
+/**
+ * void free_ctypes( coerce_t **ctypes ) 
+ *
+ * Free allocate coerce_t arrays.
+ *
+ */
+void free_ctypes( coerce_t **ctypes ) {
+	if ( ctypes ) {
+		for ( coerce_t **x = ctypes; x && *x; x++ ) free( *x ); 
+		free( ctypes );
+	}
+}
+
 
 
 
@@ -4178,6 +4331,20 @@ void print_config( config_t *config ) {
 	fprintf( stderr, "%-20s= %s\n", "wtable", config->wtable ); 
 }
 
+
+/**
+ * void print_ctypes( coerce_t **ctypes ) 
+ *
+ * Dump the coerced types.
+ *
+ */
+void print_ctypes( coerce_t **ctypes ) {
+	for ( coerce_t **x = ctypes; x && *x; x++ ) {
+		fprintf( stderr, "%s => %s\n", (*x)->misc, (*x)->typename );
+	}
+}
+
+
 #endif
 
 
@@ -4333,7 +4500,7 @@ int main ( int argc, char *argv[] ) {
 		// Could evaluate again here...
 	}
 
-#ifdef DEBUG_H
+#if 0
 	fprintf( stderr, "[ INPUT ]\n" ), print_dsn( &input );	
 	fprintf( stderr, "[ OUTPUT ]\n" ), print_dsn( &output );	
 	fprintf( stderr, "[ CONFIG ]\n" ), print_config( &config );	
@@ -4430,7 +4597,7 @@ int main ( int argc, char *argv[] ) {
 	}
 
 	// Get the types of each thing in the column
-	if ( !types_from_dsn( &input, &output, config.wcoerce, err, sizeof( err ) ) ) {
+	if ( !types_from_dsn( &input, &output, &config, err, sizeof( err ) ) ) {
 		destroy_dsn_headers( &input );
 		close_dsn( &input );
 		close_dsn( &output );
@@ -4496,7 +4663,7 @@ int main ( int argc, char *argv[] ) {
 			return ERRPRINTF( ERRCODE, "Prepare output DSN failed: %s\n", err );
 		}	
 
-#if 0
+#if 1
 fprintf( stderr, "IN:\n" ),
 print_dsn( &input ), 
 fprintf( stderr, "\nOUT:\n" ),

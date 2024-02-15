@@ -88,7 +88,7 @@ clang:
 	@printf '' >/dev/null
 
 # dev - Development target, using clang and asan for bulletproof-ness
-dev: CFLAGS=$(CLANGFLAGS) -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
+dev: CFLAGS=$(CLANGFLAGS) -g -fsanitize=address -fsanitize-undefined-trap-on-error -DDEBUG_H
 dev: CC=clang 
 dev: build
 dev: 
