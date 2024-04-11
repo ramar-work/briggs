@@ -2,7 +2,7 @@
 # Makefile.  Generated from Makefile.in by configure.
 NAME = briggs
 PACKAGE="briggs"
-VERSION="1.0.1c"
+VERSION="1.0.1-auto"
 TARNAME="briggs"
 DISTDIR="$(TARNAME)-$(VERSION)"
 PREFIX="/usr/local"
@@ -14,8 +14,9 @@ DOCFILE=/tmp/$(NAME).html
 DISTDIR = $(NAME)-$(VERSION)
 FILES = \
 	Makefile \
-	briggs.1 \
-	main.c \
+	Makefile.in \
+	man/man1/briggs.1 \
+	src/main.c \
 	tests.mk
 
 # Add MySQL

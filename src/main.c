@@ -1757,14 +1757,17 @@ int test_dsn (dsn_t *conn, char *err, int errlen) {
 	}
 	else if ( conn->type == DB_SQLITE ) {
 		// Same here.  Access could technically be used with the database name or path specified
+FPRINTF( "SQlite output conn test failed.\n" );
 		return 0;
 	}
 	else if ( conn->type == DB_MYSQL ) {
 		// You'll need to be able to connect and test for existence of db and table
+FPRINTF( "MySQL output conn test failed.\n" );
 		return 0;
 	}
 	else if ( conn->type == DB_POSTGRESQL ) {
 		// You'll need to be able to connect and test for existence of db and/or table
+FPRINTF( "Postgres output conn test failed.\n" );
 		return 0;
 	}
 	return 1;
@@ -1802,7 +1805,7 @@ int create_dsn ( dsn_t *ic, dsn_t *oc, char *err, int errlen ) {
 		return 0;
 	}
 
-#if 1
+#if 0
 	// TODO: Some engines can't run with a semicolon
 	for ( char *s = schema_fmt; *s; s++ ) {
 		// TODO: Try `if ( *s == ';' && *s = '\0' ) break`
@@ -1812,8 +1815,7 @@ int create_dsn ( dsn_t *ic, dsn_t *oc, char *err, int errlen ) {
 		}
 	}
 
-fprintf( stdout, "SCHEMA => %s\n", schema_fmt );
-print_dsn( oc );
+fprintf( stdout, "Generated schema: %s\n", schema_fmt );
 #endif
 
 	// SQLite: create table (db ought to be created when you open it)
@@ -1823,6 +1825,7 @@ print_dsn( oc );
 #ifdef BMYSQL_H
 	// MySQL: create db & table (use an if not exists?, etc)
 	else if ( oc->type == DB_MYSQL ) {
+FPRINTF( "Attempting to create new MySQL table from %s.\n", schema_fmt );
 		// Try to connect to instance first
 		MYSQL *t = NULL;
 		MYSQL *myconn = NULL;
@@ -1871,6 +1874,7 @@ print_dsn( oc );
 
 		// Close the MS connection
 		mysql_close( myconn );
+FPRINTF( "Creation of MySQL table succeeded\n" );
 	}
 #endif
 
@@ -1878,6 +1882,7 @@ print_dsn( oc );
 #ifdef BPGSQL_H
 	// Postgres: create db & table (use an if not exists?, etc)
 	else if ( oc->type == DB_POSTGRESQL ) {
+FPRINTF( "Attempting to create new PostgreSQL table from %s.\n", schema_fmt );
 		// Try to connect to insetance first
 		PGconn *pgconn = NULL;
 		PGresult *pgres = NULL;
@@ -1913,19 +1918,22 @@ fprintf( stdout, "CS = %s\n", cs );
 			return 0;
 		}
 
-#if 1
-		// Check if db exists (if not create it)
-		if ( !( pgres = PQexec( pgconn, schema_fmt ) ) ) {
+		// NOTE: 2024-02-15: 
+		// Per PQexec docs, pgres MAY very well be NULL after this.  Check it
+		// anyway and use PQerrorMessage(...) to get more info
+		pgres = PQexec( pgconn, schema_fmt );
+
+		if ( PQresultStatus( pgres ) != PGRES_COMMAND_OK ) {
 			const char fmt[] = "Failed to run query against selected db and table: '%s'";
 			snprintf( err, errlen, fmt, PQerrorMessage( pgconn ) );
 			PQfinish( pgconn );
 			return 0;
 		}
-#endif
 
 		// Need to clear and preferably destroy it...
 		PQclear( pgres );
 		PQfinish( pgconn );
+FPRINTF( "Creation of PostgreSQL table succeeded\n" );
 	}
 #endif
 
@@ -1933,8 +1941,15 @@ fprintf( stdout, "CS = %s\n", cs );
 }
 
 
-//
-int modify_pgconnstr ( char *connstr, int fmtlen ) {
+
+#if 0
+/**
+ * int modify_pgconnstr ( char *connstr, int fmtlen ) 
+ *
+ * Modify the Postgres connection string without making a duplicate.
+ *
+ */
+static int modify_pgconnstr ( char *connstr, int fmtlen ) {
 	char *start = NULL, *tstart = NULL, *qstart = NULL;
 	if ( ( start = memchr( connstr, '@', strlen( connstr ) ) ) ) {
 	#if 1
@@ -1955,6 +1970,7 @@ int modify_pgconnstr ( char *connstr, int fmtlen ) {
 	}
 	return 1;
 }
+#endif
 
 
 /**
@@ -1963,7 +1979,7 @@ int modify_pgconnstr ( char *connstr, int fmtlen ) {
  * Open a manage a data source.
  *
  */
-int open_dsn ( dsn_t *conn, config_t *conf, const char *qopt, char *err, int errlen ) {
+int open_dsn ( dsn_t *conn, config_t *conf, char *err, int errlen ) {
 	WPRINTF( "Attempting to open connection indicated by '%s'", conn->connstr );
 	char query[ 2048 ];
 	memset( query, 0, sizeof( query ) );
@@ -2017,17 +2033,15 @@ int open_dsn ( dsn_t *conn, config_t *conf, const char *qopt, char *err, int err
 		return 1;
 	}
 
-
 	// Stop if no table name was specified
 	if ( !conf->wtable && ( !( *conn->tablename ) || strlen( conn->tablename ) < 1 ) ) {
 		snprintf( err, errlen, "No table name specified for source data." );
 		return 0;
 	}
 
-
 	// Create the final query from here too
-	if ( qopt )
-		snprintf( query, sizeof( query ) - 1, "%s", qopt );
+	if ( conf->wquery )
+		snprintf( query, sizeof( query ) - 1, "%s", conf->wquery );
 	else {
 		snprintf( query, sizeof( query ) - 1, "SELECT * FROM %s", conn->tablename );
 	}
@@ -3538,10 +3552,6 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 		else if ( oconn->stream == STREAM_PGSQL ) {
 			pgsql_t *b = (pgsql_t *)oconn->conn;
 
-
-fprintf( stderr, "QUERY:\n" );
-write( 2, b->query, strlen( b->query ) );
-
 			PGresult *r = PQexecParams(
 				b->conn,
 				b->query,
@@ -4188,7 +4198,6 @@ static config_t config = {
 	.wspcase = 0,
 	.wid = 0,   // Use a unique ID when reading from a datasource
 	.wstats = 0,   // Use the stats
-	
 	.wcutcols = NULL,  // The user wants to cut columns
 	.widname = NULL,  // The unique ID column name
 	.wcoerce = NULL,  // The user wants to override certain types
@@ -4460,14 +4469,14 @@ int main ( int argc, char *argv[] ) {
 				return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for flag --for." );
 
 			if ( !strcasecmp( *argv, "sqlite3" ) )
-				config.wdbengine = SQL_SQLITE3, output.connstr = strdup( "sqlite3://" );
+				config.wdbengine = SQL_SQLITE3, output.connstr = "sqlite3://";
 		#ifdef BPGSQL_H
 			else if ( !strcasecmp( *argv, "postgres" ) )
-				config.wdbengine = SQL_POSTGRES, output.connstr = strdup( "postgres://" );
+				config.wdbengine = SQL_POSTGRES, output.connstr = "postgres://";
 		#endif
 		#ifdef BMYSQL_H
 			else if ( !strcasecmp( *argv, "mysql" ) )
-				config.wdbengine = SQL_MYSQL, output.connstr = strdup( "mysql://" );
+				config.wdbengine = SQL_MYSQL, output.connstr = "mysql://";
 		#endif
 		#if 0
 			else if ( !strcasecmp( *argv, "mssql" ) )
@@ -4500,12 +4509,6 @@ int main ( int argc, char *argv[] ) {
 		// Could evaluate again here...
 	}
 
-#if 0
-	fprintf( stderr, "[ INPUT ]\n" ), print_dsn( &input );	
-	fprintf( stderr, "[ OUTPUT ]\n" ), print_dsn( &output );	
-	fprintf( stderr, "[ CONFIG ]\n" ), print_config( &config );	
-#endif
-
 	// Do some basic checks on given options
 	if ( config.wstype && check_for_valid_stream( config.wstype ) == -1 ) {
 		return ERRPRINTF( ERRCODE, "Selected stream '%s' is invalid.", config.wstype );
@@ -4516,6 +4519,7 @@ int main ( int argc, char *argv[] ) {
 	// TODO: Connection strings should be statically allocated
 	if ( input.connstr )
 		input.connstr = strdup( input.connstr );
+
 	if ( output.connstr )
 		output.connstr = strdup( output.connstr );
 
@@ -4556,7 +4560,7 @@ int main ( int argc, char *argv[] ) {
 		snprintf( input.tablename, sizeof( input.tablename ), "%s", config.wtable );
 
 	// Open the DSN first (regardless of type)
-	if ( !open_dsn( &input, &config, config.wquery, err, sizeof( err ) ) ) {
+	if ( !open_dsn( &input, &config, err, sizeof( err ) ) ) {
 		close_dsn( &input );
 		return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 	}
@@ -4650,11 +4654,17 @@ int main ( int argc, char *argv[] ) {
 #endif
 
 		// Open the output dsn
-		if ( !open_dsn( &output, &config, NULL, err, sizeof( err ) ) ) {
+		if ( !open_dsn( &output, &config, err, sizeof( err ) ) ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 		}
+
+#if 0
+	fprintf( stderr, "[ INPUT ]\n" ), print_dsn( &input );	
+	fprintf( stderr, "[ OUTPUT ]\n" ), print_dsn( &output );	
+	fprintf( stderr, "[ CONFIG ]\n" ), print_config( &config );	
+#endif
 
 		// Try to prepare
 		if ( !prepare_dsn_for_write( &output, &input, err, sizeof( err ) ) ) {

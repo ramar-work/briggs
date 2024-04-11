@@ -1,6 +1,6 @@
 # 
 AC_PREREQ([2.71])
-AC_INIT([briggs], [1.0.1c], [ramar@ramar.work], [], [https://briggsdb.com])
+AC_INIT([briggs], [1.0.1-auto], [ramar@ramar.work], [], [https://briggsdb.com])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 
@@ -72,18 +72,18 @@ AC_SUBST(cc)
 
 
 # Find SQLite3 headers or use the local version
-AC_ARG_ENABLE([local-sqlite3], AS_HELP_STRING([--enable-local-sqlite3],[Use the provided SQLite3 library]), [local_sqlite3=1])
-if test ${local_sqlite3} == 1; then
-	objdeps+="vendor/sqlite3.o "
-else
-	# Find SQLite3 header
-	SQLITE3_HEADER_ERRMSG="SQLite3 headers were not found"
-	AC_CHECK_HEADER([sqlite3.h], [], AC_MSG_FAILURE([${SQLITE3_HEADER_ERRMSG}]))
-	SQLITE3_LIB_ERRMSG="SQLite3 library not found"
-	# FIXME: Replace `main' with a function in `-lsqlite3':
-	AC_CHECK_LIB([sqlite3], [main], [], AC_MSG_FAILURE(${SQLITE3_LIB_ERRMSG}))
-	ld_flags+=" -lsqlite3"
-fi
+#AC_ARG_ENABLE([local-sqlite3], AS_HELP_STRING([--enable-local-sqlite3],[Use the provided SQLite3 library]), [local_sqlite3=1])
+#if test ${local_sqlite3} == 1; then
+#	objdeps+="vendor/sqlite3.o "
+#else
+#	# Find SQLite3 header
+#	SQLITE3_HEADER_ERRMSG="SQLite3 headers were not found"
+#	AC_CHECK_HEADER([sqlite3.h], [], AC_MSG_FAILURE([${SQLITE3_HEADER_ERRMSG}]))
+#	SQLITE3_LIB_ERRMSG="SQLite3 library not found"
+#	# FIXME: Replace `main' with a function in `-lsqlite3':
+#	AC_CHECK_LIB([sqlite3], [main], [], AC_MSG_FAILURE(${SQLITE3_LIB_ERRMSG}))
+#	ld_flags+=" -lsqlite3"
+#fi
 
 
 AC_CONFIG_FILES([Makefile])
