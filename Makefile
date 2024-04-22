@@ -57,7 +57,8 @@ OBJECTS = vendor/zwalker.o vendor/util.o
 
 
 # Any local targets go here first...
-include local.mk
+# include local.mk
+
 
 # main - Default build, suitable for most people
 main: build

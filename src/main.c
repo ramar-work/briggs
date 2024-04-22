@@ -181,6 +181,7 @@ typedef enum {
 , STREAM_COMMA
 , STREAM_CARRAY
 , STREAM_JCLASS
+, STREAM_RAW /* Like SQL dump, but with custom row and column delims */
 , STREAM_CUSTOM
 #ifdef BSQLITE_H
 , STREAM_SQLITE
@@ -537,6 +538,9 @@ typedef struct dsn_t {
 	int offset;
 	int size;
 	stream_t stream;
+
+	char *rowd;
+	char *cold;
 } dsn_t;
 
 
@@ -606,6 +610,8 @@ typedef struct config_t {
 	char *wtable; 
 	char *wstype; 
 	sqltype_t wdbengine; 
+	char *wrowd;
+	char *wcold;
 #ifdef DEBUG_H
 	char wdumpdsn;
 #endif
@@ -3149,6 +3155,11 @@ int transform_from_dsn(
 				}
 				FDPRINTF( file->fd, "\n" );
 			}
+			else if ( oconn->stream == STREAM_RAW ) {
+				file_t *file = (file_t *)oconn->conn;
+				( first ) ? 0 : FDPRINTF( file->fd, oconn->cold );
+				FDNPRINTF( file->fd, (*col)->v, (*col)->len );
+			}
 			else if ( oconn->stream == STREAM_XML ) {
 				file_t *file = (file_t *)oconn->conn;
 				unsigned char *v = (*col)->v;
@@ -3471,6 +3482,8 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 		#endif
 		} // end for
 
+
+		/* End the string */
 		if ( oconn->type == DB_FILE ) {
 			file_t *file = (file_t *)oconn->conn;
 			// End the string
@@ -3495,6 +3508,9 @@ DPRINTF( "Length of value for %s (%s) is: %ld\n", (*col)->k, itypes[ (*col)->typ
 				FDPRINTF( file->fd, ">" );
 				( FF.newline ) ? FDPRINTF( file->fd, "\n" ) : 0;
 			}
+			else if ( oconn->stream == STREAM_RAW ) {
+				FDPRINTF( file->fd, oconn->rowd );
+			}	
 		}
 
 	#ifdef BMYSQL_H
@@ -4130,6 +4146,8 @@ int help () {
 			"                              (Example using XML: <$root> <key1></key1> </$root>)" },
 		{ "",   "name <arg>",  "Synonym for root." },
 #endif
+		{ "-R", "row-delimiter <arg>", "Specify a custom row delimiter when using --raw option" },
+		{ "-N", "column-delimiter <arg>", "Specify a custom column delimiter when using --raw option" },
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter when generating serialized output" },
 	#if 1
 		{ "-t", "typesafe",    "Enforce and/or enable typesafety" },
@@ -4204,8 +4222,9 @@ static config_t config = {
 	.wquery = NULL,	// A custom query from the user
 	.wprefix = NULL,
 	.wsuffix = NULL, 
-	.wtable = NULL
-
+	.wtable = NULL,
+	.wrowd = "\n",
+	.wcold = ",",
 };
 
 
@@ -4393,6 +4412,8 @@ int main ( int argc, char *argv[] ) {
 			config.wdatestamps = 1;
 		else if ( EVALARG( *argv, "-n", "--newline" ) )
 			config.wnewline = 1;
+		else if ( EVALARG( *argv, "-r", "--raw" ) )
+			config.wconvert = 1, output.stream = STREAM_RAW;
 		else if ( EVALARG( *argv, "-j", "--json" ) )
 			config.wconvert = 1, output.stream = STREAM_JSON;
 		else if ( EVALARG( *argv, "-x", "--xml" ) )
@@ -4411,8 +4432,14 @@ int main ( int argc, char *argv[] ) {
 			config.wclass = 1, config.wspcase = CASE_CAMEL;
 		else if ( EVALARG( *argv, "-y", "--stats" ) )
 			config.wstats = 1;
+	#ifdef DEBUG_H
 		else if ( DEVAL( EVALARG( *argv, "-X", "--dumpdsn" ) ) ) 
 			config.wdumpdsn = 1;
+	#endif
+		else if ( EVALARG( *argv, "-R", "--row-delimiter" ) && !SAVEARG( argv, config.wrowd ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
+		else if ( EVALARG( *argv, "-N", "--column-delimiter" ) && !SAVEARG( argv, config.wcold ) )
+			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
 		else if ( EVALARG( *argv, "-C", "--coerce" ) && !SAVEARG( argv, config.wcoerce ) )
 			return ERRPRINTF( ERRCODE, "%s\n", "No argument specified for --coerce." );
 		else if ( EVALARG( *argv, "-A", "--auto" ) && !SAVEARG( argv, config.wautocast ) )
@@ -4671,9 +4698,16 @@ int main ( int argc, char *argv[] ) {
 			destroy_dsn_headers( &input );
 			close_dsn( &input );
 			return ERRPRINTF( ERRCODE, "Prepare output DSN failed: %s\n", err );
-		}	
+		}
 
-#if 1
+
+		// Set these automatically... 
+		if ( output.stream == STREAM_RAW ) {
+			output.cold = config.wcold;	
+			output.rowd = config.wrowd;	
+		}
+
+#if 0
 fprintf( stderr, "IN:\n" ),
 print_dsn( &input ), 
 fprintf( stderr, "\nOUT:\n" ),
