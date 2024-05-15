@@ -1,4 +1,4 @@
-/* ------------------------------------------------------- *
+/**
  * briggs.c
  * ========
  *
@@ -47,7 +47,7 @@
  * 	 - URLs
  * 	 - Images (probably from a directory is the most useful)
  *
- * ------------------------------------------------------- */
+ **/
 #define _POSIX_C_SOURCE 200809L
 #define VERSION "0.01"
 #define TAB "\t\t\t\t\t\t\t\t\t"
