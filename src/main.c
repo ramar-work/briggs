@@ -538,6 +538,7 @@ typedef struct dsn_t {
 	int offset;
 	int size;
 	stream_t stream;
+	int input;
 
 	char *rowd;
 	char *cold;
@@ -2018,19 +2019,36 @@ int open_dsn ( dsn_t *conn, config_t *conf, char *err, int errlen ) {
 		}
 
 		// Open the file
-		if ( ( file->fd = open( conn->connstr, O_RDONLY ) ) == -1 ) {
-			snprintf( err, errlen, "open() %s", strerror( errno ) );
-			free( file );
-			return 0;
+		//fprintf( stderr, "Attempt to open %s\n", conn->connstr );
+		if ( conn->input ) {
+			if ( ( file->fd = open( conn->connstr, O_RDONLY ) ) == -1 ) {
+				snprintf( err, errlen, "open() %s", strerror( errno ) );
+				free( file );
+				return 0;
+			}
+		}
+		else {
+			if ( ( file->fd = open( conn->connstr, O_RDWR, 0644 ) ) == -1 ) {
+				snprintf( err, errlen, "open() %s", strerror( errno ) );
+				free( file );
+				return 0;
+			}
 		}
 
-		// Do stuff
-		file->size = sb.st_size;
-		file->map = mmap( 0, file->size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
-		if ( file->map == MAP_FAILED ) {
-			snprintf( err, errlen, "mmap() %s", strerror( errno ) );
-			free( file );
-			return 0;
+		// If this is an output source, no reason to mmap()
+		if ( conn->input ) {
+			if ( ( file->size = sb.st_size ) == 0 ) {
+				snprintf( err, errlen, "You've specified a zero-length input source.  Aborting...\n" );
+				free( file );
+				return 0;
+			}
+
+			file->map = mmap( 0, file->size, PROT_READ, MAP_PRIVATE, file->fd, 0 );
+			if ( file->map == MAP_FAILED ) {
+				snprintf( err, errlen, "mmap() mount failure %s", strerror( errno ) );
+				free( file );
+				return 0;
+			}
 		}
 
 		file->start = file->map;
@@ -4146,6 +4164,7 @@ int help () {
 			"                              (Example using XML: <$root> <key1></key1> </$root>)" },
 		{ "",   "name <arg>",  "Synonym for root." },
 #endif
+		{ "-r", "raw",  "Don't serialize output automatically.\n" },
 		{ "-R", "row-delimiter <arg>", "Specify a custom row delimiter when using --raw option" },
 		{ "-N", "column-delimiter <arg>", "Specify a custom column delimiter when using --raw option" },
 		{ "-u", "output-delimiter <arg>", "Specify an output delimiter when generating serialized output" },
@@ -4592,6 +4611,9 @@ int main ( int argc, char *argv[] ) {
 		return ERRPRINTF( ERRCODE, "DSN open failed: %s\n", err );
 	}
 
+	// Mark the input source as an input source
+	input.input = 1;
+
 	// Create the header_t here
 	if ( !headers_from_dsn( &input, &config, err, sizeof( err ) ) ) {
 		close_dsn( &input );
@@ -4612,6 +4634,9 @@ int main ( int argc, char *argv[] ) {
 		close_dsn( &output );
 		return ERRPRINTF( ERRCODE, "%s", err );
 	}
+
+	// output should be marked too
+	output.input = 0;
 
 	// The input datasource has to be prepared too
 	if ( !prepare_dsn_for_read( &input, err, sizeof( err ) ) ) {
